@@ -99,5 +99,34 @@ Commands: `objdump -p`, `scratchpad/tools/pe_imports.py`, `pe_exports.py`, `stri
 ### Assessment (input for T6)
 Decompilation is far more tractable than assumed: unpacked MSVC 6 binaries, engine API fully named (4432 symbols), game classes named via RTTI, source tree layout known, and a plugin architecture (renderer, transport) that can be swapped module by module. Main cost: ~4.3 MB of unnamed game-logic code in the exe. Suggested route: incremental decompilation verified against the original (replace functions/modules while the original still runs under Wine, OpenRCT2-style), then compile the full C++ to WASM with WebGL and WebRTC replacements for the renderer and transport plugins.
 
+- [x] T6 Route decision: **incremental decompilation** (user decision, 2026-10-08).
+
+## Phase 1 — First decompiled module: `TCP Protocol.dll`
+
+### Why this module
+Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, resolved by the engine's `PIMModule::GetEntry` (GetProcAddress by name). Imports only MSVCRT, WS2_32, iphlpapi, kernel32, sxlrt233 and 39 engine symbols. A drop-in replacement proves the whole loop (decompile → clean C → differential test → in-game) without MSVC C++ ABI work. The renderer (`DX7HRTnLDisplay.dll`) exports MSVC-mangled C++ classes and comes later.
+
+### Method
+1. Ghidra headless decompiles the original module. Raw decompiler output stays outside git (`~/Games/EmpireEarth-re/`).
+2. Clean C reimplementation in `src/plugins/tcp_protocol/` exporting the same symbols.
+3. Differential test harness (Win32 console exe run under Wine): loads a protocol DLL by path and checks behavior; the original DLL is the oracle, ours must match.
+4. Drop-in test in a working copy of the game under Wine.
+
+### Tasks
+- [ ] P1.1 Toolchain: Rosetta 2, Wine (`wine-stable`), `mingw-w64` (i686), Ghidra + JDK 21. Record versions. — route: inline (installs)
+- [ ] P1.2 Baseline: original game reaches the main menu under Wine on macOS, from a working copy (`~/Games/EmpireEarth-wine/`), never the pristine extract. User confirms visually.
+- [ ] P1.3 Ghidra headless project for `TCP Protocol.dll` (+ engine DLL for symbols); export pseudo-C of all 33 exports outside git.
+- [ ] P1.4 Differential harness, RED: built with mingw i686, runs under Wine; passes against the original DLL, fails against a stub of ours.
+- [ ] P1.5 Clean C reimplementation, GREEN then REFACTOR. — route: delegated writer (2+ non-trivial files)
+- [ ] P1.6 In-game drop-in: game loads our DLL; LAN host/join over localhost between two Wine instances if feasible.
+
+### Risks
+- Possible copy-protection remnants in the exe: sections `.cms_t`/`.cms_d` and strings `CmdLineExt.DLL`, `SIntf32.dll` (inference: SecuROM). If game code lives in `.cms_t`, the exe needs extra unpacking work. Does not affect Phase 1.
+- Wine on Apple Silicon runs x86 via Rosetta 2; the game may need GOG's `ddraw.dll` wrapper or D7VK (see `00xJS/Empire-Earth`).
+- Legal: decompiled code derives from Rebellion's binaries. Keep the repo local/private; never commit game files or raw decompiler output.
+
+### TDD
+Strict TDD (global config). Runner: differential harness executed with `wine` (exact command recorded in P1.4).
+
 ## Next step
-T6: user decides the route (decompile vs reconstruct).
+P1.1 toolchain.
