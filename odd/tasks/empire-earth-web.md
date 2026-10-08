@@ -23,10 +23,10 @@ No reimplementation or public decompilation of the Titan engine exists. Recent b
 
 ## Tasks
 - [x] T1 Community RE research (EnergyCube, NeoEE, EE-modders, formats, protocol) — route: delegated (broad web research). Evidence: findings section below.
-- [ ] T2 Obtain GOG offline installer (user action: the downloaded `GOG_Galaxy_*.exe` is a 492 KB Galaxy stub, not the game)
-- [ ] T3 Extract installer to `~/Games/EmpireEarth` with innoextract 1.9 (installed)
-- [ ] T4 Inventory file formats (extensions, sizes, counts, magic bytes)
-- [ ] T5 Analyze executable (PE headers, compiler, imports, protection)
+- [x] T2 Obtain GOG offline installer: `setup_empire_earth_gold_2.0.0.2974_gog_v3_(78415).exe` (667 MB) in `~/Downloads`.
+- [x] T3 Extract installer to `~/Games/EmpireEarth` with innoextract 1.9 — 715 MB, both EE and AoC present. Route: inline.
+- [x] T4 Inventory file formats — route: inline. Evidence below.
+- [x] T5 Analyze executable — route: inline. Evidence below.
 - [ ] T6 Route decision (decompile vs reconstruct) with evidence — needs user decision
 
 ## Acceptance criteria (phase 0)
@@ -76,5 +76,28 @@ Executable / platform:
 
 Biggest unknowns: simulation logic (pathfinding, combat, economy, built-in AI) lives only in the binaries; Terrain/Objects lumps; save format; UNKNOWN `.dat` fields; full network protocol.
 
+### T4 — File inventory (GOG 2.0.0.2974)
+Commands: `innoextract -e --exclude-temp`, then `scratchpad/tools/ssa_inventory.py` (SSA index reader based on EE-modders `SSA.py`).
+- Loose files: `Data/data.ssa` (EE 163 MB, AoC 45 MB), campaign `.ssa` archives, 55/94 `.rmv` random map scripts (**plain text**, original SSS comments), DirectMusic music (`.sgt`, `.sty`, `.dls`), Bink movies (`.bik`), lobby assets.
+- `rass` v1.0 magic confirmed on every `.ssa`; index parses cleanly.
+- EE `data.ssa` (3739 files): 2095 `.sst` textures (93 MB stored / 146 MB raw), 730 `.cem` models, 758 `.wav`, 3 `.mp3`, 39 `.dat` DB tables (7.4 MB raw), 58 `.tai` unit AI scripts, 21 `.civ`, 31 `.tga`. Almost everything PK01-compressed.
+- AoC `data.ssa` (826 files): mostly `.tga` textures (405), 136 `.cem`, 39 `.dat`, 72 `.tai`.
+- Campaign archive (EETheGreeks.ssa): 8 `.scn` scenarios, 235 `.mp3` voice/sounds, 9 `.jpg`.
+- `vssver.scc` files are Visual SourceSafe leftovers, not game data.
+
+### T5 — Binaries (GOG 2.0.0.2974)
+Commands: `objdump -p`, `scratchpad/tools/pe_imports.py`, `pe_exports.py`, `strings`.
+- `Empire Earth.exe`: PE32, 6.3 MB, `.text` 4.3 MB, MSVC 6 linker, timestamp 2017-06-23 (GOG rebuild/patch), image base 0x400000. **Not packed, no DRM imports.** Extra sections `.cms_t` / `.cms_d` (origin unknown).
+- Imports **1293 C++ functions from `Low-Level Engine.dll`** by mangled name; plus wsock32 (by ordinal), kernel32, user32, gdi32, imm32, ole32, advapi32, version, shell32. No DirectPlay import (GOG's `directplay.cmd` is a generic script).
+- `Low-Level Engine.dll` (2002): **4432 exports with full MSVC-mangled C++ signatures across 366 classes**. Subsystems by prefix: GE (graphics: GEModel, GETerrainMesh, GERasterizer…), UI (UIForm, UIManager…), SE (sound: SESoundManager, SEMixer…), NE (network: NESynchronousServer/Client, NEProtocol → lockstep), FS (files: FSArchive, FSMemoryFile…), TS (threads/scheduler), U (utilities, `UMCos` math). Imports DirectInput, WinMM.
+- `DX7HRTnLDisplay.dll` (106 KB, 255 exports): Direct3D 7 renderer plugin via DirectDraw; uses Bink. Small, well-delimited interface → replaceable by a WebGL implementation.
+- `TCP Protocol.dll` (37 KB, 33 exports): Winsock 2 transport → replaceable by WebRTC/WebSocket.
+- `ddraw.dll` (2024, imports `d3d9`): GOG's DX7→D3D9 wrapper, not original.
+- Audio: Miles Sound System (`Mss32.dll`); music: DirectMusic; video: Bink.
+- **Exe has 1866 MSVC RTTI class names** (e.g. `EEMAttackUnit`, `EEMGatherResource` command messages; `EEAIAStar*` pathfinding; `EECPASGU*` computer-player tactics; calamities) and **107 original source paths** (`C:\sssi development\Empire Earth\…`, `…\RTS Engine\…`) from asserts → original module layout is recoverable (Units, Physics Thread, Graphics Thread, Communications, Random Map, Tech Tree, Scenario Editor, WONLobby…).
+
+### Assessment (input for T6)
+Decompilation is far more tractable than assumed: unpacked MSVC 6 binaries, engine API fully named (4432 symbols), game classes named via RTTI, source tree layout known, and a plugin architecture (renderer, transport) that can be swapped module by module. Main cost: ~4.3 MB of unnamed game-logic code in the exe. Suggested route: incremental decompilation verified against the original (replace functions/modules while the original still runs under Wine, OpenRCT2-style), then compile the full C++ to WASM with WebGL and WebRTC replacements for the renderer and transport plugins.
+
 ## Next step
-T2: user downloads the GOG offline installer (current file is the Galaxy stub). Then T3–T5.
+T6: user decides the route (decompile vs reconstruct).
