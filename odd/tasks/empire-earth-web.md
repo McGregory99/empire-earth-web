@@ -113,8 +113,8 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 4. Drop-in test in a working copy of the game under Wine.
 
 ### Tasks
-- [ ] P1.1 Toolchain: Rosetta 2, Wine (`wine-stable`), `mingw-w64` (i686), Ghidra + JDK 21. Record versions. — route: inline (installs)
-- [ ] P1.2 Baseline: original game reaches the main menu under Wine on macOS, from a working copy (`~/Games/EmpireEarth-wine/`), never the pristine extract. User confirms visually.
+- [x] P1.1 Toolchain: Rosetta 2, Wine (Gcenx 11.0_1 via 00xJS scripts), `mingw-w64` (i686), Ghidra + JDK 21. Versions in the toolchain log below. — route: inline (installs) + delegated script audit
+- [x] P1.2 Baseline: original game reaches the main menu under Wine on macOS — **user confirmed visually (2026-10-08)**. Working copy installed by the GOG installer inside the 00xJS prefix (`~/Library/Application Support/EmpireEarthMac/wineprefix/drive_c/GOG Games/Empire Earth Gold Edition/`); binaries sha256-identical to the pristine extract. Launch command: `cd ~/Games/tools/ee-macos && EE_BIG_ARMIES=0 EE_BIG_CROWDS=0 EE_X87T=0 EE_SSE_MATH=0 EE_MEMFILE_DOUBLE=0 EE_POINTLIST_GUARD=0 EE_ANIMATION_SMOOTHING=0 ./scripts/launch.sh` (gameplay-affecting patches off; window/graphics hooks and D7VK remain).
 - [x] P1.3 Ghidra headless project for `TCP Protocol.dll`; pseudo-C of all 137 functions (33 exports) outside git. Evidence: `~/Games/EmpireEarth-re/decomp/tcp_protocol.annotated.c` (3780 lines, 0 decompile failures; IAT slots and Winsock ordinals renamed by `scripts/annotate_decomp.py`). Engine call sites (`NEProtocol`, `PIMModule`) being decompiled from `Low-Level Engine.dll`.
 - [ ] P1.4 Differential harness, RED: built with mingw i686, runs under Wine; passes against the original DLL, fails against a stub of ours.
 - [ ] P1.5 Clean C reimplementation, GREEN then REFACTOR. — route: delegated writer (2+ non-trivial files)
