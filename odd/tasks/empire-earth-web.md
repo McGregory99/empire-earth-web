@@ -116,8 +116,8 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 - [x] P1.1 Toolchain: Rosetta 2, Wine (Gcenx 11.0_1 via 00xJS scripts), `mingw-w64` (i686), Ghidra + JDK 21. Versions in the toolchain log below. — route: inline (installs) + delegated script audit
 - [x] P1.2 Baseline: original game reaches the main menu under Wine on macOS — **user confirmed visually (2026-10-08)**. Working copy installed by the GOG installer inside the 00xJS prefix (`~/Library/Application Support/EmpireEarthMac/wineprefix/drive_c/GOG Games/Empire Earth Gold Edition/`); binaries sha256-identical to the pristine extract. Launch command: `cd ~/Games/tools/ee-macos && EE_BIG_ARMIES=0 EE_BIG_CROWDS=0 EE_X87T=0 EE_SSE_MATH=0 EE_MEMFILE_DOUBLE=0 EE_POINTLIST_GUARD=0 EE_ANIMATION_SMOOTHING=0 ./scripts/launch.sh` (gameplay-affecting patches off; window/graphics hooks and D7VK remain).
 - [x] P1.3 Ghidra headless project for `TCP Protocol.dll`; pseudo-C of all 137 functions (33 exports) outside git. Evidence: `~/Games/EmpireEarth-re/decomp/tcp_protocol.annotated.c` (3780 lines, 0 decompile failures; IAT slots and Winsock ordinals renamed by `scripts/annotate_decomp.py`). Engine call sites (`NEProtocol`, `PIMModule`) being decompiled from `Low-Level Engine.dll`.
-- [ ] P1.4 Differential harness, RED: built with mingw i686, runs under Wine; passes against the original DLL, fails against a stub of ours.
-- [ ] P1.5 Clean C reimplementation, GREEN then REFACTOR. — route: delegated writer (2+ non-trivial files)
+- [x] P1.4 Differential harness, RED: built with mingw i686, runs under Wine; passes against the original DLL, fails against a stub of ours. — route: delegated writer. Evidence: `93cfa67`, `f5453b0`. The harness loads the plugin like `PIMModule::GetModule` (`LoadLibraryEx`, altered search path) and prints a normalized transcript of all 33 exports, wire bytes as hex, decrypted datagrams, event signalling and injected Winsock faults; `tests/tcp_protocol/golden.txt` is recorded from the original (`make golden` is stable, `make determinism` identical). RED observed against the 33-export stub: `make test` → `Error 1`, first diff `PIMGetName -> "TCP/IP Protocol"` vs `"(null)"`.
+- [x] P1.5 Clean C reimplementation, GREEN then REFACTOR. — route: delegated writer (2+ non-trivial files). Evidence: GREEN `ad60a2d`, REFACTOR `9f9d729`, then `59a874c`, `b1b0c07`, `d6a0318`, `c755531`, `32d5061`. Parent spot check (2026-10-09): `make test` → `PASS: transcript of our DLL equals the golden transcript` (17.6 s); `make test-stub` → stub detected; `make check-abi` → exports and ordinals identical, 39 engine imports identical, 24 ws2_32 imports identical, msvcrt (no UCRT); sxlrt233 not imported (no STLport strings), extra kernel32/msvcrt imports come from the mingw CRT. Writer reports ~40 injected mutants killed except API-equivalent ones. Deviations not visible to the engine: zero-padded discovery datagrams, bounded name copies, correct free in adapter enumeration, no cipher lock (no remote deadlock), listener handle reset after close, sockets closed on resolve failure. Original defects kept because observable (`d6a0318`): a failed LAN scan or publish leaves port 33334 bound.
 - [ ] P1.6 In-game drop-in: game loads our DLL; LAN host/join over localhost between two Wine instances if feasible.
 
 ### Risks
@@ -131,7 +131,12 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 - Homebrew Wine casks are disabled (Gatekeeper, 2026-09-01). Using `00xJS/Empire-Earth` scripts (`~/Games/tools/ee-macos`, commit 1942b3b): Gcenx Wine 11.0_1 (sha256-pinned) under `~/Library/Application Support/EmpireEarthMac/`. Script audit: no sudo, no telemetry; runtime patches are in-memory via its `version.dll` shim and mostly toggleable (`EE_*=0`); it never touches `TCP Protocol.dll`.
 
 ### TDD
-Strict TDD (global config). Runner: differential harness executed with `wine` (exact command recorded in P1.4).
+Strict TDD (global config). Runner: `make test` (builds with `i686-w64-mingw32-gcc -mcrtdll=msvcrt-os`, runs `build/harness.exe` under the 00xJS Wine in `~/Games/EmpireEarth-re/testbed/ours`, diffs against `tests/tcp_protocol/golden.txt`). One-time setup: `make wine-prefix` (otherwise a harness crash attaches `winedbg` and hangs). Do not run two suites at once: the scenarios bind port 33334. The golden needs a LAN interface with UDP broadcast.
+
+### Build notes
+- Homebrew's `-mcrtdll=msvcrt` still links the UCRT (`libmsvcrt.a` is a copy of `libucrt.a`); use `-mcrtdll=msvcrt-os`.
+- Engine C++ methods are imported by mangled name: thiscall declarations with quoted asm labels, import library from `src/engine_abi/low_level_engine.def` via `dlltool --no-leading-underscore`.
+- Wine reports more adapters than the plugin's fixed 6400-byte `GetAdaptersInfo` buffer and reorders `gethostbyname` results, so the harness fakes both.
 
 ## Next step
-P1.1 toolchain.
+P1.6: drop our `TCP Protocol.dll` into the Wine game copy (back up the original first), check the game loads it, then LAN host/join over localhost between two Wine instances if feasible.
