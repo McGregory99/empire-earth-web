@@ -64,6 +64,17 @@ NPIMGetLocalAddress(0) -> dotted-quad
 NPIMGetLocalAddress(1) -> dotted-quad
 NPIMGetLocalAddress returns one shared object: yes
 NPIMGetLocalAddress(99) -> dotted-quad same_as_adapter_0=yes
+== network adapters (GetAdaptersInfo replaced by the harness)
+3 adapter(s) present: NPIMEnumerateNetworkAdapters -> 3, vector holds 3, first "Test adapter 1", last "Test adapter 3"
+10 adapter(s) present: NPIMEnumerateNetworkAdapters -> 10, vector holds 10, first "Test adapter 1", last "Test adapter 10"
+1 adapter(s) present: NPIMEnumerateNetworkAdapters -> 1, vector holds 1, first "Test adapter 1", last "Test adapter 1"
+0 adapter(s) present: NPIMEnumerateNetworkAdapters -> 0, vector holds 0, first "-", last "-"
+NPIMGetLocalAddress(0) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(1) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(2) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(3) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(4) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(99) -> the expected address of the adapter: yes
 == detected games (nothing searched yet)
 NPIMGetDetectedGameCount -> 0
 NPIMGetDetectedGame(0) -> 10

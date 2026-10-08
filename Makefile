@@ -49,6 +49,8 @@ ENGINE_LIB := $(BUILD)/libengine.a
 GOLDEN    := tests/tcp_protocol/golden.txt
 
 # RED stage: "ours" is still the failing stub, there is no reimplementation yet.
+HARNESS_SOURCES := $(wildcard tests/tcp_protocol/*.c)
+HARNESS_HEADERS := $(wildcard tests/tcp_protocol/*.h)
 PLUGIN_SOURCES := $(wildcard src/plugins/tcp_protocol/*.c)
 PLUGIN_HEADERS := src/engine_abi/low_level_engine.h
 
@@ -70,8 +72,8 @@ $(PLUGIN): $(PLUGIN_SOURCES) $(PLUGIN_HEADERS) src/plugins/tcp_protocol/tcp_prot
 $(STUB): tests/tcp_protocol/stub/stub.c src/plugins/tcp_protocol/tcp_protocol.def | $(BUILD)/stub
 	$(CC) $(CFLAGS) -shared -o "$@" tests/tcp_protocol/stub/stub.c src/plugins/tcp_protocol/tcp_protocol.def
 
-$(HARNESS): tests/tcp_protocol/harness.c $(ENGINE_LIB) src/engine_abi/low_level_engine.h | $(BUILD)/ours
-	$(CC) $(CFLAGS) -o $@ tests/tcp_protocol/harness.c -L $(BUILD) -lengine -lws2_32
+$(HARNESS): $(HARNESS_SOURCES) $(HARNESS_HEADERS) $(ENGINE_LIB) src/engine_abi/low_level_engine.h | $(BUILD)/ours
+	$(CC) $(CFLAGS) -I tests/tcp_protocol -o $@ $(HARNESS_SOURCES) -L $(BUILD) -lengine -lws2_32
 
 # ---- test beds: a directory per variant with the engine DLLs next to the plugin -------
 # The plugin is loaded by full path, like the engine does; the engine DLLs it
