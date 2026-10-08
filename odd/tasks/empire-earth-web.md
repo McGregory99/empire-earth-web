@@ -115,7 +115,7 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 ### Tasks
 - [ ] P1.1 Toolchain: Rosetta 2, Wine (`wine-stable`), `mingw-w64` (i686), Ghidra + JDK 21. Record versions. — route: inline (installs)
 - [ ] P1.2 Baseline: original game reaches the main menu under Wine on macOS, from a working copy (`~/Games/EmpireEarth-wine/`), never the pristine extract. User confirms visually.
-- [ ] P1.3 Ghidra headless project for `TCP Protocol.dll` (+ engine DLL for symbols); export pseudo-C of all 33 exports outside git.
+- [x] P1.3 Ghidra headless project for `TCP Protocol.dll`; pseudo-C of all 137 functions (33 exports) outside git. Evidence: `~/Games/EmpireEarth-re/decomp/tcp_protocol.annotated.c` (3780 lines, 0 decompile failures; IAT slots and Winsock ordinals renamed by `scripts/annotate_decomp.py`). Engine call sites (`NEProtocol`, `PIMModule`) being decompiled from `Low-Level Engine.dll`.
 - [ ] P1.4 Differential harness, RED: built with mingw i686, runs under Wine; passes against the original DLL, fails against a stub of ours.
 - [ ] P1.5 Clean C reimplementation, GREEN then REFACTOR. — route: delegated writer (2+ non-trivial files)
 - [ ] P1.6 In-game drop-in: game loads our DLL; LAN host/join over localhost between two Wine instances if feasible.
@@ -124,6 +124,11 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 - Possible copy-protection remnants in the exe: sections `.cms_t`/`.cms_d` and strings `CmdLineExt.DLL`, `SIntf32.dll` (inference: SecuROM). If game code lives in `.cms_t`, the exe needs extra unpacking work. Does not affect Phase 1.
 - Wine on Apple Silicon runs x86 via Rosetta 2; the game may need GOG's `ddraw.dll` wrapper or D7VK (see `00xJS/Empire-Earth`).
 - Legal: decompiled code derives from Rebellion's binaries. Keep the repo local/private; never commit game files or raw decompiler output.
+
+### Toolchain log (P1.1)
+- Rosetta 2 OK, JDK 21.0.2, LLVM (Homebrew), mingw-w64 GCC 16.2.0 (`i686-w64-mingw32-gcc`), winetricks 20260125, binutils.
+- Ghidra 12.1.4 in `~/Games/tools/ghidra_12.1.4_PUBLIC`. The release has no macOS natives: built `ghidra_opt` from `Ghidra/Features/Decompiler/src/decompile/cpp` with `CPATH=/opt/homebrew/opt/binutils/include make ghidra_opt ARCH_TYPE="-arch arm64"` and copied it to `os/mac_arm_64/decompile`.
+- Homebrew Wine casks are disabled (Gatekeeper, 2026-09-01). Using `00xJS/Empire-Earth` scripts (`~/Games/tools/ee-macos`, commit 1942b3b): Gcenx Wine 11.0_1 (sha256-pinned) under `~/Library/Application Support/EmpireEarthMac/`. Script audit: no sudo, no telemetry; runtime patches are in-memory via its `version.dll` shim and mostly toggleable (`EE_*=0`); it never touches `TCP Protocol.dll`.
 
 ### TDD
 Strict TDD (global config). Runner: differential harness executed with `wine` (exact command recorded in P1.4).
