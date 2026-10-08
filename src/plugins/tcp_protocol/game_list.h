@@ -18,7 +18,8 @@ typedef struct DetectedGame {
     /*
      * Where to reach the game.  Connecting over TCP uses `tcp_address`, UDP uses
      * `udp_address`.  Only the latter is ever filled in (with the sender of the
-     * discovery reply); the original therefore connects TCP clients to 0.0.0.0.
+     * discovery reply); `tcp_address` stays all zeroes, not even a valid address
+     * family, so the original cannot connect a TCP client to a detected game.
      */
     struct sockaddr_in tcp_address;
     struct sockaddr_in udp_address;

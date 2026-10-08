@@ -208,6 +208,7 @@ long NPIMPublish(const UString *service, const UWideString *name, unsigned long 
     ServerState *state;
 
     if (internet_game == 0 && name_in_use_on_lan(service, name)) {
+        /* No OS error is involved; like the original, hand the engine's last native error back to it. */
         es_get_native_error();
         es_record_native_error(es_get_native_error());
         return NET_FAILED;
