@@ -8,8 +8,7 @@
 #include "plugin_state.h"
 #include "protocol.h"
 
-/* Location reported to the engine's assertion hook when a critical section cannot be created. */
-#define SOURCE_FILE "C:\\SSSI Development\\Low-Level Engine\\Network Engine\\TCP Protocol\\TCP Protocol.cpp"
+/* Lines reported to the engine's assertion hook when a critical section cannot be created. */
 #define SOURCE_LINE_GAME_LOCK 0x18e
 #define SOURCE_LINE_SCAN_LOCK 0x190
 #define SOURCE_LINE_TRANSFER_LOCK 0x194
@@ -38,7 +37,7 @@ unsigned long NPIMGetProtocolType(void)
 static void create_lock(TSCriticalSection **lock, unsigned long source_line)
 {
     if (tsscheduler_create_critical_section(lock) != 0) {
-        es_verify(SOURCE_FILE, source_line, "theResult == keseOK");
+        es_verify(ENGINE_ASSERT_FILE, source_line, "theResult == keseOK");
     }
 }
 
@@ -144,6 +143,9 @@ long NPIMSetConfiguration(const NEProtocolConfiguration *configuration)
     }
     return NET_NOT_SUPPORTED;
 }
+
+/* Entry point of the DLL: set up and tear down the objects that need the engine's constructors. */
+BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved);
 
 BOOL WINAPI DllMain(HINSTANCE module, DWORD reason, LPVOID reserved)
 {

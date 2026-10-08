@@ -37,6 +37,8 @@ typedef struct WideStringVector {
     UWideString *end_of_storage;
 } WideStringVector;
 
+ENGINE_ABI_CHECK(wide_string_vector_is_16_bytes, sizeof(WideStringVector) == 16);
+
 /* --- module identity and life cycle (module.c) ---------------------------- */
 UString *PIMGetName(void);
 unsigned long PIMGetType(void);

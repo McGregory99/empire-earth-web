@@ -10,6 +10,8 @@
 #ifndef TCP_PROTOCOL_DISCOVERY_H
 #define TCP_PROTOCOL_DISCOVERY_H
 
+#include <stdbool.h>
+
 #include "low_level_engine.h"
 
 /*

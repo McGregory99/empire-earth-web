@@ -82,6 +82,13 @@ static inline HANDLE ts_event_handle(const TSEvent *event)
     return *(const HANDLE *)event;
 }
 
+/* The sizes the engine uses for these objects; the plugin embeds them in its own structures. */
+#define ENGINE_ABI_CHECK(name, condition) typedef char engine_abi_check_##name[(condition) ? 1 : -1]
+ENGINE_ABI_CHECK(ustring_is_16_bytes, sizeof(UString) == 16);
+ENGINE_ABI_CHECK(uwidestring_is_20_bytes, sizeof(UWideString) == 20);
+ENGINE_ABI_CHECK(configuration_is_12_bytes, sizeof(NEProtocolConfiguration) == 12);
+ENGINE_ABI_CHECK(urandom_is_16_bytes, sizeof(URandom) == 16);
+
 /* Thread entry point accepted by TSScheduler::CreateThread (cdecl). */
 typedef unsigned long (*TSThreadProc)(void *argument);
 

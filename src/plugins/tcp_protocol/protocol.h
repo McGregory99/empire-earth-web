@@ -44,8 +44,12 @@ typedef enum NetStatus {
 #define DISCOVERY_PROBE_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_NAME_FIELD)                          /* 67 */
 #define DISCOVERY_REPLY_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_NAME_FIELD + DISCOVERY_NAME_FIELD + 4) /* 136 */
 
+#define DISCOVERY_PROBE_SERVICE_OFFSET 2
 #define DISCOVERY_REPLY_SERVICE_OFFSET 2
 #define DISCOVERY_REPLY_NAME_OFFSET (DISCOVERY_REPLY_SERVICE_OFFSET + DISCOVERY_NAME_FIELD)
+
+/* Where the engine's assertion hook is told a failed check happened (the original source location). */
+#define ENGINE_ASSERT_FILE "C:\\SSSI Development\\Low-Level Engine\\Network Engine\\TCP Protocol\\TCP Protocol.cpp"
 
 /* How long a LAN scan listens for replies. */
 #define DISCOVERY_LISTEN_MS 1000u

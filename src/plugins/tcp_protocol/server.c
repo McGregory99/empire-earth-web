@@ -12,6 +12,7 @@
 #include "cipher.h"
 #include "discovery.h"
 #include "exports.h"
+#include "packet.h"
 #include "plugin_state.h"
 #include "protocol.h"
 
@@ -54,6 +55,18 @@ static void server_state_destroy(ServerState *state)
     ptr_array_release(&state->transfers);
     ptr_array_release(&state->clients);
     free(state);
+}
+
+/* Close whatever sockets a half-published server holds, and free it. */
+static void server_state_abandon(ServerState *state)
+{
+    if (state->tcp_socket != INVALID_SOCKET) {
+        closesocket(state->tcp_socket);
+    }
+    if (state->udp_socket != INVALID_SOCKET) {
+        closesocket(state->udp_socket);
+    }
+    server_state_destroy(state);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -210,26 +223,14 @@ long NPIMPublish(const UString *service, const UWideString *name, unsigned long 
         return NET_OUT_OF_MEMORY;
     }
     if (!open_transports(state, socket_event)) {
-        if (state->tcp_socket != INVALID_SOCKET) {
-            closesocket(state->tcp_socket);
-        }
-        if (state->udp_socket != INVALID_SOCKET) {
-            closesocket(state->udp_socket);
-        }
-        server_state_destroy(state);
+        server_state_abandon(state);
         return NET_FAILED;
     }
     ustring_assign(&state->service, service);
     uwidestring_assign(&state->name, name);
 
     if (!open_transfer_listener(transfer_data_event, transfer_accept_event)) {
-        if (state->tcp_socket != INVALID_SOCKET) {
-            closesocket(state->tcp_socket);
-        }
-        if (state->udp_socket != INVALID_SOCKET) {
-            closesocket(state->udp_socket);
-        }
-        server_state_destroy(state);
+        server_state_abandon(state);
         return NET_FAILED;
     }
     server->state = state;
@@ -316,17 +317,6 @@ static size_t find_client(const ServerState *state, const struct sockaddr_in *ad
     return i;
 }
 
-static void put_name(uint8_t *field, const char *name)
-{
-    size_t length = strlen(name);
-
-    if (length > DISCOVERY_NAME_FIELD - 1) {
-        length = DISCOVERY_NAME_FIELD - 1;
-    }
-    memcpy(field, name, length);
-    field[length] = '\0';
-}
-
 /*
  * Answer a discovery probe (already decrypted) with the service and game name, but only if it asks
  * for our service and we are an accepting, non-internet, LAN-announced game.  The reply goes to
@@ -334,12 +324,12 @@ static void put_name(uint8_t *field, const char *name)
  */
 static void answer_probe(const ServerState *state, const uint8_t *probe, const struct sockaddr_in *asker)
 {
-    uint8_t reply[DISCOVERY_REPLY_SIZE] = { 0 };
+    uint8_t reply[DISCOVERY_REPLY_SIZE];
     struct sockaddr_in destination;
     SOCKET s;
 
-    if (strncmp((const char *)probe + PACKET_HEADER_SIZE + 1, state->service.chars, DISCOVERY_NAME_FIELD) != 0 ||
-        state->accepting != 1 || state->internet_game != 0 || state->announce_on_lan != 1) {
+    if (!packet_probe_asks_for(probe, state->service.chars) || state->accepting != 1 || state->internet_game != 0 ||
+        state->announce_on_lan != 1) {
         return;
     }
     s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -347,9 +337,7 @@ static void answer_probe(const ServerState *state, const uint8_t *probe, const s
         report_socket_error_and_acknowledge();
         return;
     }
-    reply[PACKET_HEADER_SIZE] = PACKET_DISCOVERY_REPLY;
-    put_name(reply + DISCOVERY_REPLY_SERVICE_OFFSET, state->service.chars);
-    put_name(reply + DISCOVERY_REPLY_NAME_OFFSET, state->name.chars);
+    packet_fill_reply(reply, state->service.chars, state->name.chars);
     datagram_seal(reply, sizeof reply);
 
     destination = *asker;
@@ -380,7 +368,6 @@ long NPIMReceiveFrom(const NEServer *server, unsigned long capacity, uint8_t *bu
     int from_length = sizeof from;
     int n;
     size_t index;
-    uint8_t type;
 
     if (!(state->transports & TRANSPORT_UDP)) {
         return NET_NOT_SUPPORTED;
@@ -400,9 +387,8 @@ long NPIMReceiveFrom(const NEServer *server, unsigned long capacity, uint8_t *bu
         return NET_FAILED;
     }
     datagram_open(buffer, n);
-    type = buffer[PACKET_HEADER_SIZE];
 
-    if (n == DISCOVERY_PROBE_SIZE && type == PACKET_DISCOVERY_PROBE) {
+    if (packet_is_probe(buffer, n)) {
         *received = 0;
         answer_probe(state, buffer, &from);
         return NET_NO_DATA;
@@ -414,7 +400,7 @@ long NPIMReceiveFrom(const NEServer *server, unsigned long capacity, uint8_t *bu
         *received = (unsigned long)n;
         return NET_OK;
     }
-    if (n < PACKET_JOIN_MIN_SIZE || (type != PACKET_JOIN_A && type != PACKET_JOIN_B)) {
+    if (!packet_is_join_request(buffer, n)) {
         *received = 0;
         return NET_NO_DATA;
     }

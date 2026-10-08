@@ -10,6 +10,7 @@
 #include "adapters.h"
 #include "cipher.h"
 #include "exports.h"
+#include "packet.h"
 #include "plugin_state.h"
 #include "protocol.h"
 
@@ -170,49 +171,47 @@ long NPIMCloseConnection(NEConnection *connection)
 /* Sending and receiving                                                     */
 /* ------------------------------------------------------------------------ */
 
-/*
- * TCP: stream the bytes out unchanged.  UDP: the first byte of `buffer` is reserved for the
- * header byte, the rest is encrypted in place (see cipher.h) and sent as one datagram.
- */
-long NPIMSend(const NEConnection *connection, uint8_t *buffer, unsigned long length)
+/* Blocks (the socket is not told otherwise) until all bytes are written; any error aborts. */
+static long send_stream(const ConnectionState *state, const uint8_t *buffer, unsigned long length)
 {
-    const ConnectionState *state = connection->state;
+    unsigned long sent = 0;
 
-    if (state->transport == TRANSPORT_TCP) {
-        unsigned long sent = 0;
+    while (sent < length) {
+        int n = send(state->socket, (const char *)buffer + sent, (int)(length - sent), 0);
 
-        while (sent < length) {
-            int n = send(state->socket, (const char *)buffer + sent, (int)(length - sent), 0);
-
-            if (n == SOCKET_ERROR) {
-                report_socket_error_and_acknowledge();
-                return NET_FAILED;
-            }
-            sent += (unsigned long)n;
-        }
-        return NET_OK;
-    } else {
-        int n;
-
-        datagram_seal(buffer, (int)length);
-        n = sendto(state->socket, (const char *)buffer, (int)length, 0, (const struct sockaddr *)&state->remote,
-                   sizeof state->remote);
-        if (n == (int)length) {
-            return NET_OK;
-        }
         if (n == SOCKET_ERROR) {
             report_socket_error_and_acknowledge();
             return NET_FAILED;
         }
-        return NET_NOT_SUPPORTED;
+        sent += (unsigned long)n;
     }
+    return NET_OK;
 }
 
-/* Is this (already decrypted) datagram a game-discovery packet that has nothing to do with a connection? */
-static bool is_discovery_packet(const uint8_t *datagram, int length)
+/* The first byte of `buffer` is reserved for the header byte; the rest is encrypted in place. */
+static long send_datagram(const ConnectionState *state, uint8_t *buffer, unsigned long length)
 {
-    return (length == DISCOVERY_REPLY_SIZE && datagram[PACKET_HEADER_SIZE] == PACKET_DISCOVERY_REPLY) ||
-           (length == DISCOVERY_PROBE_SIZE && datagram[PACKET_HEADER_SIZE] == PACKET_DISCOVERY_PROBE);
+    int n;
+
+    datagram_seal(buffer, (int)length);
+    n = sendto(state->socket, (const char *)buffer, (int)length, 0, (const struct sockaddr *)&state->remote,
+               sizeof state->remote);
+    if (n == (int)length) {
+        return NET_OK;
+    }
+    if (n == SOCKET_ERROR) {
+        report_socket_error_and_acknowledge();
+        return NET_FAILED;
+    }
+    return NET_NOT_SUPPORTED;
+}
+
+long NPIMSend(const NEConnection *connection, uint8_t *buffer, unsigned long length)
+{
+    const ConnectionState *state = connection->state;
+
+    return state->transport == TRANSPORT_TCP ? send_stream(state, buffer, length)
+                                             : send_datagram(state, buffer, length);
 }
 
 static bool same_peer(const struct sockaddr_in *a, const struct sockaddr_in *b)
@@ -233,31 +232,29 @@ static long receive_error(unsigned long *received)
     return NET_FAILED;
 }
 
-/*
- * TCP: whatever bytes are available.  UDP: the next datagram from the connection's peer,
- * decrypted in place; datagrams from other senders and discovery packets are skipped.
- * `*received` is the datagram size including the header byte.
- */
-long NPIMReceive(const NEConnection *connection, unsigned long capacity, uint8_t *buffer, unsigned long *received)
+static long receive_stream(const ConnectionState *state, unsigned long capacity, uint8_t *buffer,
+                           unsigned long *received)
 {
-    const ConnectionState *state = connection->state;
-    long result = NET_OK;
+    int n = recv(state->socket, (char *)buffer, (int)capacity, 0);
 
-    if (!state) {
-        return NET_NO_DATA;
+    if (n == 0) {
+        return NET_NOT_SUPPORTED;  /* the peer closed the connection */
     }
-    if (state->transport == TRANSPORT_TCP) {
-        int n = recv(state->socket, (char *)buffer, (int)capacity, 0);
+    if (n == SOCKET_ERROR) {
+        return receive_error(received);
+    }
+    *received = (unsigned long)n;
+    return NET_OK;
+}
 
-        if (n == 0) {
-            return NET_NOT_SUPPORTED;  /* the peer closed the connection */
-        }
-        if (n == SOCKET_ERROR) {
-            return receive_error(received);
-        }
-        *received = (unsigned long)n;
-        return NET_OK;
-    }
+/*
+ * The next datagram from the connection's peer, decrypted in place.  Datagrams from other
+ * senders and game-discovery packets are skipped; if only those were queued, the result is
+ * "no data".
+ */
+static long receive_datagram(const ConnectionState *state, unsigned long capacity, uint8_t *buffer,
+                             unsigned long *received)
+{
     for (;;) {
         struct sockaddr_in from;
         int from_length = sizeof from;
@@ -270,15 +267,25 @@ long NPIMReceive(const NEConnection *connection, unsigned long capacity, uint8_t
             return receive_error(received);
         }
         datagram_open(buffer, n);
-        if (is_discovery_packet(buffer, n)) {
+        if (packet_is_probe(buffer, n) || packet_is_reply(buffer, n)) {
             *received = 0;
-            result = NET_NO_DATA;
         } else if (same_peer(&from, &state->remote)) {
             *received = (unsigned long)n;
             return NET_OK;
         }
     }
-    return result;
+}
+
+/* TCP: whatever bytes are available.  UDP: see receive_datagram; `*received` includes the header byte. */
+long NPIMReceive(const NEConnection *connection, unsigned long capacity, uint8_t *buffer, unsigned long *received)
+{
+    const ConnectionState *state = connection->state;
+
+    if (!state) {
+        return NET_NO_DATA;
+    }
+    return state->transport == TRANSPORT_TCP ? receive_stream(state, capacity, buffer, received)
+                                             : receive_datagram(state, capacity, buffer, received);
 }
 
 /* A TCP connection is alive while the peer has not closed it; UDP has no such notion. */
