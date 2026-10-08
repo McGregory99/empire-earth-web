@@ -1,0 +1,208 @@
+== exports
+export  1 NPIMAccept                   present=yes by_ordinal=yes
+export  2 NPIMAcceptForXfer            present=yes by_ordinal=yes
+export  3 NPIMActivate                 present=yes by_ordinal=yes
+export  4 NPIMAllowNewConnections      present=yes by_ordinal=yes
+export  5 NPIMCloseConnection          present=yes by_ordinal=yes
+export  6 NPIMCloseServer              present=yes by_ordinal=yes
+export  7 NPIMConnect                  present=yes by_ordinal=yes
+export  8 NPIMConnectForXfer           present=yes by_ordinal=yes
+export  9 NPIMDeactivate               present=yes by_ordinal=yes
+export 10 NPIMEnumerateNetworkAdapters present=yes by_ordinal=yes
+export 11 NPIMGetClientAddress         present=yes by_ordinal=yes
+export 12 NPIMGetConfiguration         present=yes by_ordinal=yes
+export 13 NPIMGetDetectedGame          present=yes by_ordinal=yes
+export 14 NPIMGetDetectedGameCount     present=yes by_ordinal=yes
+export 15 NPIMGetLocalAddress          present=yes by_ordinal=yes
+export 16 NPIMGetProtocolType          present=yes by_ordinal=yes
+export 17 NPIMGetStatus                present=yes by_ordinal=yes
+export 18 NPIMIsAlive                  present=yes by_ordinal=yes
+export 19 NPIMPublish                  present=yes by_ordinal=yes
+export 20 NPIMReceive                  present=yes by_ordinal=yes
+export 21 NPIMReceiveFrom              present=yes by_ordinal=yes
+export 22 NPIMResetClientConnection    present=yes by_ordinal=yes
+export 23 NPIMResetXfer                present=yes by_ordinal=yes
+export 24 NPIMSearchForGame            present=yes by_ordinal=yes
+export 25 NPIMSend                     present=yes by_ordinal=yes
+export 26 NPIMSendSingle               present=yes by_ordinal=yes
+export 27 NPIMSendTo                   present=yes by_ordinal=yes
+export 28 NPIMSetConfiguration         present=yes by_ordinal=yes
+export 29 NPIMXferReceive              present=yes by_ordinal=yes
+export 30 NPIMXferSendTo               present=yes by_ordinal=yes
+export 31 PIMGetName                   present=yes by_ordinal=yes
+export 32 PIMGetType                   present=yes by_ordinal=yes
+export 33 PIMIsValid                   present=yes by_ordinal=yes
+== identity (before NPIMActivate)
+PIMGetName -> "TCP/IP Protocol" length=15 same_object_every_call=yes
+PIMGetType -> 0x6e74776b
+PIMIsValid -> 0
+NPIMGetProtocolType -> 1
+== activation
+NPIMActivate -> 0
+PIMIsValid -> 1
+NPIMGetStatus("WinSock 2.0", 0) -> 0
+NPIMGetStatus("WinSock 2.0", 0x82360000) -> 0
+NPIMGetStatus("WinSock 1.1", 0) -> 0
+NPIMDeactivate -> 0
+PIMIsValid -> 0
+NPIMActivate -> 0
+PIMIsValid -> 1
+NPIMActivate (already active) -> 0
+PIMIsValid -> 1
+== configuration
+NPIMGetConfiguration -> 0 object=returned parameters=0 version=1
+NPIMSetConfiguration(returned copy) -> 0
+NPIMSetConfiguration(3 parameters, version 1) -> 9
+NPIMSetConfiguration(0 parameters, version 2) -> 9
+NPIMSetConfiguration(0 parameters, version 1) -> 0
+== network information
+NPIMEnumerateNetworkAdapters -> count_at_most_10=yes vector_size_equals_count=yes names_non_empty=yes
+NPIMEnumerateNetworkAdapters (second call, same vector) -> same_count=yes size_not_doubled=yes
+NPIMGetLocalAddress(0) -> dotted-quad
+NPIMGetLocalAddress(1) -> dotted-quad
+NPIMGetLocalAddress returns one shared object: yes
+NPIMGetLocalAddress(99) -> dotted-quad same_as_adapter_0=yes
+== detected games (nothing searched yet)
+NPIMGetDetectedGameCount -> 0
+NPIMGetDetectedGame(0) -> 10
+== NPIMSendSingle
+NPIMSendSingle("127.0.0.1", 40101, 8 bytes) -> 0
+  peer received 8 bytes: de ad be ef 00 41 42 43
+  source port <ephemeral>
+NPIMSendSingle(unresolvable host) -> 9
+== UDP client connection against a raw peer
+NPIMConnect("127.0.0.1", "ee-test", "Test Game", UDP, adapter 0) -> 0 connection=created
+NPIMIsAlive(UDP connection) -> 1
+NPIMSend(UDP, 11 bytes) -> 0
+  peer captured: wire_length=11 header=<random 1..254> plaintext=22 48 45 4c 4c 4f 20 55 44 50 re_encrypts_to_wire=yes
+  caller buffer mutated in place: header_changed=yes payload_encrypted=yes
+  source address 127.0.0.1 port <ephemeral>
+NPIMReceive(nothing pending) -> 7 received=0x0
+NPIMReceive(stranger + reply-look-alike + real reply) -> 0 received=7
+  header=0x5a plaintext=01 52 45 50 4c 59
+NPIMReceive(queue now empty) -> 7 received=0
+NPIMReceive(datagram bigger than the 4-byte buffer) -> 1
+NPIMReceive(afterwards) -> 7 received=0x0
+NPIMSend(UDP, 1 byte) -> 0; peer received 1 bytes
+NPIMSend(UDP, 0 bytes) -> 0; peer received 0 bytes
+NPIMSend x300: decrypted=300/300 header_range_1_to_254=yes many_distinct_headers=yes
+NPIMConnectForXfer(TCP, nobody listening) -> 1 connection=null
+NPIMXferReceive(on the failed transfer socket) -> 9 received=0xdeadbeef
+NPIMCloseConnection(UDP) -> 1 connection=cleared
+== TCP client connection against a raw listener
+NPIMConnect("127.0.0.1", TCP) -> 0 connection=null peer_accepted=yes
+NPIMReceive(empty connection) -> 7 received=0xdeadbeef
+NPIMConnect(protocol 0) -> 9
+NPIMConnect(unresolvable host, UDP) -> 9
+== servers publishing a single transport
+NPIMPublish(no transport) -> 0 server=created
+  NPIMAccept -> 9 connection=null
+  NPIMReceiveFrom -> 9 received=0xdeadbeef client=0xfeedf00d
+  NPIMSendTo(client 0) -> 9
+  NPIMGetClientAddress(0) -> 3 ""
+  NPIMCloseServer -> 0 server=cleared
+NPIMPublish(TCP only) -> 0 server=created
+  NPIMAccept -> 7 connection=null
+  NPIMReceiveFrom -> 9 received=0xdeadbeef client=0xfeedf00d
+  NPIMSendTo(client 0) -> 9
+  NPIMGetClientAddress(0) -> 3 ""
+  NPIMCloseServer -> 0 server=cleared
+NPIMPublish(UDP only) -> 0 server=created
+  NPIMAccept -> 9 connection=null
+  NPIMReceiveFrom -> 7 received=0x0 client=0xfeedf00d
+  NPIMSendTo(client 0) -> 10
+  NPIMGetClientAddress(0) -> 3 ""
+  NPIMCloseServer -> 0 server=cleared
+NPIMPublish(TCP+UDP) twice -> 0 then 1 (second server=null)
+NPIMCloseServer(first) -> 0
+== published server (TCP + UDP) with a plugin UDP client
+NPIMPublish("ee-test", "Test Game", TCP+UDP, duplicate check on) -> 0 server=created
+NPIMReceiveFrom(first datagram of a client) -> 0 received=7 client=0 header=<random 1..254> plaintext=22 48 45 4c 4c 4f
+NPIMGetClientAddress(0) -> 0 "127.0.0.1"
+NPIMGetClientAddress(7) -> 3 ""
+NPIMSendTo(client 0, 7 bytes) -> 0
+NPIMReceive(client side) -> 0 received=7 client=0 header=<random 1..254> plaintext=01 52 45 50 4c 59
+NPIMSendTo(client 9) -> 10
+NPIMReceiveFrom(nothing pending) -> 7 received=0 client=0xfeedf00d
+NPIMReceiveFrom(second datagram, same client) -> 0 received=7 client=0 header=<random 1..254> plaintext=22 48 45 4c 4c 4f
+NPIMReceiveFrom(after NPIMResetClientConnection(0)) -> 0 received=7 client=1 header=<random 1..254> plaintext=22 48 45 4c 4c 4f
+NPIMReceiveFrom(new sender while connections are refused) -> 0 received=0xdeadbeef client=0xfeedf00d
+NPIMReceiveFrom(new sender, payload type 0x01) -> 7 received=0x0 client=0xfeedf00d
+NPIMReceiveFrom(new sender, datagram of 3 bytes, type 0x22) -> 7 received=0x0 client=0xfeedf00d
+NPIMReceiveFrom(new sender, datagram of 4 bytes, type 0x22) -> 0 received=4 client=2 header=<random 1..254> plaintext=22 01 02
+NPIMReceiveFrom(new sender, payload type 0x37) -> 0 received=6 client=3 header=<random 1..254> plaintext=37 01 02 03 04
+  (header byte 0x21 preserved: yes)
+NPIMReceiveFrom(header byte 0, clear payload) -> 0 received=6 client=3 header=INVALID plaintext=37 01 02 03 04
+NPIMReceiveFrom over 39 header values (whole key table): decrypted correctly=39 failures: none
+NPIMReceiveFrom(1400-byte payload) -> 0 received=1401 client=3 intact=yes
+NPIMSendTo(1400-byte payload) -> 0; peer received 1401 bytes intact=yes
+NPIMSendTo(to the registered stranger) -> 0
+  stranger captured: wire_length=7 header=<random 1..254> plaintext=01 52 45 50 4c 59 re_encrypts_to_wire=yes
+NPIMReceiveFrom(probe for "ee-test") -> 7 received=0x0 client=0xfeedf00d
+  reply: wire_length=136 header=<random 1..254> type=0x16 service="ee-test" name="Test Game" (padding ignored)
+NPIMReceiveFrom(probe for "another-service") -> 7 received=0x0 client=0xfeedf00d
+  reply: none
+NPIMReceiveFrom(probe while connections are refused) -> 7; reply none
+NPIMAcceptForXfer(nothing pending) -> 7 connection=null
+NPIMConnectForXfer(UDP) -> 13
+NPIMConnectForXfer(connection without state) -> 13
+NPIMConnectForXfer(TCP) -> 0 connection=created
+NPIMAcceptForXfer -> 0 connection=created
+NPIMXferSendTo(client 0, reset earlier, no transfer socket) -> 10
+NPIMXferSendTo(client 99) -> 10
+NPIMXferSendTo(first client with a transfer socket, 8 bytes) -> index 1
+NPIMXferReceive -> 0 received=8 bytes=58 46 45 52 00 01 02 03
+NPIMXferReceive(nothing pending) -> 7 received=0x0
+NPIMAcceptForXfer(peer connected from an address no client uses) -> 13 connection=null
+NPIMXferSendTo(after NPIMResetXfer) -> 10
+NPIMAccept(nothing pending) -> 7 connection=null
+NPIMAccept(peer connected: yes) -> 0 connection=created
+NPIMReceive(TCP) -> 0 received=4 bytes=ca fe 00 01
+NPIMSend(TCP, 10 bytes) -> 0; peer read 10 bytes: 53 45 52 56 45 52 2d 54 43 50
+NPIMSend(TCP, 0 bytes) -> 0
+NPIMIsAlive(accepted TCP) -> 1
+NPIMIsAlive(after peer closed) -> 0
+NPIMReceive(after peer closed) -> 9
+NPIMCloseServer -> 0 server=cleared
+NPIMCloseConnection(transfer connection, client side) -> 1 connection=cleared
+NPIMCloseConnection(accepted TCP) -> 1 connection=cleared
+NPIMCloseConnection(UDP client) -> 1 connection=cleared
+== discovery probe replies depend on the publish flags
+NPIMPublish(UDP, flags 1/1) -> 0; probe answered with NPIMReceiveFrom -> 7; reply none
+  NPIMCloseServer -> 0
+NPIMPublish(UDP, flags 0/0) -> 0; probe answered with NPIMReceiveFrom -> 7; reply none
+  NPIMCloseServer -> 0
+NPIMPublish(UDP, flags 0/1) -> 0; probe answered with NPIMReceiveFrom -> 7; reply sent
+  reply: wire_length=136 type=0x16 service="ee-flags" name="Flag Game"
+  NPIMCloseServer -> 0
+NPIMPublish(64-character service and name) -> 0; reply: wire_length=136 type=0x16 service_intact=yes name_intact=yes
+  NPIMCloseServer -> 0
+== LAN game discovery
+NPIMSearchForGame(empty service name, start) -> 0
+NPIMSearchForGame(stop while not searching) -> 0
+NPIMSearchForGame("ee-test", start) -> 0
+NPIMSearchForGame("ee-test", start again) -> 0
+detected games after the first scan: 1
+NPIMGetDetectedGame(0) -> 0 host="127.0.0.1" service="ee-test" name="Remote Game"
+NPIMGetDetectedGame(1) -> 10
+NPIMConnect(not a detected game) -> 3 connection=null
+NPIMConnect(detected game, UDP) -> 0 connection=created
+  datagram reached 127.0.0.1:33334: wire_length=6 header=<random 1..254> plaintext=22 50 49 4e 47 re_encrypts_to_wire=yes
+NPIMConnect(detected game, TCP) -> 1 connection=null peer_accepted=no
+NPIMSearchForGame(stop) -> 0; detected games afterwards: 0
+NPIMSearchForGame("ee-test", start again after stop) -> 0
+detected games after restarting the search: 1
+NPIMSearchForGame(stop) -> 0; detected games afterwards: 0
+NPIMPublish(name already in use on the LAN, duplicate check on) -> 1 server=null
+NPIMPublish(unused name, duplicate check on) -> 0 server=created
+detected games kept from the scan: 1
+NPIMCloseServer -> 0
+== closing a connection before closing the server
+NPIMPublish(TCP) -> 0
+NPIMAccept -> 0 connection=created
+NPIMCloseConnection -> 0 connection=cleared
+NPIMCloseServer -> 1 server=still set
+NPIMCloseServer (again) -> 1 server=still set
+NPIMDeactivate -> 0
+PIMIsValid -> 0
+== done

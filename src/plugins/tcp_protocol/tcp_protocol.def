@@ -1,0 +1,39 @@
+; Export table of "TCP Protocol.dll".  Names, order and ordinals are identical
+; to the original plugin (the engine resolves them by name with GetProcAddress,
+; but we keep the ordinals too so the two DLLs are interchangeable).  All
+; functions use the plain cdecl convention, so there is no name decoration.
+LIBRARY "TCP Protocol.dll"
+EXPORTS
+    NPIMAccept                @1
+    NPIMAcceptForXfer         @2
+    NPIMActivate              @3
+    NPIMAllowNewConnections   @4
+    NPIMCloseConnection       @5
+    NPIMCloseServer           @6
+    NPIMConnect               @7
+    NPIMConnectForXfer        @8
+    NPIMDeactivate            @9
+    NPIMEnumerateNetworkAdapters @10
+    NPIMGetClientAddress      @11
+    NPIMGetConfiguration      @12
+    NPIMGetDetectedGame       @13
+    NPIMGetDetectedGameCount  @14
+    NPIMGetLocalAddress       @15
+    NPIMGetProtocolType       @16
+    NPIMGetStatus             @17
+    NPIMIsAlive               @18
+    NPIMPublish               @19
+    NPIMReceive               @20
+    NPIMReceiveFrom           @21
+    NPIMResetClientConnection @22
+    NPIMResetXfer             @23
+    NPIMSearchForGame         @24
+    NPIMSend                  @25
+    NPIMSendSingle            @26
+    NPIMSendTo                @27
+    NPIMSetConfiguration      @28
+    NPIMXferReceive           @29
+    NPIMXferSendTo            @30
+    PIMGetName                @31
+    PIMGetType                @32
+    PIMIsValid                @33

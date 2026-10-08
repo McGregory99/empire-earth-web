@@ -1,0 +1,51 @@
+; Import definition for the exports of the original "Low-Level Engine.dll" that
+; our reimplemented plugins and the test harness call.  The names are the MSVC
+; 6 decorated C++ names; `make` turns this file into an import library with
+; dlltool (see the root Makefile).  Keep this list in sync with
+; low_level_engine.h.
+LIBRARY "Low-Level Engine.dll"
+EXPORTS
+    ; UString
+    ??0UString@@QAE@XZ
+    ??0UString@@QAE@K@Z
+    ??0UString@@QAE@PBD@Z
+    ??0UString@@QAE@ABV0@@Z
+    ??1UString@@UAE@XZ
+    ??4UString@@QAEAAV0@ABV0@@Z
+    ??4UString@@QAEAAV0@PBD@Z
+    ??8@YA_NABVUString@@0@Z
+    ; UWideString
+    ??0UWideString@@QAE@XZ
+    ??0UWideString@@QAE@K@Z
+    ??0UWideString@@QAE@PBD@Z
+    ??0UWideString@@QAE@ABV0@@Z
+    ??1UWideString@@UAE@XZ
+    ??4UWideString@@QAEAAV0@ABV0@@Z
+    ??4UWideString@@QAEAAV0@PBD@Z
+    ??8@YA_NABVUWideString@@0@Z
+    ; NEProtocolConfiguration
+    ??0NEProtocolConfiguration@@QAE@KK@Z
+    ??0NEProtocolConfiguration@@QAE@ABV0@@Z
+    ??1NEProtocolConfiguration@@QAE@XZ
+    ; TSScheduler / TSCriticalSection / TSEvent / TSThread
+    ?CreateCriticalSection@TSScheduler@@SAJAAPAVTSCriticalSection@@@Z
+    ?DestroyCriticalSection@TSScheduler@@SAXPAVTSCriticalSection@@@Z
+    ?Enter@TSCriticalSection@@QAEXXZ
+    ?Leave@TSCriticalSection@@QAEXXZ
+    ?CreateEventA@TSScheduler@@SAJAAPAVTSEvent@@_N@Z
+    ?DestroyEvent@TSScheduler@@SAXPAVTSEvent@@@Z
+    ?Set@TSEvent@@QAEJXZ
+    ?Clear@TSEvent@@QAEJXZ
+    ?Wait@TSEvent@@QAEJK@Z
+    ?CreateThread@TSScheduler@@SAJAAPAVTSThread@@P6AKPAX@Z1K_N@Z
+    ?DestroyThread@TSScheduler@@SAJPAVTSThread@@@Z
+    ; URandom, time, error reporting, floating-point control
+    ?Generate@URandom@@QAEMXZ
+    ?TMGetTime@@YAKXZ
+    ?ESRecordNativeError@@YAKK@Z
+    ?ESGetNativeError@@YAKXZ
+    ?ESVerify@@YAXPBDK0@Z
+    ?UMSetFloatingPointPrecision@@YAXK@Z
+    ?UMGetFloatingPointPrecision@@YAKXZ
+    ?UMSetFloatingPointRoundingMode@@YAXK@Z
+    ?UMGetFloatingPointRoundingMode@@YAKXZ
