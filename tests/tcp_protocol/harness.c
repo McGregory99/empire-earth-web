@@ -406,6 +406,20 @@ static TSEvent *new_event(void)
 
 #define POLL_DEFAULT_MS 3000
 
+/*
+ * The plugin associates the Win32 events the engine passes in with its sockets (WSAEventSelect);
+ * the engine sleeps on them.  These helpers observe whether an event fires.
+ */
+static void event_reset(TSEvent *event)
+{
+    ResetEvent(ts_event_handle(event));
+}
+
+static const char *event_state(TSEvent *event, int wait_ms)
+{
+    return WaitForSingleObject(ts_event_handle(event), (DWORD)wait_ms) == WAIT_OBJECT_0 ? "signaled" : "not signaled";
+}
+
 /* Retry `call` while it reports "nothing yet" (status 7) for up to timeout_ms. */
 #define POLL_WHILE_PENDING(rc, timeout_ms, call)                                  \
     do {                                                                          \
@@ -473,6 +487,15 @@ static void scenario_activation(void)
     line("NPIMGetStatus(\"WinSock 2.0\", 0) -> %ld", P.GetStatus(&good, 0));
     line("NPIMGetStatus(\"WinSock 2.0\", 0x82360000) -> %ld", P.GetStatus(&good, 0x82360000ul));
     line("NPIMGetStatus(\"WinSock 1.1\", 0) -> %ld", P.GetStatus(&other, 0));
+    {
+        UWideString unrelated, empty;
+        uwidestring_construct_from_chars(&unrelated, "Something else entirely");
+        uwidestring_construct_from_chars(&empty, "");
+        line("NPIMGetStatus(\"Something else entirely\", 0) -> %ld", P.GetStatus(&unrelated, 0));
+        line("NPIMGetStatus(\"\", 0) -> %ld", P.GetStatus(&empty, 0));
+        uwidestring_destruct(&unrelated);
+        uwidestring_destruct(&empty);
+    }
     line("NPIMDeactivate -> %ld", P.Deactivate());
     line("PIMIsValid -> %d", P.PIMIsValid());
     line("NPIMActivate -> %ld", P.Activate());
@@ -628,6 +651,7 @@ static void scenario_udp_client_wire(void)
     line("NPIMConnect(\"127.0.0.1\", \"ee-test\", \"Test Game\", UDP, adapter 0) -> %ld connection=%s", rc,
          conn->impl ? "created" : "null");
     line("NPIMIsAlive(UDP connection) -> %d", P.IsAlive(conn));
+    line("connection event before any datagram arrived: %s", event_state(event, 0));
 
     /* Outgoing: header byte + XOR-stream-encrypted payload, sent to port 33334. */
     static const uint8_t hello[] = { 0x00, 0x22, 'H', 'E', 'L', 'L', 'O', ' ', 'U', 'D', 'P' };
@@ -653,12 +677,14 @@ static void scenario_udp_client_wire(void)
     memset(plain, 0x00, sizeof plain);
     plain[0] = 0x16;
     size_t spoof_length = seal(spoof, 0x31, plain, 0x87);
+    event_reset(event);
     udp_send(stranger, noise, sizeof noise, &client_addr);
     udp_send(server, spoof, (int)spoof_length, &client_addr);   /* right source, but a 0x88/0x16 packet */
     static const uint8_t reply[] = { 0x01, 'R', 'E', 'P', 'L', 'Y' };
     size_t reply_length = seal(wire, 0x5a, reply, sizeof reply);
     udp_send(server, wire, (int)reply_length, &client_addr);
     Sleep(100);
+    line("connection event after datagrams arrived: %s", event_state(event, 1000));
     received = 0xdeadbeefu;
     POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.Receive(conn, sizeof buffer, buffer, &received));
     line("NPIMReceive(stranger + reply-look-alike + real reply) -> %ld received=%lu", rc, received);
@@ -696,7 +722,7 @@ static void scenario_udp_client_wire(void)
         unsigned decrypted = 0, lowest = 255, highest = 0, distinct = 0;
         unsigned char seen[256];
         memset(seen, 0, sizeof seen);
-        for (int i = 0; i < 300; i++) {
+        for (int i = 0; i < 2000; i++) {
             uint8_t message[16], expected[15];
             message[0] = 0;
             message[1] = 0x22;
@@ -715,7 +741,7 @@ static void scenario_udp_client_wire(void)
             highest = wire[0] > highest ? wire[0] : highest;
             distinct += seen[wire[0]]++ == 0;
         }
-        line("NPIMSend x300: decrypted=%u/300 header_range_1_to_254=%s many_distinct_headers=%s", decrypted,
+        line("NPIMSend x2000: decrypted=%u/2000 header_range_1_to_254=%s many_distinct_headers=%s", decrypted,
              yesno(lowest >= 1 && highest <= 254), yesno(distinct > 100));
     }
 
@@ -979,10 +1005,13 @@ static void scenario_udp_server(void)
     line("NPIMPublish(\"ee-test\", \"Test Game\", TCP+UDP, duplicate check on) -> %ld server=%s", rc,
          server->impl ? "created" : "null");
     NeHandle *cli = connect_udp_client("ee-test", "Test Game", client_event);
+    line("server event before any datagram arrived: %s", event_state(events.activity, 0));
 
     /* First datagram of a new client registers it (payload type 0x22). */
     memcpy(buffer, hello, sizeof hello);
     P.Send(cli, buffer, sizeof hello);
+    Sleep(100);
+    line("server event after a datagram arrived: %s", event_state(events.activity, 1000));
     received = 0xdeadbeefu; client = 0xfeedf00du;
     rc = receive_from_poll(server, buffer, sizeof buffer, &received, &client);
     show_plain("NPIMReceiveFrom(first datagram of a client)", rc, buffer, received, client);
@@ -997,8 +1026,10 @@ static void scenario_udp_server(void)
 
     /* Server -> client. */
     memcpy(buffer, reply, sizeof reply);
+    event_reset(client_event);
     rc = P.SendTo(server, 0, buffer, sizeof reply);
     line("NPIMSendTo(client 0, 7 bytes) -> %ld", rc);
+    line("client event after the server's datagram arrived: %s", event_state(client_event, 1000));
     received = 0xdeadbeefu;
     POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.Receive(cli, sizeof buffer, buffer, &received));
     show_plain("NPIMReceive(client side)", rc, buffer, received, 0);
@@ -1183,8 +1214,13 @@ static void scenario_udp_server(void)
         NeHandle none = { NULL, NULL };
         rc = P.ConnectForXfer(&none, 1, client_event, xclient);
         line("NPIMConnectForXfer(connection without state) -> %ld", rc);
+        event_reset(events.xfer_data);
+        event_reset(events.xfer_accept);
         rc = P.ConnectForXfer(cli, 1, client_event, xclient);
         line("NPIMConnectForXfer(TCP) -> %ld connection=%s", rc, xclient->impl ? "created" : "null");
+        Sleep(100);
+        line("transfer listener events after a peer connected: accept=%s, read=%s", event_state(events.xfer_accept, 1000),
+             event_state(events.xfer_data, 0));
         POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.AcceptForXfer(server, xserver));
         line("NPIMAcceptForXfer -> %ld connection=%s", rc, xserver->impl ? "created" : "null");
         rc = P.XferSendTo(server, 0, blob, sizeof blob);
@@ -1192,6 +1228,7 @@ static void scenario_udp_server(void)
         rc = P.XferSendTo(server, 99, blob, sizeof blob);
         line("NPIMXferSendTo(client 99) -> %ld", rc);
         unsigned long target = 0;
+        event_reset(client_event);
         for (unsigned long i = 1; i < 4; i++) {
             if (P.XferSendTo(server, i, blob, sizeof blob) == 0) {
                 target = i;
@@ -1199,6 +1236,8 @@ static void scenario_udp_server(void)
             }
         }
         line("NPIMXferSendTo(first client with a transfer socket, 8 bytes) -> index %lu", target);
+        Sleep(100);
+        line("client event after transfer data arrived: %s", event_state(client_event, 1000));
         POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.XferReceive(sizeof xbuffer, xbuffer, &xreceived));
         line("NPIMXferReceive -> %ld received=%lu bytes=%s", rc, xreceived, rc == 0 ? hex(xbuffer, xreceived) : "-");
         xreceived = 0xdeadbeefu;
@@ -1230,14 +1269,20 @@ static void scenario_udp_server(void)
     {
         rc = P.Accept(server, tconn);
         line("NPIMAccept(nothing pending) -> %ld connection=%s", rc, tconn->impl ? "created" : "null");
+        event_reset(events.activity);
         SOCKET peer = tcp_connect_peer("127.0.0.1", GAME_PORT);
+        Sleep(100);
+        line("server event after a TCP peer connected: %s", event_state(events.activity, 500));
         POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.Accept(server, tconn));
         line("NPIMAccept(peer connected: %s) -> %ld connection=%s", yesno(peer != INVALID_SOCKET), rc,
              tconn->impl ? "created" : "null");
         if (tconn->impl && peer != INVALID_SOCKET) {
             static const uint8_t out[] = "SERVER-TCP";
             static const uint8_t in[] = { 0xca, 0xfe, 0x00, 0x01 };
+            event_reset(events.activity);
             send(peer, (const char *)in, sizeof in, 0);
+            Sleep(100);
+            line("server event after data arrived on the accepted connection: %s", event_state(events.activity, 500));
             received = 0xdeadbeefu;
             POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.Receive(tconn, sizeof buffer, buffer, &received));
             line("NPIMReceive(TCP) -> %ld received=%lu bytes=%s", rc, received, rc == 0 ? hex(buffer, received) : "-");

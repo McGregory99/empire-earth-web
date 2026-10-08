@@ -20,6 +20,9 @@
 #define EE_LOW_LEVEL_ENGINE_H
 
 #include <stdint.h>
+
+/* <winsock2.h> must come before <windows.h>; plugins using the engine need both anyway. */
+#include <winsock2.h>
 #include <windows.h>
 
 /* Bind a C declaration to a decorated engine export. */
@@ -163,8 +166,9 @@ extern long ENGINE_THISCALL tsevent_clear(TSEvent *self)
 extern long ENGINE_THISCALL tsevent_wait(TSEvent *self, unsigned long timeout_ms)
     ENGINE_EXPORT("?Wait@TSEvent@@QAEJK@Z");
 
+/* The meaning of the last two parameters is not known; the plugin always passes 0 and false. */
 extern long tsscheduler_create_thread(TSThread **out, TSThreadProc procedure, void *argument,
-                                      unsigned long stack_size, unsigned char suspended)
+                                      unsigned long option_a, unsigned char option_b)
     ENGINE_EXPORT("?CreateThread@TSScheduler@@SAJAAPAVTSThread@@P6AKPAX@Z1K_N@Z");
 extern long tsscheduler_destroy_thread(TSThread *thread)
     ENGINE_EXPORT("?DestroyThread@TSScheduler@@SAJPAVTSThread@@@Z");
