@@ -136,7 +136,8 @@ void scenario_udp_server(void)
     POLL_WHILE_PENDING(rc, POLL_DEFAULT_MS, P.Receive(cli, sizeof buffer, buffer, &received));
     show_plain("NPIMReceive(client side)", rc, buffer, received, 0);
     memcpy(buffer, reply, sizeof reply);
-    line("NPIMSendTo(client 9) -> %ld", P.SendTo(server, 9, buffer, sizeof reply));
+    rc = P.SendTo(server, 9, buffer, sizeof reply);
+    line("NPIMSendTo(client 9) -> %ld, caller buffer untouched: %s", rc, yesno(memcmp(buffer, reply, sizeof reply) == 0));
 
     /* Nothing pending. */
     received = 0xdeadbeefu; client = 0xfeedf00du;

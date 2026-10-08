@@ -21,28 +21,34 @@
  */
 #include <fcntl.h>
 #include <io.h>
+#include <process.h>
 
 #include "harness.h"
 
 static const struct Scenario {
     const char *name;
     void (*run)(void);
+    int isolated; /* run in a process of its own, after the others */
 } kScenarios[] = {
-    { "exports", scenario_exports },
-    { "identity", scenario_identity },
-    { "activation", scenario_activation },
-    { "configuration", scenario_configuration },
-    { "network", scenario_network_info },
-    { "adapters", scenario_adapters },
-    { "detected-empty", scenario_empty_detected_games },
-    { "send-single", scenario_send_single },
-    { "udp-client", scenario_udp_client_wire },
-    { "tcp-client", scenario_tcp_client },
-    { "single-transport", scenario_single_transport_servers },
-    { "udp-server", scenario_udp_server },
-    { "probe-flags", scenario_probe_flags },
-    { "discovery", scenario_discovery },
-    { "close-order", scenario_close_order_quirk },
+    { "exports", scenario_exports, 0 },
+    { "identity", scenario_identity, 0 },
+    { "activation", scenario_activation, 0 },
+    { "configuration", scenario_configuration, 0 },
+    { "network", scenario_network_info, 0 },
+    { "adapters", scenario_adapters, 0 },
+    { "detected-empty", scenario_empty_detected_games, 0 },
+    { "send-single", scenario_send_single, 0 },
+    { "udp-client", scenario_udp_client_wire, 0 },
+    { "tcp-client", scenario_tcp_client, 0 },
+    { "single-transport", scenario_single_transport_servers, 0 },
+    { "udp-server", scenario_udp_server, 0 },
+    { "probe-flags", scenario_probe_flags, 0 },
+    { "discovery", scenario_discovery, 0 },
+    { "close-order", scenario_close_order_quirk, 0 },
+    { "leak-scan-sendto", scenario_leak_scan_sendto, 1 },
+    { "leak-scan-ioctl", scenario_leak_scan_ioctl, 1 },
+    { "leak-transfer-listener", scenario_leak_transfer_listener, 1 },
+    { "faults", scenario_faults, 0 },
 };
 
 /* Optional extra arguments restrict the run to the named scenarios (debugging aid). */
@@ -59,19 +65,36 @@ static int scenario_selected(const char *name, int argc, char **argv)
 static DWORD WINAPI watchdog_main(LPVOID argument)
 {
     (void)argument;
-    Sleep(180000);
+    Sleep(240000);
     line("WATCHDOG: harness took too long, aborting");
     ExitProcess(3);
     return 0;
 }
 
+/* Run one scenario in a fresh process: `harness <plugin> --isolated <scenario>`; its output joins ours. */
+static void run_isolated(const char *plugin, const char *scenario)
+{
+    char exe[MAX_PATH], quoted_exe[MAX_PATH + 2], quoted_plugin[MAX_PATH + 2];
+    intptr_t status;
+
+    GetModuleFileNameA(NULL, exe, sizeof exe);
+    snprintf(quoted_exe, sizeof quoted_exe, "\"%s\"", exe);          /* spawn does not quote its arguments */
+    snprintf(quoted_plugin, sizeof quoted_plugin, "\"%s\"", plugin);
+    fflush(stdout);
+    status = _spawnl(_P_WAIT, exe, quoted_exe, quoted_plugin, "--isolated", scenario, (char *)NULL);
+    if (status != 0) {
+        line("ISOLATED RUN OF %s FAILED (status %ld)", scenario, (long)status);
+    }
+}
+
 int main(int argc, char **argv)
 {
     WSADATA wsa;
+    int isolated_child = argc == 4 && strcmp(argv[2], "--isolated") == 0;
 
     _setmode(_fileno(stdout), _O_BINARY);
     if (argc < 2) {
-        fprintf(stderr, "usage: harness <path to TCP Protocol.dll>\n");
+        fprintf(stderr, "usage: harness <path to TCP Protocol.dll> [scenario ...]\n");
         return 2;
     }
     CreateThread(NULL, 0, watchdog_main, NULL, 0, NULL);
@@ -82,15 +105,28 @@ int main(int argc, char **argv)
     }
     init_key_table();
 
+    if (isolated_child) {
+        /* Activate quietly, then run the one scenario that was asked for. */
+        g_plugin_active = P.Activate() == 0;
+        for (size_t i = 0; i < sizeof kScenarios / sizeof kScenarios[0]; i++) {
+            if (strcmp(kScenarios[i].name, argv[3]) == 0 && g_plugin_active) {
+                kScenarios[i].run();
+            }
+        }
+        return 0;
+    }
+
     for (size_t i = 0; i < sizeof kScenarios / sizeof kScenarios[0]; i++) {
         if (argc != 2 && !scenario_selected(kScenarios[i].name, argc, argv)) {
             continue;
         }
         if (i > 2 && !g_plugin_active) {
             line("SKIPPED %s: the plugin did not activate", kScenarios[i].name);
-            continue;
+        } else if (kScenarios[i].isolated) {
+            run_isolated(argv[1], kScenarios[i].name);
+        } else {
+            kScenarios[i].run();
         }
-        kScenarios[i].run();
     }
 
     line("NPIMDeactivate -> %ld", P.Deactivate());

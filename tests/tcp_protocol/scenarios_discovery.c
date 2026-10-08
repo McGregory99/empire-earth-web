@@ -84,6 +84,7 @@ void scenario_discovery(void)
     line("NPIMSearchForGame(stop while not searching) -> %ld", P.SearchForGame(&nothing, &service, 0));
 
     feeder_start(&feeder, "ee-test", "Remote Game");
+    forget_sent_datagrams();
     line("NPIMSearchForGame(\"ee-test\", start) -> %ld", P.SearchForGame(&nothing, &service, 1));
     line("NPIMSearchForGame(\"ee-test\", start again) -> %ld", P.SearchForGame(&nothing, &service, 1));
     unsigned long count = 0;
@@ -95,6 +96,20 @@ void scenario_discovery(void)
         Sleep(25);
     }
     line("detected games after the first scan: %lu", count);
+    {
+        /* What the scan put on the wire: a probe broadcast to port 33334. */
+        const struct SentDatagram *probe = first_broadcast_datagram();
+        uint8_t plain[256];
+
+        if (probe->length > 0) {
+            size_t plain_length = unseal(plain, probe->data, (size_t)probe->length);
+            line("the scan broadcast a probe to %s:%u: length %d, header %s, type 0x%02x, service \"%s\" (padding ignored)",
+                 inet_ntoa(probe->to.sin_addr), ntohs(probe->to.sin_port), probe->length, header_text(probe->data[0]),
+                 plain[0], plain_length > 1 ? (const char *)plain + 1 : "");
+        } else {
+            line("the scan broadcast nothing");
+        }
+    }
     long rc = P.GetDetectedGame(0, &address, &game_service, &game_name);
     line("NPIMGetDetectedGame(0) -> %ld host=\"%s\" service=\"%s\" name=\"%s\"", rc, chars_of(&address),
          chars_of(&game_service), wchars_of(&game_name));

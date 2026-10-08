@@ -109,8 +109,37 @@ int bind_plugin(const char *path);
 
 /* How many adapters the replacement GetAdaptersInfo reports (0 = none). */
 extern int g_fake_adapter_count;
+/* Give the plugin a fixed host name and address list (10.1.2.3, 10.1.2.4); see interposer.c. */
+void fake_host_enable(int on);
+
+/* A datagram the plugin sent, recorded by the interposer. */
+struct SentDatagram {
+    uint8_t data[2048];
+    int length;
+    struct sockaddr_in to;
+};
+const struct SentDatagram *last_sent_datagram(void);
+/* The first datagram sent to the broadcast address (the probe of a LAN scan) since forget_sent_datagrams(). */
+const struct SentDatagram *first_broadcast_datagram(void);
+void forget_sent_datagrams(void);
+/* While on, the plugin's sendto is recorded but nothing is sent; it reports success. */
+void swallow_sendto(int on);
 /* Redirect the plugin's imports (adapters, Winsock, engine error reporting) to the harness. */
 void interposer_install(HMODULE plugin);
+
+/* Special results for fault_inject: a send that reports one byte less than requested, and a WSAStartup that succeeds
+ * but reports version 1.1. */
+#define FAULT_SHORT (-2)
+#define FAULT_BAD_VERSION (-3)
+/*
+ * Make `count` calls of the Winsock function `function` that the plugin makes (after skipping `skip`
+ * calls) fail with `result` and Winsock error `error`.
+ */
+void fault_inject(const char *function, int skip, int count, long result, int error);
+/* "fault used" / "fault NOT REACHED"; disarms the fault. */
+const char *fault_state(void);
+/* The error reports the plugin made to the engine since the last call, e.g. "record(10065) acknowledge". */
+const char *engine_errors(void);
 
 /* ---- wire.c ------------------------------------------------------------- */
 
@@ -196,5 +225,10 @@ void scenario_udp_server(void);
 void scenario_probe_flags(void);
 void scenario_discovery(void);
 void scenario_close_order_quirk(void);
+void scenario_faults(void);
+/* These leave the game port bound; harness.c runs each in a process of its own. */
+void scenario_leak_scan_sendto(void);
+void scenario_leak_scan_ioctl(void);
+void scenario_leak_transfer_listener(void);
 
 #endif /* TCP_PROTOCOL_HARNESS_H */

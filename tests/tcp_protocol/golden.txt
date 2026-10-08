@@ -64,17 +64,20 @@ NPIMGetLocalAddress(0) -> dotted-quad
 NPIMGetLocalAddress(1) -> dotted-quad
 NPIMGetLocalAddress returns one shared object: yes
 NPIMGetLocalAddress(99) -> dotted-quad same_as_adapter_0=yes
-== network adapters (GetAdaptersInfo replaced by the harness)
+== network adapters (GetAdaptersInfo and the host's addresses replaced by the harness)
 3 adapter(s) present: NPIMEnumerateNetworkAdapters -> 3, vector holds 3, first "Test adapter 1", last "Test adapter 3"
 10 adapter(s) present: NPIMEnumerateNetworkAdapters -> 10, vector holds 10, first "Test adapter 1", last "Test adapter 10"
 1 adapter(s) present: NPIMEnumerateNetworkAdapters -> 1, vector holds 1, first "Test adapter 1", last "Test adapter 1"
 0 adapter(s) present: NPIMEnumerateNetworkAdapters -> 0, vector holds 0, first "-", last "-"
-NPIMGetLocalAddress(0) -> the expected address of the adapter: yes
-NPIMGetLocalAddress(1) -> the expected address of the adapter: yes
-NPIMGetLocalAddress(2) -> the expected address of the adapter: yes
-NPIMGetLocalAddress(3) -> the expected address of the adapter: yes
-NPIMGetLocalAddress(4) -> the expected address of the adapter: yes
-NPIMGetLocalAddress(99) -> the expected address of the adapter: yes
+NPIMGetLocalAddress(0) -> 10.1.2.3
+NPIMGetLocalAddress(1) -> 10.1.2.3
+NPIMGetLocalAddress(2) -> 10.1.2.4
+NPIMGetLocalAddress(3) -> 10.1.2.3
+NPIMGetLocalAddress(4) -> 10.1.2.3
+NPIMGetLocalAddress(99) -> 10.1.2.3
+after selecting adapter 1: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.3:40103
+after selecting adapter 2: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.4:40103
+after selecting adapter 3: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.3:40103
 == detected games (nothing searched yet)
 NPIMGetDetectedGameCount -> 0
 NPIMGetDetectedGame(0) -> 10
@@ -140,7 +143,7 @@ NPIMGetClientAddress(7) -> 3 ""
 NPIMSendTo(client 0, 7 bytes) -> 0
 client event after the server's datagram arrived: signaled
 NPIMReceive(client side) -> 0 received=7 client=0 header=<random 1..254> plaintext=01 52 45 50 4c 59
-NPIMSendTo(client 9) -> 10
+NPIMSendTo(client 9) -> 10, caller buffer untouched: yes
 NPIMReceiveFrom(nothing pending) -> 7 received=0 client=0xfeedf00d
 NPIMReceiveFrom(second datagram, same client) -> 0 received=7 client=0 header=<random 1..254> plaintext=22 48 45 4c 4c 4f
 NPIMReceiveFrom(after NPIMResetClientConnection(0)) -> 0 received=7 client=1 header=<random 1..254> plaintext=22 48 45 4c 4c 4f
@@ -205,6 +208,7 @@ NPIMSearchForGame(stop while not searching) -> 0
 NPIMSearchForGame("ee-test", start) -> 0
 NPIMSearchForGame("ee-test", start again) -> 0
 detected games after the first scan: 1
+the scan broadcast a probe to 255.255.255.255:33334: length 67, header <random 1..254>, type 0x15, service "ee-test" (padding ignored)
 NPIMGetDetectedGame(0) -> 0 host="127.0.0.1" service="ee-test" name="Remote Game"
 NPIMGetDetectedGame(1) -> 10
 NPIMConnect(not a detected game) -> 3 connection=null
@@ -225,6 +229,93 @@ NPIMAccept -> 0 connection=created
 NPIMCloseConnection -> 0 connection=cleared
 NPIMCloseServer -> 1 server=still set
 NPIMCloseServer (again) -> 1 server=still set
+== a failed LAN scan keeps the game port (probe not sent)
+sendto fails during the LAN scan: NPIMPublish(UDP, duplicate check on) -> 1; fault used; engine: record(10065) acknowledge record(10048) acknowledge 
+a second NPIMPublish(UDP) -> 1 server=null; no fault armed; engine: record(10048) acknowledge 
+== a failed LAN scan keeps the game port (reply socket not made non-blocking)
+ioctlsocket fails during the LAN scan: NPIMPublish(UDP, duplicate check on) -> 1; fault used; engine: record(10038) acknowledge record(10048) acknowledge 
+a second NPIMPublish(UDP) -> 1 server=null; no fault armed; engine: record(10048) acknowledge 
+== a failed publish keeps the game port (bulk-transfer listener cannot be opened)
+transfer listener bind fails: NPIMPublish(TCP+UDP) -> 1; fault used; engine: record(10048) 
+a second NPIMPublish(TCP+UDP) -> 1 server=null; no fault armed; engine: record(10048) acknowledge 
+== error paths (faults injected into the plugin's Winsock calls)
+-- activation
+WSACleanup fails: NPIMDeactivate -> 1, PIMIsValid 1; fault used; engine: record(10093) 
+NPIMDeactivate -> 0, PIMIsValid 0
+WSAStartup fails: NPIMActivate -> 1, PIMIsValid 0; fault used; engine: record(10091) 
+WSAStartup reports version 1.1: NPIMActivate -> 9, PIMIsValid 0; fault used; engine: no errors reported
+no stream socket can be created: NPIMActivate -> 9, PIMIsValid 0; fault used; engine: no errors reported
+NPIMActivate -> 0, PIMIsValid 1
+-- connections
+socket fails: NPIMConnect(UDP) -> 1 connection=null; fault used; engine: record(10024) acknowledge 
+connect fails: NPIMConnect(TCP) -> 1 connection=null; fault used; engine: record(10061) acknowledge 
+bind fails: NPIMConnect(UDP) -> 0 connection=null; fault used; engine: no errors reported
+NPIMConnect(UDP) -> 0 connection=created
+sendto fails: NPIMSend(UDP) -> 1; fault used; engine: record(10065) acknowledge 
+sendto sends too few bytes: NPIMSend(UDP) -> 9; fault used; engine: no errors reported
+recvfrom fails: NPIMReceive(UDP) -> 1 received=0xdeadbeef; fault used; engine: record(10054) 
+recvfrom would block: NPIMReceive(UDP) -> 7 received=0x0; fault used; engine: no errors reported
+recvfrom returns nothing: NPIMReceive(UDP) -> 9 received=0xdeadbeef; fault used; engine: no errors reported
+socket fails: NPIMSendSingle -> 0; fault used; engine: no errors reported
+bind fails: NPIMSendSingle -> 1; fault used; engine: record(10048) acknowledge 
+sendto fails: NPIMSendSingle -> 1; fault used; engine: record(10065) acknowledge 
+sendto sends too few bytes: NPIMSendSingle -> 9; fault used; engine: no errors reported
+socket fails: NPIMConnectForXfer -> 1 connection=null; fault used; engine: record(10024) acknowledge 
+connect fails: NPIMConnectForXfer -> 1 connection=null; fault used; engine: record(10061) acknowledge 
+recv fails: NPIMXferReceive -> 1 received=0xdeadbeef; fault used; engine: record(10054) 
+recv would block: NPIMXferReceive -> 7 received=0x0; fault used; engine: no errors reported
+recv returns nothing: NPIMXferReceive -> 9 received=0xdeadbeef; fault used; engine: no errors reported
+neither socket can be closed: NPIMCloseConnection -> 1 connection=still set; fault used; engine: record(10038) acknowledge record(10038) acknowledge 
+the transfer listener cannot be closed: NPIMCloseConnection -> 1 connection=cleared; fault used; engine: record(10038) acknowledge 
+-- publishing
+TCP socket fails: NPIMPublish -> 1; fault used; engine: record(10024) 
+TCP non-blocking mode fails: NPIMPublish -> 1; fault used; engine: record(10038) 
+TCP bind fails: NPIMPublish -> 1; fault used; engine: record(10048) acknowledge 
+TCP getsockname fails: NPIMPublish -> 1; fault used; engine: record(10038) 
+TCP listen fails: NPIMPublish -> 1; fault used; engine: record(10022) 
+UDP socket fails: NPIMPublish -> 1; fault used; engine: record(10024) 
+UDP bind fails: NPIMPublish -> 1; fault used; engine: record(10048) acknowledge 
+UDP after TCP: socket fails: NPIMPublish -> 1; fault used; engine: record(10024) 
+UDP after TCP: bind fails: NPIMPublish -> 1; fault used; engine: record(10048) acknowledge 
+-- LAN scan while publishing
+broadcast socket fails: NPIMPublish(UDP, duplicate check on) -> 0 server=created; fault used; engine: record(10024) acknowledge 
+  NPIMCloseServer -> 0
+SO_BROADCAST fails: NPIMPublish(UDP, duplicate check on) -> 0 server=created; fault used; engine: record(10055) acknowledge 
+  NPIMCloseServer -> 0
+reply socket fails: NPIMPublish(UDP, duplicate check on) -> 0 server=created; fault used; engine: record(10038) acknowledge 
+  NPIMCloseServer -> 0
+reply socket bind fails: NPIMPublish(UDP, duplicate check on) -> 0 server=created; fault used; engine: record(10048) acknowledge 
+  NPIMCloseServer -> 0
+-- server
+NPIMPublish(TCP+UDP) -> 0
+a client registers: NPIMReceiveFrom -> 0 client=0
+accept fails: NPIMAccept -> 1; fault used; engine: record(10038) 
+accept would block: NPIMAccept -> 7; fault used; engine: record(10035) 
+NPIMAccept(peer connected: yes) -> 0 connection=created
+send fails: NPIMSend(TCP) -> 1; fault used; engine: record(10054) acknowledge 
+recv fails: NPIMReceive(TCP) -> 1 received=0xdeadbeef; fault used; engine: record(10054) 
+recv would block: NPIMReceive(TCP) -> 7 received=0x0; fault used; engine: no errors reported
+recv returns nothing: NPIMReceive(TCP) -> 9 received=0xdeadbeef; fault used; engine: no errors reported
+a byte is waiting: NPIMIsAlive(TCP) -> 1; fault used; engine: no errors reported
+the peer closed: NPIMIsAlive(TCP) -> 0; fault used; engine: no errors reported
+the call would block: NPIMIsAlive(TCP) -> 1; fault used; engine: no errors reported
+the connection was reset: NPIMIsAlive(TCP) -> 0; fault used; engine: no errors reported
+recvfrom fails: NPIMReceiveFrom -> 1 received=0xdeadbeef; fault used; engine: record(10054) 
+recvfrom would block: NPIMReceiveFrom -> 7 received=0x0; fault used; engine: no errors reported
+recvfrom returns nothing: NPIMReceiveFrom -> 9 received=0xdeadbeef; fault used; engine: no errors reported
+sendto fails: NPIMSendTo -> 1; fault used; engine: record(10065) acknowledge 
+sendto sends too few bytes: NPIMSendTo -> 9; fault used; engine: no errors reported
+accept fails: NPIMAcceptForXfer -> 1; fault used; engine: record(10038) 
+accept would block: NPIMAcceptForXfer -> 7; fault used; engine: record(10035) 
+NPIMAcceptForXfer -> 0 connection=created
+send would block once: NPIMXferSendTo -> 0; peer got 4 bytes (status 0); fault used; engine: no errors reported
+send fails: NPIMXferSendTo -> 1; fault used; engine: no errors reported
+NPIMCloseServer -> 0
+NPIMPublish(UDP, discoverable) -> 0
+socket fails while answering a probe: NPIMReceiveFrom -> 7; fault used; engine: record(10024) acknowledge 
+sendto fails while answering a probe: NPIMReceiveFrom -> 7; fault used; engine: record(10065) acknowledge 
+the sockets cannot be closed: NPIMCloseServer -> 1 server=still set; fault used; engine: record(10038) acknowledge record(10038) acknowledge 
+the transfer listener cannot be closed: NPIMCloseServer -> 1 server=still set; fault used; engine: record(10038) acknowledge 
 NPIMDeactivate -> 0
 PIMIsValid -> 0
 == done

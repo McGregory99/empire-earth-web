@@ -122,16 +122,16 @@ void scenario_network_info(void)
          yesno(far_adapter && strcmp(first_text, wchars_of(far_adapter)) == 0));
 }
 
-/* The plugin's adapter handling, fed by the harness's own GetAdaptersInfo (see fake_get_adapters_info). */
+/* The plugin's adapter handling, fed by the harness's own GetAdaptersInfo and host address list (see interposer.c). */
 void scenario_adapters(void)
 {
     static const int counts[] = { 3, 10, 1, 0 };
+    static const unsigned long numbers[] = { 0, 1, 2, 3, 4, 99 };
+    static const uint8_t payload[] = { 1, 2, 3 };
     WideStringVector adapters = { 0, NULL, NULL, NULL };
-    char host_name[256];
-    struct hostent *host;
-    int host_addresses = 0;
+    UString destination;
 
-    line("== network adapters (GetAdaptersInfo replaced by the harness)");
+    line("== network adapters (GetAdaptersInfo and the host's addresses replaced by the harness)");
     for (size_t i = 0; i < sizeof counts / sizeof counts[0]; i++) {
         g_fake_adapter_count = counts[i];
         unsigned long count = P.EnumerateNetworkAdapters(&adapters);
@@ -147,26 +147,34 @@ void scenario_adapters(void)
     }
     free(adapters.first);
 
-    /* Adapter n has the n-th address of this host; the plugin maps it back to that list position. */
+    /*
+     * The host has two addresses, 10.1.2.3 and 10.1.2.4.  Adapters 1 and 2 have those addresses,
+     * adapter 3 an address that is not on the list; there is no adapter 4.  The plugin maps an
+     * adapter number to the position of its address in the host's list (0 if it is not there).
+     */
+    fake_host_enable(1);
     g_fake_adapter_count = 3;
-    if (gethostname(host_name, sizeof host_name) == 0 && (host = gethostbyname(host_name)) != NULL) {
-        while (host->h_addr_list[host_addresses]) {
-            host_addresses++;
-        }
-        static const unsigned long numbers[] = { 0, 1, 2, 3, 4, 99 };
-        for (size_t i = 0; i < sizeof numbers / sizeof numbers[0]; i++) {
-            unsigned long adapter = numbers[i];
-            /* Adapters 1..3 exist; one whose address is not on the host (or a missing one) selects position 0. */
-            int position = (adapter >= 1 && adapter <= 3 && (int)adapter - 1 < host_addresses) ? (int)adapter - 1 : 0;
-            const char *expected = inet_ntoa(*(struct in_addr *)host->h_addr_list[position]);
-            UWideString *address = P.GetLocalAddress(adapter);
+    for (size_t i = 0; i < sizeof numbers / sizeof numbers[0]; i++) {
+        UWideString *address = P.GetLocalAddress(numbers[i]);
 
-            line("NPIMGetLocalAddress(%lu) -> the expected address of the adapter: %s", adapter,
-                 yesno(address && strcmp(wchars_of(address), expected) == 0));
-        }
-    } else {
-        line("NPIMGetLocalAddress: skipped, this host has no address list");
+        line("NPIMGetLocalAddress(%lu) -> %s", numbers[i], wchars_of(address));
     }
+
+    /* NPIMSendSingle indexes the *destination's* address list with that position. */
+    ustring_construct_from_chars(&destination, "harness-host");
+    swallow_sendto(1);
+    for (size_t i = 1; i <= 3; i++) {
+        P.GetLocalAddress(i);
+        forget_sent_datagrams();
+        long rc = P.SendSingle(&destination, 40103, payload, sizeof payload);
+        const struct SentDatagram *sent = last_sent_datagram();
+
+        line("after selecting adapter %zu: NPIMSendSingle(\"harness-host\", 40103) -> %ld, sent %d bytes to %s:%u", i, rc,
+             sent->length, inet_ntoa(sent->to.sin_addr), ntohs(sent->to.sin_port));
+    }
+    swallow_sendto(0);
+    ustring_destruct(&destination);
+    fake_host_enable(0);
     g_fake_adapter_count = 0;
 }
 
