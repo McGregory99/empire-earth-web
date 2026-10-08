@@ -199,10 +199,6 @@ static bool name_in_use_on_lan(const UString *service, const UWideString *name)
  * `internet_game` is set, the LAN is checked for a game of the same name (failing with
  * NET_FAILED if there is one), and a server answers LAN discovery probes only if it is not an
  * internet game and `announce_on_lan` is set.
- *
- * Deviation from the original: when the transfer listener cannot be opened, the original
- * reports failure but leaves the half-built server (and its bound sockets) behind; we
- * dispose of it.
  */
 long NPIMPublish(const UString *service, const UWideString *name, unsigned long transports,
                  TSEvent *socket_event, TSEvent *transfer_data_event, TSEvent *transfer_accept_event,
@@ -228,13 +224,16 @@ long NPIMPublish(const UString *service, const UWideString *name, unsigned long 
     }
     ustring_assign(&state->service, service);
     uwidestring_assign(&state->name, name);
-
-    if (!open_transfer_listener(transfer_data_event, transfer_accept_event)) {
-        server_state_abandon(state);
-        return NET_FAILED;
-    }
     server->state = state;
-    return NET_OK;
+
+    /*
+     * Known defect of the original, kept so that behavior stays identical: if the transfer
+     * listener cannot be opened the call reports failure but the server just built stays
+     * behind, with its sockets bound to the game port, so the next NPIMPublish fails with
+     * "address in use".  The engine discards its NEServer wrapper when this call fails and so
+     * can never close the server.
+     */
+    return open_transfer_listener(transfer_data_event, transfer_accept_event) ? NET_OK : NET_FAILED;
 }
 
 /*

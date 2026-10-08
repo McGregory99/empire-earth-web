@@ -114,11 +114,15 @@ long discovery_scan(const UString *service)
         lock_enter(g_plugin.game_lock);
         game_list_assign(&g_plugin.detected_games, &g_plugin.scan_results);
         lock_leave(g_plugin.game_lock);
+        closesocket(reply_socket);
         result = NET_OK;
     }
-    if (reply_socket != INVALID_SOCKET) {
-        closesocket(reply_socket);
-    }
+    /*
+     * Known defect of the original, kept so that behavior stays identical: a scan that fails
+     * never closes its reply socket.  If it got as far as binding it, the socket stays bound to
+     * the game port until the process ends, so every later scan and every later NPIMPublish
+     * fails with "address in use".
+     */
     if (probe_socket != INVALID_SOCKET) {
         closesocket(probe_socket);
     }
