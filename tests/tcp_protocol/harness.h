@@ -109,8 +109,11 @@ int bind_plugin(const char *path);
 
 /* How many adapters the replacement GetAdaptersInfo reports (0 = none). */
 extern int g_fake_adapter_count;
-/* Give the plugin a fixed host name and address list (10.1.2.3, 10.1.2.4); see interposer.c. */
-void fake_host_enable(int on);
+/*
+ * Give the plugin a fixed host name and address list; see interposer.c.  Mode 1: 10.1.2.3 and
+ * 10.1.2.4.  Mode 2: 0.0.0.0 and 10.1.2.4.  Mode 0: the real host.
+ */
+void fake_host_enable(int mode);
 
 /* A datagram the plugin sent, recorded by the interposer. */
 struct SentDatagram {

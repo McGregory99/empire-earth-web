@@ -78,6 +78,7 @@ NPIMGetLocalAddress(99) -> 10.1.2.3
 after selecting adapter 1: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.3:40103
 after selecting adapter 2: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.4:40103
 after selecting adapter 3: NPIMSendSingle("harness-host", 40103) -> 0, sent 3 bytes to 10.1.2.3:40103
+NPIMGetLocalAddress(0) on a host whose address is 0.0.0.0 -> the address that routes outside: yes
 == detected games (nothing searched yet)
 NPIMGetDetectedGameCount -> 0
 NPIMGetDetectedGame(0) -> 10

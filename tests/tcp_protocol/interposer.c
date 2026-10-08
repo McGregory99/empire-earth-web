@@ -29,9 +29,9 @@ static struct in_addr g_fake_host_addresses[2];
 static char *g_fake_host_address_list[3];
 static struct hostent g_fake_host;
 
-void fake_host_enable(int on)
+void fake_host_enable(int mode)
 {
-    g_fake_host_addresses[0].s_addr = inet_addr("10.1.2.3");
+    g_fake_host_addresses[0].s_addr = inet_addr(mode == 2 ? "0.0.0.0" : "10.1.2.3");
     g_fake_host_addresses[1].s_addr = inet_addr("10.1.2.4");
     g_fake_host_address_list[0] = (char *)&g_fake_host_addresses[0];
     g_fake_host_address_list[1] = (char *)&g_fake_host_addresses[1];
@@ -41,7 +41,7 @@ void fake_host_enable(int on)
     g_fake_host.h_addrtype = AF_INET;
     g_fake_host.h_length = 4;
     g_fake_host.h_addr_list = g_fake_host_address_list;
-    g_fake_host_enabled = on;
+    g_fake_host_enabled = mode;
 }
 
 static int WINAPI hook_gethostname(char *name, int length)

@@ -174,6 +174,26 @@ void scenario_adapters(void)
     }
     swallow_sendto(0);
     ustring_destruct(&destination);
+
+    /* A host whose address is 0.0.0.0 makes the plugin ask the OS which local address routes to the outside. */
+    fake_host_enable(2);
+    {
+        UWideString *address = P.GetLocalAddress(0);
+        char routed[32] = "0.0.0.0";
+        struct sockaddr_in remote = make_addr("128.127.126.125", 7), local;
+        int local_length = sizeof local;
+        SOCKET probe = socket(AF_INET, SOCK_DGRAM, 0);
+
+        if (probe != INVALID_SOCKET) {
+            if (connect(probe, (struct sockaddr *)&remote, sizeof remote) == 0 &&
+                getsockname(probe, (struct sockaddr *)&local, &local_length) == 0) {
+                snprintf(routed, sizeof routed, "%s", inet_ntoa(local.sin_addr));
+            }
+            closesocket(probe);
+        }
+        line("NPIMGetLocalAddress(0) on a host whose address is 0.0.0.0 -> the address that routes outside: %s",
+             yesno(strcmp(wchars_of(address), routed) == 0));
+    }
     fake_host_enable(0);
     g_fake_adapter_count = 0;
 }
