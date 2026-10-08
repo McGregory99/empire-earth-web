@@ -5,10 +5,13 @@
 #   make golden       regenerate tests/tcp_protocol/golden.txt from the ORIGINAL DLL (the oracle)
 #   make determinism  run the harness twice against the original and require identical output
 #   make test-stub    negative control: the broken stub must NOT match the golden transcript
-#   make check-abi    compare exports/ordinals/imports of our DLL with the original
+#   make check-abi    compare exports, ordinals and imports of our DLL with the original
+#   make wine-prefix  one-time setup of the private Wine prefix used for the tests
 #
 # Everything outside the repository (original game binaries, Wine prefix, test
-# beds) is configured by the variables below and never written to the repo.
+# beds) is configured by the variables below and never written to the repo.  The
+# differential test needs a network interface with a LAN address: the plugin's
+# game discovery broadcasts UDP datagrams, and the harness contains a scenario for it.
 
 # ---- toolchain ---------------------------------------------------------------
 TARGET  := i686-w64-mingw32
@@ -46,10 +49,10 @@ ENGINE_LIB := $(BUILD)/libengine.a
 GOLDEN    := tests/tcp_protocol/golden.txt
 
 # RED stage: "ours" is still the failing stub, there is no reimplementation yet.
-PLUGIN_SOURCES := tests/tcp_protocol/stub/stub.c
+PLUGIN_SOURCES := $(wildcard src/plugins/tcp_protocol/*.c)
 PLUGIN_HEADERS := src/engine_abi/low_level_engine.h
 
-.PHONY: all test golden determinism test-stub check-abi clean testbed-ours testbed-original testbed-stub
+.PHONY: all test golden determinism test-stub check-abi wine-prefix clean testbed-ours testbed-original testbed-stub
 
 all: $(PLUGIN) $(STUB) $(HARNESS)
 
@@ -61,7 +64,7 @@ $(ENGINE_LIB): src/engine_abi/low_level_engine.def | $(BUILD)/ours
 	$(DLLTOOL) --no-leading-underscore -d $< -l $@
 
 $(PLUGIN): $(PLUGIN_SOURCES) $(PLUGIN_HEADERS) src/plugins/tcp_protocol/tcp_protocol.def $(ENGINE_LIB) | $(BUILD)/ours
-	$(CC) $(CFLAGS) -shared -o "$@" $(PLUGIN_SOURCES) src/plugins/tcp_protocol/tcp_protocol.def \
+	$(CC) $(CFLAGS) -shared -s -o "$@" $(PLUGIN_SOURCES) src/plugins/tcp_protocol/tcp_protocol.def \
 	    -L $(BUILD) -lengine -lws2_32 -liphlpapi
 
 $(STUB): tests/tcp_protocol/stub/stub.c src/plugins/tcp_protocol/tcp_protocol.def | $(BUILD)/stub
@@ -90,9 +93,12 @@ testbed-ours: $(PLUGIN) $(HARNESS)
 testbed-stub: $(STUB) $(HARNESS)
 	$(call install_testbed,stub,$(STUB_PATH))
 
-# run_harness <variant> <output file>
+# run_harness <variant> <output file>: stdout is the transcript (Wine's chatter goes to stderr).
+# The perl wrapper stops a hung run after 5 minutes.
+HARNESS_TIMEOUT ?= 300
 define run_harness
-	cd "$(TESTBED)/$(1)" && "$(WINE)" harness.exe "TCP Protocol.dll" > "$(CURDIR)/$(2)" 2>/dev/null; \
+	cd "$(TESTBED)/$(1)" && perl -e 'alarm shift; exec @ARGV' $(HARNESS_TIMEOUT) "$(WINE)" harness.exe "TCP Protocol.dll" \
+	    > "$(CURDIR)/$(2)" 2>/dev/null; \
 	    status=$$?; test $$status -eq 0 || { echo "harness exited with status $$status (see $(2))"; exit 1; }
 endef
 
@@ -116,10 +122,27 @@ test-stub: testbed-stub
 	  else echo "PASS: the broken stub is detected (transcripts differ)"; fi
 
 check-abi: $(PLUGIN)
+	python3 -I tools/re/pe_export_names.py "$(ORIGINAL_DLL)" > $(BUILD)/export-names-original.txt
+	python3 -I tools/re/pe_export_names.py "$(PLUGIN_PATH)" > $(BUILD)/export-names-ours.txt
+	diff -u $(BUILD)/export-names-original.txt $(BUILD)/export-names-ours.txt && echo "PASS: identical export names"
 	python3 -I tools/re/pe_export_ordinals.py "$(ORIGINAL_DLL)" > $(BUILD)/exports-original.txt
 	python3 -I tools/re/pe_export_ordinals.py "$(PLUGIN_PATH)" > $(BUILD)/exports-ours.txt
-	diff -u $(BUILD)/exports-original.txt $(BUILD)/exports-ours.txt && echo "PASS: identical export names and ordinals"
-	python3 -I tools/re/pe_imports.py -v "$(PLUGIN_PATH)"
+	diff -u $(BUILD)/exports-original.txt $(BUILD)/exports-ours.txt && echo "PASS: identical export ordinals"
+	python3 -I tools/re/pe_import_diff.py "$(ORIGINAL_DLL)" "$(PLUGIN_PATH)"
+	@if python3 -I tools/re/pe_imports.py "$(PLUGIN_PATH)" | grep -qiE 'api-ms-win-crt|ucrtbase'; then \
+	    echo "FAIL: the plugin imports the UCRT"; exit 1; \
+	  else echo "PASS: the plugin imports msvcrt.dll, not the UCRT"; fi
+
+# Create the Wine prefix the tests run in and make crashes terminate instead of
+# waiting for an interactive debugger.  Safe to repeat.
+wine-prefix:
+	mkdir -p "$(WINEPREFIX)"
+	"$(WINE)" wineboot -i > /dev/null 2>&1
+	for key in 'HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug' \
+	           'HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug'; do \
+	    "$(WINE)" reg add "$$key" /v Debugger /t REG_SZ /d 'cmd.exe /c exit' /f > /dev/null 2>&1; \
+	    "$(WINE)" reg add "$$key" /v Auto /t REG_SZ /d 1 /f > /dev/null 2>&1; \
+	done
 
 clean:
 	rm -rf $(BUILD)
