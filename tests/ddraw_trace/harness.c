@@ -229,6 +229,7 @@ static void cycle_b(HMODULE plugin, HWND hwnd) {
     check_hr(r.hr_dd4_caps, DD_OK, "a call on the unwrapped IDirectDraw4 works");
 
     load_trace_again();
+    check(g_nlines > 0, "the trace could be read after scenario B");
     if (!g_nlines)
         return;
     expect("T1 dd7#2.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1, ddsCaps={dwCaps=0x200,*}}, lplpDDSurface->surf#3, pUnkOuter=NULL) = DD_OK");
@@ -379,6 +380,7 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
         check_hr(r.hr_blt[i], DD_OK, what);
     }
     load_trace_again();
+    check(g_nlines > 0, "the trace could be read after scenario C");
     if (!g_nlines)
         return;
     check_hr(r.hr_partial, DD_OK, "sprite Blt to the primary passes through");
@@ -438,6 +440,25 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
     }
 }
 
+/* The proxy classifies every argument of the 145 wrapped methods from the SDK's type strings; one that looks like a COM
+ * interface but would be passed through unwrapped makes DDT_SelfCheck report a problem.  `broken` runs against a build whose
+ * type map lacks LPDIRECTDRAWSURFACE7 (the Makefile builds one): the check must notice. */
+static void check_selfcheck(int broken) {
+    HMODULE m = GetModuleHandleA("ddraw.dll");
+    int(WINAPI * fn)(void) = m ? (int(WINAPI *)(void))GetProcAddress(m, "DDT_SelfCheck") : NULL;
+    int problems;
+    char what[128];
+    check(fn != NULL, "the proxy exports DDT_SelfCheck");
+    if (!fn)
+        return;
+    problems = fn();
+    sprintf(what, "DDT_SelfCheck reports %d problem(s)", problems);
+    if (broken)
+        check(problems > 0, "a type map without LPDIRECTDRAWSURFACE7 is noticed by the self-check");
+    else
+        check(problems == 0, what);
+}
+
 /* Run against the scripted mock ddraw (separate process: DDT_NEXT=mockddraw.dll, DDT_MAX_PRESENTS=3). */
 static void cycle_mock(HMODULE plugin, HWND hwnd) {
     ScenarioM r;
@@ -495,10 +516,13 @@ int main(int argc, char **argv) {
 
     check(hwnd != NULL, "test window");
     check(plugin != NULL, "fake plugin loads");
-    if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {
+    if (argc > 1 && !strcmp(argv[1], "selfcheck-broken")) {
+        check_selfcheck(1);
+    } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {
         load_trace();
         cycle_mock(plugin, hwnd);
     } else if (hwnd && plugin) {
+        check_selfcheck(0);
         cycle_a(plugin, hwnd);
         cycle_b(plugin, hwnd);
         cycle_d(plugin, hwnd);

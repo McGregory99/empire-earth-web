@@ -55,13 +55,18 @@ check-tables:
 $(BUILD)/fakeplugin.dll: $(TESTDIR)/fakeplugin.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -shared -s -o $@ $< -Wl,--enable-stdcall-fixup,--kill-at -static-libgcc -lddraw -ldxguid -luser32
 
+# A proxy whose type map lacks LPDIRECTDRAWSURFACE7: the self-check must report it (test-unit runs the harness against it).
+$(BUILD)/broken/ddraw.dll: $(SRC) $(HDR) ddraw.def | $(BUILD)
+	mkdir -p $(BUILD)/broken
+	$(CC) $(CFLAGS) -DDDT_TEST_BREAK_CLASSIFICATION -shared -s -o $@ $(SRC) ddraw.def -Wl,--enable-stdcall-fixup -static-libgcc -ldxguid -luser32 -lkernel32
+
 $(BUILD)/mockddraw.dll: $(TESTDIR)/mockddraw.c | $(BUILD)
 	$(CC) $(CFLAGS) -shared -s -o $@ $< -Wl,--enable-stdcall-fixup,--kill-at -static-libgcc -ldxguid -luser32
 
 $(BUILD)/harness.exe: $(TESTDIR)/harness.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -s -o $@ $< -Wl,--enable-stdcall-fixup -static-libgcc -lddraw -ldxguid -luser32
 
-test: test-game-run test-normalize test-unit
+test: check-tables test-game-run test-normalize test-unit
 
 test-normalize:
 	$(TESTDIR)/test-normalize.sh .
@@ -71,7 +76,7 @@ test-game-run:
 	@for t in core snapshot wrapper trace-driver check-driver; do bash $(TESTDIR)/../game_run/test-$$t.sh || exit 1; done
 
 # Test bed: our proxy as ddraw.dll, Wine's builtin ddraw copied under the name the proxy forwards to.
-test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(BUILD)/mockddraw.dll
+test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(BUILD)/mockddraw.dll
 	rm -rf $(TESTBED) && mkdir -p $(TESTBED)
 	cp $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(BUILD)/mockddraw.dll $(TESTBED)/
 	cp "$(WINE_ROOT)/lib/wine/i386-windows/ddraw.dll" $(TESTBED)/ddraw_next.dll
@@ -83,6 +88,9 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(BUI
 	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-mock.txt' \
 	    "$(WINE)" harness.exe mock 2>/dev/null
+	rm -rf $(BUILD)/testbed-broken && mkdir -p $(BUILD)/testbed-broken
+	cp $(BUILD)/broken/ddraw.dll $(BUILD)/harness.exe $(BUILD)/fakeplugin.dll $(BUILD)/testbed-broken/
+	cd $(BUILD)/testbed-broken && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" "$(WINE)" harness.exe selfcheck-broken 2>/dev/null
 
 game-trace: $(BUILD)/ddraw.dll
 	scripts/game-trace.sh $(BUILD)/ddraw.dll
