@@ -27,6 +27,16 @@ static char *g_text;
 static char **g_lines;
 static int g_nlines;
 
+static int g_cursor;
+static int load_trace(void);
+static void load_trace_again(void) {
+    int cursor = g_cursor;
+    free(g_text);
+    free(g_lines);
+    load_trace();
+    g_cursor = cursor;
+}
+
 static int load_trace(void) {
     const char *path = getenv("DDT_TRACE");
     FILE *f = path ? fopen(path, "rb") : NULL;
@@ -69,8 +79,6 @@ static int glob(const char *pat, const char *s) {
     }
     return *pat == *s && glob(pat + 1, s + 1);
 }
-
-static int g_cursor;
 
 /* The next line at or after the cursor that matches; the cursor then moves past it. */
 static void expect(const char *pat) {
@@ -173,14 +181,135 @@ static void cycle_a(HMODULE plugin, HWND hwnd) {
     expect("T1 dev7#1.Release() = 0");
 }
 
+static void hash_text(char out[40], const void *p, unsigned n) {
+    unsigned long long h = fnv1a(p, n, 0xcbf29ce484222325ull);
+    sprintf(out, "fnv1a64:%08x%08x", (unsigned)(h >> 32), (unsigned)h);
+}
+
+static void cycle_b(HMODULE plugin, HWND hwnd) {
+    ScenarioB r;
+    ScenarioBFn fn = (ScenarioBFn)GetProcAddress(plugin, "scenario_b");
+    unsigned char vertices[VB_VERTICES * VB_VERTEX_SIZE];
+    unsigned char texture[TEX_SIZE * TEX_SIZE * 4];
+    char hash[40], pat[1024];
+
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_b");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario B ran to the end");
+
+    check_hr(r.hr_caps, DD_OK, "GetCaps result");
+    check_hr(r.hr_enum_formats, DD_OK, "EnumTextureFormats result");
+    check(r.format_callbacks > 0, "EnumTextureFormats invoked the plugin's callback");
+    check_hr(r.hr_texture, DD_OK, "CreateSurface(texture) result");
+    check_hr(r.hr_tex_lock, DD_OK, "surface Lock result");
+    check_hr(r.hr_tex_unlock, DD_OK, "surface Unlock result");
+    check_hr(r.hr_set_texture, DD_OK, "SetTexture with a wrapped surface (the proxy hands the real one down)");
+    check_hr(r.hr_render_state, DD_OK, "SetRenderState result");
+    check(r.got_render_state == 1, "GetRenderState returns the state that was set");
+    check_hr(r.hr_stage_state, DD_OK, "SetTextureStageState result");
+    check_hr(r.hr_transform, DD_OK, "SetTransform result");
+    check_hr(r.hr_viewport, DD_OK, "SetViewport result");
+    check_hr(r.hr_material, DD_OK, "SetMaterial result");
+    check_hr(r.hr_light, DD_OK, "SetLight result");
+    check_hr(r.hr_light_enable, DD_OK, "LightEnable result");
+    check_hr(r.hr_vb_create, DD_OK, "CreateVertexBuffer result");
+    check_hr(r.hr_vb_lock, DD_OK, "vertex buffer Lock result");
+    check_hr(r.hr_vb_unlock, DD_OK, "vertex buffer Unlock result");
+    check_hr(r.hr_draw_vb, DD_OK, "DrawPrimitiveVB with a wrapped vertex buffer");
+    check_hr(r.hr_vb_desc, DD_OK, "GetVertexBufferDesc result");
+    check(r.vb_fvf == VB_FVF && r.vb_vertices == VB_VERTICES, "GetVertexBufferDesc reports the creation parameters");
+    check_hr(r.hr_clipper, DD_OK, "CreateClipper result (unwrapped interface)");
+    check_hr(r.hr_clipper_raw, DD_OK, "a call on the unwrapped clipper works");
+    check_hr(r.hr_clipper_use, DD_OK, "SetClipper with the unwrapped clipper");
+    check_hr(r.hr_qi_dd4, DD_OK, "QueryInterface(IDirectDraw4) result (unwrapped interface)");
+    check_hr(r.hr_dd4_caps, DD_OK, "a call on the unwrapped IDirectDraw4 works");
+
+    load_trace_again();
+    if (!g_nlines)
+        return;
+    expect("T1 dd7#2.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1, ddsCaps={dwCaps=0x200,*}}, lplpDDSurface->surf#3, pUnkOuter=NULL) = DD_OK");
+    expect("T1 d3d7#2.CreateDevice(rclsid=IID_IDirect3DHALDevice, surface=surf#4, device->dev7#2) = DD_OK");
+    expect("T1 dev7#2.GetCaps(desc=>{dwDevCaps=0x*, dpcLineCaps={dwSize=*}, dpcTriCaps={dwSize=*}, *}) = DD_OK");
+    expect("T1   cb EnumTextureFormats(lpDDPixFmt={dwSize=32, dwFlags=0x*}, lpContext=P) = 1");
+    expect("T1 dev7#2.EnumTextureFormats(cb=P, ctx=P) = DD_OK");
+    expect("T1 dd7#2.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1007, dwHeight=8, dwWidth=8, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x1000, dwCaps2=0x10,*}}, lplpDDSurface->surf#5, pUnkOuter=NULL) = DD_OK");
+
+    memset(texture, 0, sizeof texture);
+    fill_texture(texture, TEX_SIZE * 4);
+    hash_text(hash, texture, sizeof texture);
+    expect("T1 surf#5.Lock(lpDestRect=NULL, lpDDSurfaceDesc=>{dwSize=124, dwFlags=0x*, *}, dwFlags=0x*, hEvent=NULL) = DD_OK");
+    sprintf(pat, "T1 surf#5.Unlock(lpSurfaceData=NULL) = DD_OK locked={rect=NULL, bytes=256, hash=%s}", hash);
+    expect(pat);
+    expect("T1 dev7#2.SetTexture(stage=0, surface=surf#5) = DD_OK");
+    expect("T1 dev7#2.SetRenderState(dwRenderStateType=ZENABLE(7), dwRenderState=0x1) = DD_OK");
+    expect("T1 dev7#2.GetRenderState(dwRenderStateType=ZENABLE(7), lpdwRenderState=>0x1) = DD_OK");
+    expect("T1 dev7#2.SetTextureStageState(dwStage=0, d3dTexStageStateType=COLOROP(1), dwState=0x4) = DD_OK");
+    expect("T1 dev7#2.SetTransform(state=WORLD(1), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 3f000000 00000000 00000000 3f800000}) = DD_OK");
+    expect("T1 dev7#2.SetViewport(data={dwX=0, dwY=0, dwWidth=128, dwHeight=128, dvMinZ=f32:00000000, dvMaxZ=f32:3f800000}) = DD_OK");
+    expect("T1 dev7#2.SetMaterial(data={diffuse={f32:3f800000, f32:3f800000, f32:3f800000, f32:3f800000}, *}) = DD_OK");
+    expect("T1 dev7#2.SetLight(idx=0, data={dltType=DIRECTIONAL, *}) = DD_OK");
+    expect("T1 dev7#2.LightEnable(dwLightIndex=0, bEnable=1) = DD_OK");
+    expect("T1 d3d7#2.CreateVertexBuffer(desc={dwSize=16, dwCaps=0x10000, dwFVF=0x152, dwNumVertices=4}, buffer->vb#1, flags=0x0) = DD_OK");
+
+    memset(vertices, 0, sizeof vertices);
+    fill_vertices(vertices);
+    hash_text(hash, vertices, sizeof vertices);
+    expect("T1 vb#1.Lock(flags=0x*, data=>P, data_size=>0x90) = DD_OK");
+    sprintf(pat, "T1 vb#1.Unlock() = DD_OK locked={bytes=144, hash=%s}", hash);
+    expect(pat);
+    expect("T1 dev7#2.DrawPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=0, vertex_count=3, flags=0x0) = DD_OK");
+    expect("T1 vb#1.GetVertexBufferDesc(desc=>{dwSize=16, dwCaps=0x*, dwFVF=0x152, dwNumVertices=4}) = DD_OK");
+    expect("T1 dd7#2.CreateClipper(dwFlags=0x0, lplpDDClipper->raw, pUnkOuter=NULL) = DD_OK");
+    expect("T1 surf#3.SetClipper(lpDDClipper=P) = DD_OK");
+    expect("T1 dd7#2.QueryInterface(riid=IID_IDirectDraw4, ppvObject->raw) = DD_OK");
+    expect("T1 surf#3.GetFlipStatus(dwFlags=0x1) = ? [timing]");
+    expect("T1 dd7#2.GetScanLine(lpdwScanLine=>?) = ? [timing]");
+    expect_count("T1 surf#3.GetFlipStatus(*", 1);
+    expect_count("T1 dd7#2.GetScanLine(*", 1);
+}
+
+static void cycle_c(HMODULE plugin, HWND hwnd) {
+    ScenarioC r;
+    ScenarioCFn fn = (ScenarioCFn)GetProcAddress(plugin, "scenario_c");
+    const char *trace = getenv("DDT_TRACE");
+    char done[600];
+    int i;
+
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_c");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario C ran to the end");
+    for (i = 0; i < 6; i++) {
+        char what[64];
+        sprintf(what, "Blt #%d to the primary passes through after the cap too", i + 1);
+        check_hr(r.hr_blt[i], DD_OK, what);
+    }
+    load_trace_again();
+    if (!g_nlines)
+        return;
+    /* the cap is DDT_MAX_PRESENTS=3: exactly three present-equivalent calls are traced, then the trace ends */
+    expect_count("T1 surf#6.Blt(*", 3);
+    expect("T1 surf#6.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#7, lpSrcRect=NULL, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
+    expect("# end: 3 presents");
+    check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "nothing is traced after the cap");
+    sprintf(done, "%s.done", trace ? trace : "");
+    check(GetFileAttributesA(done) != INVALID_FILE_ATTRIBUTES, "the cap writes the .done marker for the driver script");
+}
+
 int main(void) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
 
     check(hwnd != NULL, "test window");
     check(plugin != NULL, "fake plugin loads");
-    if (hwnd && plugin)
+    if (hwnd && plugin) {
         cycle_a(plugin, hwnd);
+        cycle_b(plugin, hwnd);
+        cycle_c(plugin, hwnd);
+    }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAIL" : "PASS", g_checks, g_fail);
     return g_fail ? 1 : 0;
 }

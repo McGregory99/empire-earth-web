@@ -16,10 +16,13 @@
 
 enum Kind {
     K_HEX, K_DEC, K_F32, K_PTR, K_HANDLE, K_GUID, K_IFACE_IN, K_IFACE_OUT, K_VOIDPP, K_STRUCT, K_CALLBACK,
-    K_RS, K_TSS, K_XFORM, K_PT, K_OUT_DWORD, K_OUT_BOOL, K_OUT_LONG, K_RAWOUT
+    K_RS, K_TSS, K_XFORM, K_PT, K_OUT_DWORD, K_OUT_BOOL, K_OUT_LONG, K_RAWOUT, K_OUTPTR
 };
 enum Cb { CB_MODES, CB_SURFACES, CB_DEVICES, CB_PIXFMT };
-enum Hook { H_NONE, H_QI, H_ADDREF, H_RELEASE, H_GETDDINTERFACE, H_CREATESURFACE, H_GETATTACHED, H_FLIP, H_BLT, H_BLTFAST };
+enum Hook {
+    H_NONE, H_QI, H_ADDREF, H_RELEASE, H_GETDDINTERFACE, H_CREATESURFACE, H_GETATTACHED, H_FLIP, H_BLT, H_BLTFAST,
+    H_LOCK, H_UNLOCK, H_CREATEVB
+};
 
 typedef struct ArgDef {
     const char *type, *name;
@@ -65,7 +68,7 @@ static const void *const *g_vtbl[IF_COUNT];
 #define NBUCKETS 1024
 static CRITICAL_SECTION g_reg_cs;
 static Wrap *g_by_real[NBUCKETS], *g_by_self[NBUCKETS];
-static unsigned g_ids[IF_COUNT];
+static unsigned g_ids[IF_COUNT], g_families;
 
 static unsigned hash_ptr(const void *p) { return (unsigned)(((uintptr_t)p >> 4) * 2654435761u) % NBUCKETS; }
 
@@ -91,6 +94,7 @@ void *wrap_new(int iface, void *real) {
     w->real = real;
     w->iface = iface;
     w->id = ++g_ids[iface];
+    w->family = ++g_families;
     w->by_real_next = g_by_real[h];
     g_by_real[h] = w;
     h = hash_ptr(w);
@@ -117,16 +121,28 @@ void *unwrap(void *p) {
     return w ? w->real : p;
 }
 
-/* The real object is gone: forget the mapping so that a new object at the same address gets a fresh id. */
-static void retire(Wrap *w) {
+/* The real object is gone: forget the mapping so that a new object at the same address gets a fresh id.  The
+ * interfaces obtained from one another with QueryInterface share one object (and in Wine one reference count), so
+ * the last Release on any of them ends all of them. */
+static void retire_locked(Wrap *w) {
     Wrap **pp;
-    EnterCriticalSection(&g_reg_cs);
     w->dead = 1;
     for (pp = &g_by_real[hash_ptr(w->real)]; *pp; pp = &(*pp)->by_real_next)
         if (*pp == w) {
             *pp = w->by_real_next;
             break;
         }
+}
+
+static void retire(Wrap *w) {
+    unsigned b;
+    EnterCriticalSection(&g_reg_cs);
+    for (b = 0; b < NBUCKETS; b++) {
+        Wrap *x;
+        for (x = g_by_self[b]; x; x = x->by_self_next)
+            if (!x->dead && (x == w || x->family == w->family))
+                retire_locked(x);
+    }
     LeaveCriticalSection(&g_reg_cs);
 }
 
@@ -148,7 +164,7 @@ static const struct { const char *type; uint8_t kind, aux; } type_map[] = {
     {"REFIID", K_GUID, 0}, {"REFGUID", K_GUID, 0}, {"REFCLSID", K_GUID, 0}, {"GUID*", K_GUID, 0},
     {"D3DRENDERSTATETYPE", K_RS, 0}, {"D3DTEXTURESTAGESTATETYPE", K_TSS, 0}, {"D3DTRANSFORMSTATETYPE", K_XFORM, 0},
     {"D3DPRIMITIVETYPE", K_PT, 0},
-    {"LPDWORD", K_OUT_DWORD, 0}, {"WINBOOL*", K_OUT_BOOL, 0}, {"LPLONG", K_OUT_LONG, 0},
+    {"LPDWORD", K_OUT_DWORD, 0}, {"DWORD*", K_OUT_DWORD, 0}, {"WINBOOL*", K_OUT_BOOL, 0}, {"LPLONG", K_OUT_LONG, 0},
     {"void**", K_VOIDPP, 0}, {"LPVOID*", K_VOIDPP, 0},
     {"LPDIRECTDRAWSURFACE7", K_IFACE_IN, IF_SURF7}, {"IDirectDrawSurface7*", K_IFACE_IN, IF_SURF7},
     {"LPDIRECTDRAWSURFACE7*", K_IFACE_OUT, IF_SURF7}, {"IDirectDrawSurface7**", K_IFACE_OUT, IF_SURF7},
@@ -206,7 +222,9 @@ static void classify(ArgDef *d, const char *method) {
             d->kind = type_map[i].kind;
             d->aux = type_map[i].aux;
             if (d->kind == K_STRUCT)
-                d->out = !strncmp(method, "Get", 3) || !strcmp(method, "Lock");
+                d->out = (!strncmp(method, "Get", 3) || !strcmp(method, "Lock")) && d->aux != ST_RECT && d->aux != ST_POINT;
+            if (d->kind == K_VOIDPP && !strcmp(method, "Lock"))
+                d->kind = K_OUTPTR; /* IDirect3DVertexBuffer7::Lock hands back a data pointer, not an interface */
             return;
         }
     if (strchr(d->type, '*') || !strncmp(d->type, "LP", 2))
@@ -218,7 +236,7 @@ static void classify(ArgDef *d, const char *method) {
 static const struct { const char *name; uint8_t hook; } hook_map[] = {
     {"QueryInterface", H_QI}, {"AddRef", H_ADDREF}, {"Release", H_RELEASE}, {"GetDDInterface", H_GETDDINTERFACE},
     {"CreateSurface", H_CREATESURFACE}, {"GetAttachedSurface", H_GETATTACHED}, {"Flip", H_FLIP}, {"Blt", H_BLT},
-    {"BltFast", H_BLTFAST},
+    {"BltFast", H_BLTFAST}, {"Lock", H_LOCK}, {"Unlock", H_UNLOCK}, {"CreateVertexBuffer", H_CREATEVB},
 };
 
 static const char *const timing_methods[] = {"GetFlipStatus", "GetBltStatus", "WaitForVerticalBlank", "GetScanLine",
@@ -383,6 +401,7 @@ typedef struct CallRec {
     Wrap *outw[MAXARGS];
     CbCtx cb;
     GUID iid;
+    char suffix[200];
     char txt[MAXARGS][ARG_TXT];
 } CallRec;
 
@@ -464,12 +483,17 @@ static void render_arg(CallRec *c, unsigned i, int post, HRESULT hr) {
         buf_printf(&b, "%s=>", d->name);
         if (!v)
             buf_puts(&b, "NULL");
+        else if (c->m->timing)
+            buf_puts(&b, "?");
         else if (!ok || IsBadReadPtr((void *)(uintptr_t)v, 4))
             buf_puts(&b, "-");
         else if (d->kind == K_OUT_DWORD)
             buf_printf(&b, "0x%x", (unsigned)*(DWORD *)(uintptr_t)v);
         else
             buf_printf(&b, "%d", (int)*(LONG *)(uintptr_t)v);
+        break;
+    case K_OUTPTR:
+        buf_printf(&b, "%s=>%s", d->name, (v && ok && !IsBadReadPtr((void *)(uintptr_t)v, 4) && *(void **)(uintptr_t)v) ? "P" : "NULL");
         break;
     case K_IFACE_OUT:
     case K_VOIDPP:
@@ -486,7 +510,7 @@ static void render_arg(CallRec *c, unsigned i, int post, HRESULT hr) {
 
 static int is_out_kind(const ArgDef *d) {
     switch (d->kind) {
-    case K_IFACE_OUT: case K_VOIDPP: case K_RAWOUT: case K_OUT_DWORD: case K_OUT_BOOL: case K_OUT_LONG: return 1;
+    case K_IFACE_OUT: case K_VOIDPP: case K_RAWOUT: case K_OUT_DWORD: case K_OUT_BOOL: case K_OUT_LONG: case K_OUTPTR: return 1;
     case K_STRUCT: return d->out;
     default: return 0;
     }
@@ -519,6 +543,115 @@ static int find_context(const MethodDef *m) {
     return -1;
 }
 
+
+/* ---- Lock / Unlock: the contents written between them are hashed at Unlock ------------------------------------ */
+static unsigned fvf_vertex_size(DWORD fvf) {
+    unsigned n = 0, tex, i;
+    switch (fvf & D3DFVF_POSITION_MASK) {
+    case D3DFVF_XYZ: n = 12; break;
+    case D3DFVF_XYZRHW: n = 16; break;
+    case D3DFVF_XYZB1: n = 16; break;
+    case D3DFVF_XYZB2: n = 20; break;
+    case D3DFVF_XYZB3: n = 24; break;
+    case D3DFVF_XYZB4: n = 28; break;
+    case D3DFVF_XYZB5: n = 32; break;
+    default: break;
+    }
+    if (fvf & D3DFVF_NORMAL) n += 12;
+    if (fvf & 0x20) n += 4; /* point size (D3DFVF_RESERVED1 in the D3D7 headers) */
+    if (fvf & D3DFVF_DIFFUSE) n += 4;
+    if (fvf & D3DFVF_SPECULAR) n += 4;
+    tex = (fvf & D3DFVF_TEXCOUNT_MASK) >> D3DFVF_TEXCOUNT_SHIFT;
+    for (i = 0; i < tex && i < 8; i++) {
+        static const unsigned sizes[4] = {8, 12, 16, 4}; /* texcoord size bits: 2D, 3D, 4D, 1D */
+        n += sizes[(fvf >> (16 + 2 * i)) & 3];
+    }
+    return n;
+}
+
+static void post_create_vb(CallRec *c) {
+    const D3DVERTEXBUFFERDESC *d = (const D3DVERTEXBUFFERDESC *)(uintptr_t)c->a[1];
+    if (c->outw[1] && !IsBadReadPtr(d, sizeof *d))
+        c->outw[1]->vb_bytes = d->dwNumVertices * fvf_vertex_size(d->dwFVF);
+}
+
+static void post_lock(CallRec *c) {
+    Wrap *w = c->self;
+    w->locked = 0;
+    if (w->iface == IF_VB7) {
+        void **data = (void **)(uintptr_t)c->a[2];
+        const DWORD *size = (const DWORD *)(uintptr_t)c->a[3];
+        if (!data || IsBadReadPtr(data, sizeof *data) || !*data)
+            return;
+        w->lock_ptr = *data;
+        w->lock_bytes = (size && !IsBadReadPtr(size, sizeof *size) && *size) ? *size : w->vb_bytes;
+        w->lock_has_rect = 0;
+        w->locked = 1;
+    } else if (w->iface == IF_SURF7) {
+        const RECT *rc = (const RECT *)(uintptr_t)c->a[1];
+        const DWORD *d = (const DWORD *)(uintptr_t)c->a[2]; /* DDSURFACEDESC2 words */
+        DWORD width, height, bpp, rowbytes, rows;
+        if (!d || IsBadReadPtr(d, sizeof(DDSURFACEDESC2)) || !d[9]) /* Wine does not set DDSD_LPSURFACE; the pointer is enough */
+            return;
+        width = d[3];
+        height = d[2];
+        w->lock_has_rect = rc && !IsBadReadPtr(rc, sizeof *rc);
+        if (w->lock_has_rect) {
+            w->lock_rect = *rc;
+            width = (DWORD)(rc->right - rc->left);
+            height = (DWORD)(rc->bottom - rc->top);
+        }
+        w->lock_ptr = (void *)(uintptr_t)d[9];
+        w->lock_pitch = (d[1] & DDSD_PITCH) ? d[4] : 0;
+        if (d[19] & DDPF_FOURCC) { /* block compressed: one contiguous run */
+            rowbytes = ((width + 3) / 4) * ((height + 3) / 4) * (d[20] == 0x31545844u /* 'DXT1' */ ? 8 : 16);
+            rows = 1;
+        } else {
+            bpp = d[21];
+            if (!bpp && d[3] && w->lock_pitch)
+                bpp = w->lock_pitch * 8 / d[3];
+            rowbytes = width * bpp / 8;
+            rows = height;
+            if (!w->lock_pitch)
+                w->lock_pitch = rowbytes;
+        }
+        w->lock_rows = rows;
+        w->lock_rowbytes = rowbytes;
+        w->lock_bytes = rows * rowbytes;
+        w->locked = 1;
+    }
+}
+
+/* Before the real Unlock: what the plugin wrote while the buffer was locked. */
+static void pre_unlock(CallRec *c) {
+    Wrap *w = c->self;
+    uint64_t h = FNV1A64_INIT;
+    DWORD r;
+
+    c->suffix[0] = 0;
+    if (!w->locked)
+        return;
+    w->locked = 0;
+    if (IsBadReadPtr(w->lock_ptr, w->iface == IF_VB7 ? w->lock_bytes : (w->lock_rows - 1) * w->lock_pitch + w->lock_rowbytes)) {
+        snprintf(c->suffix, sizeof c->suffix, " locked={unreadable}");
+        return;
+    }
+    if (w->iface == IF_VB7) {
+        h = fnv1a64(w->lock_ptr, w->lock_bytes);
+        snprintf(c->suffix, sizeof c->suffix, " locked={bytes=%u, hash=fnv1a64:%08x%08x}", (unsigned)w->lock_bytes,
+                 (unsigned)(h >> 32), (unsigned)h);
+    } else {
+        char rect[64] = "NULL";
+        for (r = 0; r < w->lock_rows; r++)
+            h = fnv1a64_update(h, (const char *)w->lock_ptr + (size_t)r * w->lock_pitch, w->lock_rowbytes);
+        if (w->lock_has_rect)
+            snprintf(rect, sizeof rect, "{%d,%d,%d,%d}", (int)w->lock_rect.left, (int)w->lock_rect.top,
+                     (int)w->lock_rect.right, (int)w->lock_rect.bottom);
+        snprintf(c->suffix, sizeof c->suffix, " locked={rect=%s, bytes=%u, hash=fnv1a64:%08x%08x}", rect,
+                 (unsigned)w->lock_bytes, (unsigned)(h >> 32), (unsigned)h);
+    }
+}
+
 static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
     CallRec c;
     const MethodDef *m = &g_methods[iface][slot];
@@ -532,6 +665,7 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
     c.self = self;
     c.m = m;
     c.traced = trace_wants(ra);
+    c.suffix[0] = 0;
     for (i = 0; i <= m->nargs; i++) {
         c.a[i] = a[i];
         c.r[i] = a[i];
@@ -563,6 +697,9 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
             if (!is_out_kind(&m->a[i]))
                 render_arg(&c, i, 0, S_OK);
 
+    if (m->hook == H_UNLOCK && c.traced)
+        pre_unlock(&c);
+
     vt = *(void ***)self->real;
     result = call_real(vt[slot], c.r, m->nargs);
 
@@ -588,6 +725,8 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
             *out = self;
         } else if (target >= 0) {
             c.outw[i] = wrap_new(target, *out);
+            if (m->hook == H_QI && c.outw[i] != self)
+                c.outw[i]->family = self->family;
             *out = c.outw[i];
         }
     }
@@ -609,6 +748,11 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
             c.outw[1]->caps |= k->dwCaps;
         break;
     }
+    case H_LOCK:
+        if (c.traced && SUCCEEDED((HRESULT)result))
+            post_lock(&c);
+        break;
+    case H_CREATEVB: post_create_vb(&c); break;
     case H_FLIP: is_present = 1; break;
     case H_BLT:
     case H_BLTFAST: is_present = (self->caps & DDSCAPS_PRIMARYSURFACE) != 0; break;
@@ -631,6 +775,7 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
             buf_puts(&b, ") = ? [timing]");
         else
             buf_printf(&b, ") = %s", hr_name((HRESULT)result, res));
+        buf_puts(&b, c.suffix);
         trace_emit(0, b.p, m->timing);
         if (is_present)
             trace_present();

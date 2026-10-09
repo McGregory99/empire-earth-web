@@ -70,15 +70,15 @@ static void fmt_colorkey(Buf *b, const DDCOLORKEY *k) {
 }
 
 static void fmt_ddpf(Buf *b, const DDPIXELFORMAT *pf) {
-    const DWORD *w = (const DWORD *)pf; /* layout: size, flags, bitcount, R, G, B, A masks; fourcc shares slot 2 */
+    /* layout: size, flags, fourcc, then the unions bit count, R/Y mask, G/U mask, B/V mask, alpha mask */
+    const DWORD *w = (const DWORD *)pf;
     buf_printf(b, "{dwSize=%u, dwFlags=0x%x", (unsigned)w[0], (unsigned)w[1]);
     if (w[1] & DDPF_FOURCC) {
         buf_puts(b, ", dwFourCC=");
         fmt_fourcc(b, w[2]);
-    } else {
-        buf_printf(b, ", dwRGBBitCount=%u, dwRBitMask=0x%x, dwGBitMask=0x%x, dwBBitMask=0x%x, dwRGBAlphaBitMask=0x%x",
-                   (unsigned)w[2], (unsigned)w[3], (unsigned)w[4], (unsigned)w[5], (unsigned)w[6]);
     }
+    buf_printf(b, ", dwRGBBitCount=%u, dwRBitMask=0x%x, dwGBitMask=0x%x, dwBBitMask=0x%x, dwRGBAlphaBitMask=0x%x",
+               (unsigned)w[3], (unsigned)w[4], (unsigned)w[5], (unsigned)w[6], (unsigned)w[7]);
     buf_puts(b, "}");
 }
 
@@ -102,7 +102,7 @@ static void fmt_ddsd2(Buf *b, const DDSURFACEDESC2 *d) {
     if (fl & DDSD_MIPMAPCOUNT) buf_printf(b, ", dwMipMapCount=%u", (unsigned)w[6]);
     if (fl & DDSD_REFRESHRATE) buf_printf(b, ", dwRefreshRate=%u", (unsigned)w[6]);
     if (fl & DDSD_ALPHABITDEPTH) buf_printf(b, ", dwAlphaBitDepth=%u", (unsigned)w[7]);
-    if (fl & DDSD_LPSURFACE) buf_printf(b, ", lpSurface=%s", w[9] ? "P" : "NULL");
+    if ((fl & DDSD_LPSURFACE) || w[9]) buf_printf(b, ", lpSurface=%s", w[9] ? "P" : "NULL");
     if (fl & DDSD_CKDESTOVERLAY) { buf_puts(b, ", ddckCKDestOverlay="); fmt_colorkey(b, (const DDCOLORKEY *)&w[10]); }
     if (fl & DDSD_CKDESTBLT) { buf_puts(b, ", ddckCKDestBlt="); fmt_colorkey(b, (const DDCOLORKEY *)&w[12]); }
     if (fl & DDSD_CKSRCOVERLAY) { buf_puts(b, ", ddckCKSrcOverlay="); fmt_colorkey(b, (const DDCOLORKEY *)&w[14]); }

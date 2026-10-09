@@ -68,7 +68,7 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe
 	cp $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(TESTBED)/
 	cp "$(WINE_ROOT)/lib/wine/i386-windows/ddraw.dll" $(TESTBED)/ddraw_next.dll
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
-	    DDT_NEXT=ddraw_next.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 \
+	    DDT_NEXT=ddraw_next.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace.txt' \
 	    "$(WINE)" harness.exe 2>/dev/null
 

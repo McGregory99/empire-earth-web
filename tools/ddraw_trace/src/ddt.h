@@ -68,10 +68,15 @@ typedef struct Wrap {
     unsigned id;
     int dead;         /* the real object was released to zero */
     struct Wrap *by_real_next, *by_self_next;
+    unsigned family;  /* wrappers of one COM object (queried from each other) retire together */
     DWORD caps;       /* surfaces: DDSCAPS_* given at creation */
+    DWORD vb_bytes;   /* vertex buffers: size from the creation description */
     /* surface and vertex buffer locks */
+    int locked, lock_has_rect;
     void *lock_ptr;
-    DWORD lock_bytes;
+    DWORD lock_pitch, lock_rows, lock_rowbytes; /* surfaces: the locked region is rows x rowbytes, rows pitch apart */
+    DWORD lock_bytes;                           /* total bytes hashed */
+    RECT lock_rect;
 } Wrap;
 
 void *wrap_new(int iface, void *real);            /* wrapper for a real interface pointer, or NULL */
