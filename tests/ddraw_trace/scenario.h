@@ -37,6 +37,40 @@ typedef struct ScenarioC {
 } ScenarioC;
 typedef int(WINAPI *ScenarioCFn)(HWND hwnd, ScenarioC *out);
 
+/* Scenario D: the wrapped-surface paths that the other scenarios do not reach. */
+typedef struct ScenarioD {
+    HRESULT hr_setup, hr_srt, hr_get_rt, hr_get_tex, hr_att1, hr_att2, hr_enum_att, hr_not_found, hr_bltfast;
+    HRESULT hr_bad_create, hr_lock1, hr_lock2_busy, hr_unlock, hr_vidmem;
+    void *target2, *got_rt, *tex, *got_tex, *mip_level1, *att1, *att2, *enum_seen, *bad_surface;
+    int enum_callbacks;
+} ScenarioD;
+typedef int(WINAPI *ScenarioDFn)(HWND hwnd, ScenarioD *out);
+
+/* The rectangle that scenario D locks in its 8x8 texture, and what it writes there. */
+#define LOCK_RECT_L 2
+#define LOCK_RECT_T 2
+#define LOCK_RECT_R 6
+#define LOCK_RECT_B 6
+static __inline unsigned rect_pixel(unsigned x, unsigned y) { return 0xff000000u | (y << 8) | x; }
+
+/* Scenario T: two traced threads interleave their calls; polling collapse must be per thread. */
+typedef struct ScenarioT {
+    HRESULT hr_create;
+    HRESULT hr_flip_status[3];
+    int thread_calls;
+} ScenarioT;
+typedef int(WINAPI *ScenarioTFn)(HWND hwnd, ScenarioT *out);
+
+/* Scenario M (against the scripted mock ddraw): failed presents, retries and unwrapping of surface arguments. */
+typedef struct ScenarioM {
+    HRESULT hr_create, hr_primary, hr_back, hr_attached;
+    HRESULT hr_flip_first[3];  /* DDERR_WASSTILLDRAWING, DDERR_WASSTILLDRAWING, DD_OK */
+    HRESULT hr_flip_override;  /* the back buffer as override: only valid if the proxy unwrapped it */
+    HRESULT hr_blt_busy, hr_blt_ok, hr_bltfast, hr_flip_after_cap;
+    void *attached, *back;     /* GetAttachedSurface must hand back the back buffer's own wrapper */
+} ScenarioM;
+typedef int(WINAPI *ScenarioMFn)(HWND hwnd, ScenarioM *out);
+
 /* Deterministic content the plugin writes into locked buffers, so that the harness can compute the expected hash. */
 #define VB_VERTICES 4
 #define VB_FVF 0x152 /* XYZ | NORMAL | DIFFUSE | TEX1 */

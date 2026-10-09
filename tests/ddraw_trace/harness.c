@@ -282,6 +282,85 @@ static void cycle_b(HMODULE plugin, HWND hwnd) {
     expect_count("T1 dd7#2.GetScanLine(*", 1);
 }
 
+static void cycle_d(HMODULE plugin, HWND hwnd) {
+    ScenarioD r;
+    ScenarioDFn fn = (ScenarioDFn)GetProcAddress(plugin, "scenario_d");
+    unsigned char region[4 * 4 * 4];
+    unsigned x, y;
+    char hash[40], pat[1024];
+
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_d");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario D ran to the end");
+    check_hr(r.hr_srt, DD_OK, "SetRenderTarget with a wrapped surface");
+    check_hr(r.hr_get_rt, DD_OK, "GetRenderTarget");
+    check(r.got_rt != NULL && r.got_rt == r.target2, "GetRenderTarget returns the wrapper that SetRenderTarget was given (identity)");
+    check_hr(r.hr_att1, DD_OK, "GetAttachedSurface(mipmap) result");
+    check_hr(r.hr_att2, DD_OK, "GetAttachedSurface(mipmap) again");
+    check(r.att1 != NULL && r.att1 == r.att2, "the same attached surface comes back as the same wrapper");
+    check_hr(r.hr_enum_att, DD_OK, "EnumAttachedSurfaces result");
+    check(r.enum_callbacks >= 1, "EnumAttachedSurfaces invoked the plugin's callback");
+    check(r.enum_seen != NULL && r.enum_seen == r.att1, "the callback is given the attached surface's wrapper (identity)");
+    check(r.hr_not_found == DDERR_NOTFOUND && r.bad_surface == NULL, "a failing GetAttachedSurface reports DDERR_NOTFOUND and leaves the output NULL");
+    check_hr(r.hr_get_tex, DD_OK, "GetTexture");
+    check(r.got_tex != NULL && r.got_tex == r.tex, "GetTexture returns the wrapper that SetTexture was given (identity)");
+    check_hr(r.hr_bltfast, DD_OK, "BltFast with a wrapped source");
+    check(FAILED(r.hr_bad_create), "CreateSurface with a bad description fails");
+    check_hr(r.hr_lock1, DD_OK, "Lock of a rectangle");
+    check(r.hr_lock2_busy == DDERR_SURFACEBUSY, "a second Lock of the same surface fails (DDERR_SURFACEBUSY)");
+    check_hr(r.hr_unlock, DD_OK, "Unlock of the rectangle");
+    check_hr(r.hr_vidmem, DD_OK, "GetAvailableVidMem");
+
+    load_trace_again();
+    check(g_nlines > 0, "the trace could be read after scenario D");
+    if (!g_nlines)
+        return;
+    expect("T1 dd7#3.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x7, dwHeight=128, dwWidth=128, ddsCaps={dwCaps=0x2040,*}}, lplpDDSurface->surf#7, pUnkOuter=NULL) = DD_OK");
+    expect("T1 d3d7#3.CreateDevice(rclsid=IID_IDirect3DHALDevice, surface=surf#7, device->dev7#3) = DD_OK");
+    expect("T1 dev7#3.SetRenderTarget(surface=surf#8, flags=0x0) = DD_OK");
+    expect("T1 dev7#3.GetRenderTarget(surface->surf#8) = DD_OK");
+    expect("T1 surf#9.GetAttachedSurface(lpDDSCaps={dwCaps=0x400000,*}, lplpDDAttachedSurface->surf#10) = DD_OK");
+    expect("T1 surf#9.GetAttachedSurface(lpDDSCaps={dwCaps=0x400000,*}, lplpDDAttachedSurface->surf#10) = DD_OK");
+    expect("T1   cb EnumAttachedSurfaces(lpDDSurface=surf#10, lpDDSurfaceDesc={dwSize=124,*}, lpContext=P) = 1");
+    expect("T1 surf#9.EnumAttachedSurfaces(lpContext=P, lpEnumSurfacesCallback=P) = DD_OK");
+    expect("T1 surf#10.GetCaps(lpDDSCaps=>{dwCaps=0x*,*}) = DD_OK");
+    expect("T1 surf#7.GetAttachedSurface(lpDDSCaps={dwCaps=0x4,*}, lplpDDAttachedSurface->NULL) = DDERR_NOTFOUND");
+    expect("T1 dev7#3.SetTexture(stage=0, surface=surf#11) = DD_OK");
+    expect("T1 dev7#3.GetTexture(stage=0, surface->surf#11) = DD_OK");
+    expect("T1 surf#13.BltFast(dwX=1, dwY=2, lpDDSrcSurface=surf#12, lpSrcRect={0,0,8,8}, dwTrans=0x10) = DD_OK");
+    expect("T1 dd7#3.CreateSurface(lpDDSurfaceDesc={dwSize=0,*}, lplpDDSurface->NULL, pUnkOuter=NULL) = E_INVALIDARG");
+    memset(region, 0, sizeof region);
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            ((unsigned *)region)[y * 4 + x] = rect_pixel(LOCK_RECT_L + x, LOCK_RECT_T + y);
+    hash_text(hash, region, sizeof region);
+    expect("T1 surf#11.Lock(lpDestRect={2,2,6,6}, lpDDSurfaceDesc=>{dwSize=124,*}, dwFlags=0x21, hEvent=NULL) = DD_OK");
+    expect("T1 surf#11.Lock(lpDestRect=NULL, lpDDSurfaceDesc=>-, dwFlags=0x1, hEvent=NULL) = DDERR_SURFACEBUSY");
+    sprintf(pat, "T1 surf#11.Unlock(lpSurfaceData={2,2,6,6}) = DD_OK locked={rect={2,2,6,6}, bytes=64, hash=%s}", hash);
+    expect(pat);
+    expect("T1 dd7#3.GetAvailableVidMem(lpDDCaps={dwCaps=0x1000, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}, lpdwTotal=>*, lpdwFree=>*) = DD_OK");
+}
+
+static void cycle_t(HMODULE plugin, HWND hwnd) {
+    ScenarioT r;
+    ScenarioTFn fn = (ScenarioTFn)GetProcAddress(plugin, "scenario_t");
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_t");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario T ran to the end");
+    check(r.thread_calls == 3, "the second thread made its three calls");
+    load_trace_again();
+    check(g_nlines > 0, "the trace could be read after scenario T");
+    if (!g_nlines)
+        return;
+    /* each thread's run of identical polls collapses on its own: the other thread's lines in between must not break it */
+    expect_count("T1 surf#14.GetFlipStatus(dwFlags=0x1) = ? [timing]", 1);
+    expect_count("T2 dd7#4.GetAvailableVidMem(*", 3);
+}
+
 static void cycle_c(HMODULE plugin, HWND hwnd) {
     ScenarioC r;
     ScenarioCFn fn = (ScenarioCFn)GetProcAddress(plugin, "scenario_c");
@@ -306,10 +385,10 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
     check_hr(r.hr_fill, DD_OK, "colour fill of the primary passes through");
     /* the cap is DDT_MAX_PRESENTS=3: a sprite blit and a colour fill do not count, three whole-surface blits do, then
      * the trace ends */
-    expect("T1 surf#6.Blt(lpDestRect={10,10,42,42}, lpDDSrcSurface=surf#7, lpSrcRect={10,10,42,42}, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
-    expect("T1 surf#6.Blt(lpDestRect=NULL, lpDDSrcSurface=NULL, lpSrcRect=NULL, dwFlags=0x1000400, lpDDBltFx={dwSize=100,*}) = DD_OK");
-    expect_count("T1 surf#6.Blt(*", 5);
-    expect("T1 surf#6.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#7, lpSrcRect=NULL, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
+    expect("T1 surf#15.Blt(lpDestRect={10,10,42,42}, lpDDSrcSurface=surf#16, lpSrcRect={10,10,42,42}, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
+    expect("T1 surf#15.Blt(lpDestRect=NULL, lpDDSrcSurface=NULL, lpSrcRect=NULL, dwFlags=0x1000400, lpDDBltFx={dwSize=100,*}) = DD_OK");
+    expect_count("T1 surf#15.Blt(*", 5);
+    expect("T1 surf#15.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#16, lpSrcRect=NULL, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
     expect("# end: 3 presents");
     check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "nothing is traced after the cap");
     sprintf(done, "%s.done", trace ? trace : "");
@@ -359,15 +438,71 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
     }
 }
 
-int main(void) {
+/* Run against the scripted mock ddraw (separate process: DDT_NEXT=mockddraw.dll, DDT_MAX_PRESENTS=3). */
+static void cycle_mock(HMODULE plugin, HWND hwnd) {
+    ScenarioM r;
+    ScenarioMFn fn = (ScenarioMFn)GetProcAddress(plugin, "scenario_m");
+    const char *trace = getenv("DDT_TRACE");
+    char times[600], text[1024];
+    FILE *f;
+    size_t n;
+
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_m");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario M ran to the end");
+    check_hr(r.hr_flip_first[0], DDERR_WASSTILLDRAWING, "the mock's first Flip is busy");
+    check_hr(r.hr_flip_first[1], DDERR_WASSTILLDRAWING, "the mock's second Flip is busy");
+    check_hr(r.hr_flip_first[2], DD_OK, "the mock's third Flip succeeds");
+    check_hr(r.hr_flip_override, DD_OK, "Flip with an override surface reaches the real object unwrapped (the mock refuses a wrapper)");
+    check_hr(r.hr_blt_busy, DDERR_WASSTILLDRAWING, "Blt reports busy");
+    check_hr(r.hr_blt_ok, DD_OK, "Blt with a wrapped source reaches the real object unwrapped");
+    check_hr(r.hr_bltfast, DD_OK, "BltFast with a wrapped source reaches the real object unwrapped");
+    check_hr(r.hr_flip_after_cap, DD_OK, "calls after the cap pass through");
+    check_hr(r.hr_attached, DD_OK, "GetAttachedSurface result");
+    check(r.attached != NULL && r.attached == r.back, "GetAttachedSurface hands back the back buffer's own wrapper (identity)");
+
+    load_trace_again();
+    check(g_nlines > 0, "the mock run's trace could be read");
+    if (!g_nlines)
+        return;
+    expect("T1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1, ddsCaps={dwCaps=0x200,*}}, lplpDDSurface->surf#1, pUnkOuter=NULL) = DD_OK");
+    expect("T1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1, ddsCaps={dwCaps=0x40,*}}, lplpDDSurface->surf#2, pUnkOuter=NULL) = DD_OK");
+    expect("T1 surf#1.GetAttachedSurface(lpDDSCaps={dwCaps=0x4,*}, lplpDDAttachedSurface->surf#2) = DD_OK");
+    expect("T1 surf#1.Flip(lpDDSurfaceTargetOverride=NULL, dwFlags=0x0) = DDERR_WASSTILLDRAWING [timing]");
+    expect("T1 surf#1.Flip(lpDDSurfaceTargetOverride=NULL, dwFlags=0x0) = DD_OK");
+    expect("T1 surf#1.Flip(lpDDSurfaceTargetOverride=surf#2, dwFlags=0x0) = DD_OK");
+    expect("T1 surf#1.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#2, lpSrcRect=NULL, dwFlags=0x8000000, lpDDBltFx=NULL) = DDERR_WASSTILLDRAWING [timing]");
+    expect("T1 surf#1.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#2, lpSrcRect=NULL, dwFlags=0x8000000, lpDDBltFx=NULL) = DD_OK");
+    expect("# end: 3 presents");
+    expect_count("T1 surf#1.Flip(*", 3);
+    expect_count("*WASSTILLDRAWING*", 2);
+    check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"),
+          "failed presents were not counted: the cap came after the third successful one");
+    sprintf(times, "%s.times", trace ? trace : "");
+    f = fopen(times, "rb");
+    n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+    if (f)
+        fclose(f);
+    text[n] = 0;
+    check(strstr(text, "3 ") != NULL && strstr(text, "4 ") == NULL, "<trace>.times has exactly the three successful presents");
+}
+
+int main(int argc, char **argv) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
 
     check(hwnd != NULL, "test window");
     check(plugin != NULL, "fake plugin loads");
-    if (hwnd && plugin) {
+    if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {
+        load_trace();
+        cycle_mock(plugin, hwnd);
+    } else if (hwnd && plugin) {
         cycle_a(plugin, hwnd);
         cycle_b(plugin, hwnd);
+        cycle_d(plugin, hwnd);
+        cycle_t(plugin, hwnd);
         cycle_c(plugin, hwnd);
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAIL" : "PASS", g_checks, g_fail);

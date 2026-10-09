@@ -274,3 +274,256 @@ __declspec(dllexport) int WINAPI scenario_c(HWND hwnd, ScenarioC *r) {
     IDirectDraw7_Release(dd);
     return 0;
 }
+
+/* Scenario M: runs against the scripted mock ddraw (mockddraw.c). */
+__declspec(dllexport) int WINAPI scenario_m(HWND hwnd, ScenarioM *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL, attached = NULL;
+    DDSURFACEDESC2 sd;
+    DDSCAPS2 caps;
+    int i;
+
+    r->hr_create = DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL);
+    if (FAILED(r->hr_create))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    r->hr_primary = IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL);
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+    r->hr_back = IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);
+    memset(&caps, 0, sizeof caps);
+    caps.dwCaps = DDSCAPS_BACKBUFFER;
+    r->hr_attached = IDirectDrawSurface7_GetAttachedSurface(primary, &caps, &attached);
+    r->attached = attached;
+    r->back = back;
+
+    /* a flip is retried while the driver is busy: the retries are timing, only the success is a frame */
+    for (i = 0; i < 3; i++)
+        r->hr_flip_first[i] = IDirectDrawSurface7_Flip(primary, NULL, 0);
+    r->hr_flip_override = IDirectDrawSurface7_Flip(primary, back, 0);
+    r->hr_blt_busy = IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_DONOTWAIT, NULL);
+    r->hr_blt_ok = IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_DONOTWAIT, NULL);
+    r->hr_bltfast = IDirectDrawSurface7_BltFast(primary, 1, 2, back, NULL, DDBLTFAST_WAIT);
+    r->hr_flip_after_cap = IDirectDrawSurface7_Flip(primary, NULL, 0);
+    return 0;
+}
+
+static HRESULT WINAPI enum_att_cb(LPDIRECTDRAWSURFACE7 s, LPDDSURFACEDESC2 d, LPVOID ctx) {
+    ScenarioD *r = ctx;
+    (void)d;
+    r->enum_seen = s; /* must be a wrapper: calling a method through it must still work */
+    r->enum_callbacks++;
+    return DDENUMRET_OK;
+}
+
+__declspec(dllexport) int WINAPI scenario_d(HWND hwnd, ScenarioD *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECT3D7 d3d = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, target = NULL, target2 = NULL, mip = NULL, lvl1 = NULL, lvl1b = NULL, tex = NULL,
+                         src = NULL, dst = NULL, got = NULL, bad = NULL;
+    LPDIRECT3DDEVICE7 dev = NULL;
+    DDSURFACEDESC2 sd;
+    DDSCAPS2 caps;
+    RECT rect = {LOCK_RECT_L, LOCK_RECT_T, LOCK_RECT_R, LOCK_RECT_B};
+    DWORD total = 0, avail = 0;
+    unsigned x, y;
+
+    r->hr_setup = DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL);
+    if (FAILED(r->hr_setup))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    IDirectDraw7_QueryInterface(dd, &IID_IDirect3D7, (void **)&d3d);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL);                      /* surf#6 */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+    sd.ddsCaps.dwCaps = DDSCAPS_3DDEVICE | DDSCAPS_OFFSCREENPLAIN;
+    sd.dwWidth = 128;
+    sd.dwHeight = 128;
+    IDirectDraw7_CreateSurface(dd, &sd, &target, NULL);                       /* surf#7 */
+    IDirect3D7_CreateDevice(d3d, &IID_IDirect3DHALDevice, target, &dev);      /* dev7#3 */
+    sd.dwWidth = 64;
+    sd.dwHeight = 64;
+    IDirectDraw7_CreateSurface(dd, &sd, &target2, NULL);                      /* surf#8 */
+    r->target2 = target2;
+
+    /* render target switch and read-back: the result must be the same wrapper */
+    r->hr_srt = IDirect3DDevice7_SetRenderTarget(dev, target2, 0);
+    r->hr_get_rt = IDirect3DDevice7_GetRenderTarget(dev, &got);
+    r->got_rt = got;
+    got = NULL;
+
+    /* a mipmapped texture: its levels are surfaces attached to it */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT | DDSD_MIPMAPCOUNT;
+    sd.ddsCaps.dwCaps = DDSCAPS_TEXTURE | DDSCAPS_COMPLEX | DDSCAPS_MIPMAP;
+    sd.ddsCaps.dwCaps2 = DDSCAPS2_TEXTUREMANAGE;
+    sd.dwWidth = 16;
+    sd.dwHeight = 16;
+    sd.dwMipMapCount = 3;
+    sd.ddpfPixelFormat.dwSize = sizeof sd.ddpfPixelFormat;
+    sd.ddpfPixelFormat.dwFlags = DDPF_RGB | DDPF_ALPHAPIXELS;
+    sd.ddpfPixelFormat.dwRGBBitCount = 32;
+    sd.ddpfPixelFormat.dwRBitMask = 0x00ff0000;
+    sd.ddpfPixelFormat.dwGBitMask = 0x0000ff00;
+    sd.ddpfPixelFormat.dwBBitMask = 0x000000ff;
+    sd.ddpfPixelFormat.dwRGBAlphaBitMask = 0xff000000;
+    IDirectDraw7_CreateSurface(dd, &sd, &mip, NULL);                          /* surf#9 */
+    memset(&caps, 0, sizeof caps);
+    caps.dwCaps = DDSCAPS_MIPMAP;
+    r->hr_att1 = IDirectDrawSurface7_GetAttachedSurface(mip, &caps, &lvl1);   /* surf#10 */
+    r->hr_att2 = IDirectDrawSurface7_GetAttachedSurface(mip, &caps, &lvl1b);  /* the same one again */
+    r->att1 = lvl1;
+    r->att2 = lvl1b;
+    r->hr_enum_att = IDirectDrawSurface7_EnumAttachedSurfaces(mip, r, enum_att_cb);
+    if (r->enum_seen)
+        IDirectDrawSurface7_GetCaps((LPDIRECTDRAWSURFACE7)r->enum_seen, &caps); /* a call through what the callback was given */
+    memset(&caps, 0, sizeof caps);
+    caps.dwCaps = DDSCAPS_BACKBUFFER;
+    r->hr_not_found = IDirectDrawSurface7_GetAttachedSurface(target, &caps, &got); /* fails, output untouched */
+    r->bad_surface = got;
+
+    /* a texture on the device and back */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    sd.ddsCaps.dwCaps = DDSCAPS_TEXTURE;
+    sd.ddsCaps.dwCaps2 = DDSCAPS2_TEXTUREMANAGE;
+    sd.dwWidth = TEX_SIZE;
+    sd.dwHeight = TEX_SIZE;
+    sd.ddpfPixelFormat.dwSize = sizeof sd.ddpfPixelFormat;
+    sd.ddpfPixelFormat.dwFlags = DDPF_RGB | DDPF_ALPHAPIXELS;
+    sd.ddpfPixelFormat.dwRGBBitCount = 32;
+    sd.ddpfPixelFormat.dwRBitMask = 0x00ff0000;
+    sd.ddpfPixelFormat.dwGBitMask = 0x0000ff00;
+    sd.ddpfPixelFormat.dwBBitMask = 0x000000ff;
+    sd.ddpfPixelFormat.dwRGBAlphaBitMask = 0xff000000;
+    IDirectDraw7_CreateSurface(dd, &sd, &tex, NULL);                          /* surf#11 */
+    r->tex = tex;
+    IDirect3DDevice7_SetTexture(dev, 0, tex);
+    got = NULL;
+    r->hr_get_tex = IDirect3DDevice7_GetTexture(dev, 0, &got);
+    r->got_tex = got;
+
+    /* BltFast between two plain surfaces */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_SYSTEMMEMORY;
+    sd.dwWidth = 16;
+    sd.dwHeight = 16;
+    IDirectDraw7_CreateSurface(dd, &sd, &src, NULL);                          /* surf#12 */
+    IDirectDraw7_CreateSurface(dd, &sd, &dst, NULL);                          /* surf#13 */
+    {
+        RECT part = {0, 0, 8, 8};
+        r->hr_bltfast = IDirectDrawSurface7_BltFast(dst, 1, 2, src, &part, DDBLTFAST_WAIT);
+    }
+
+    /* an inner failure: the real call fails and leaves the output alone */
+    memset(&sd, 0, sizeof sd);
+    sd.dwFlags = DDSD_CAPS; /* dwSize left 0 */
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+    r->hr_bad_create = IDirectDraw7_CreateSurface(dd, &sd, &bad, NULL);
+
+    /* a partial-rectangle lock; a second lock of the same surface fails and must not disturb the first */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    r->hr_lock1 = IDirectDrawSurface7_Lock(tex, &rect, &sd, DDLOCK_WAIT | DDLOCK_WRITEONLY, NULL);
+    if (SUCCEEDED(r->hr_lock1)) {
+        DDSURFACEDESC2 sd2;
+        for (y = LOCK_RECT_T; y < LOCK_RECT_B; y++)
+            for (x = LOCK_RECT_L; x < LOCK_RECT_R; x++)
+                ((unsigned *)((char *)sd.lpSurface + (y - LOCK_RECT_T) * (unsigned)sd.lPitch))[x - LOCK_RECT_L] = rect_pixel(x, y);
+        memset(&sd2, 0, sizeof sd2);
+        sd2.dwSize = sizeof sd2;
+        r->hr_lock2_busy = IDirectDrawSurface7_Lock(tex, NULL, &sd2, DDLOCK_WAIT, NULL);
+    }
+    r->hr_unlock = IDirectDrawSurface7_Unlock(tex, &rect);
+
+    /* an input structure of a Get* method: the capabilities asked for */
+    memset(&caps, 0, sizeof caps);
+    caps.dwCaps = DDSCAPS_TEXTURE;
+    r->hr_vidmem = IDirectDraw7_GetAvailableVidMem(dd, &caps, &total, &avail);
+
+    if (bad) IDirectDrawSurface7_Release(bad);
+    IDirectDrawSurface7_Release(dst);
+    IDirectDrawSurface7_Release(src);
+    if (got) IDirectDrawSurface7_Release(got);
+    IDirectDrawSurface7_Release(tex);
+    if (lvl1b) IDirectDrawSurface7_Release(lvl1b);
+    if (lvl1) IDirectDrawSurface7_Release(lvl1);
+    IDirectDrawSurface7_Release(mip);
+    IDirectDrawSurface7_Release(target2);
+    IDirect3DDevice7_Release(dev);
+    IDirectDrawSurface7_Release(target);
+    IDirectDrawSurface7_Release(primary);
+    IDirect3D7_Release(d3d);
+    IDirectDraw7_Release(dd);
+    return 0;
+}
+
+typedef struct TCtx {
+    LPDIRECTDRAW7 dd;
+    HANDLE to_worker, to_main;
+    ScenarioT *r;
+} TCtx;
+
+static DWORD WINAPI t_worker(LPVOID p) {
+    TCtx *c = p;
+    DWORD total, avail;
+    int i;
+    DDSCAPS2 caps;
+    memset(&caps, 0, sizeof caps);
+    caps.dwCaps = DDSCAPS_TEXTURE;
+    for (i = 0; i < 3; i++) {
+        WaitForSingleObject(c->to_worker, 10000);
+        IDirectDraw7_GetAvailableVidMem(c->dd, &caps, &total, &avail); /* not a polling call */
+        c->r->thread_calls++;
+        SetEvent(c->to_main);
+    }
+    return 0;
+}
+
+__declspec(dllexport) int WINAPI scenario_t(HWND hwnd, ScenarioT *r) {
+    TCtx c;
+    LPDIRECTDRAWSURFACE7 primary = NULL;
+    DDSURFACEDESC2 sd;
+    HANDLE th;
+    int i;
+
+    memset(&c, 0, sizeof c);
+    c.r = r;
+    r->hr_create = DirectDrawCreateEx(NULL, (void **)&c.dd, &IID_IDirectDraw7, NULL);
+    if (FAILED(r->hr_create))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(c.dd, hwnd, DDSCL_NORMAL | DDSCL_MULTITHREADED);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(c.dd, &sd, &primary, NULL); /* surf#14 */
+    c.to_worker = CreateEventA(NULL, FALSE, FALSE, NULL);
+    c.to_main = CreateEventA(NULL, FALSE, FALSE, NULL);
+    th = CreateThread(NULL, 0, t_worker, &c, 0, NULL);
+    for (i = 0; i < 3; i++) {
+        /* a poll, then the other thread makes a different call, then the next poll */
+        r->hr_flip_status[i] = IDirectDrawSurface7_GetFlipStatus(primary, DDGFS_CANFLIP);
+        SetEvent(c.to_worker);
+        WaitForSingleObject(c.to_main, 10000);
+    }
+    WaitForSingleObject(th, 10000);
+    CloseHandle(th);
+    CloseHandle(c.to_worker);
+    CloseHandle(c.to_main);
+    IDirectDrawSurface7_Release(primary);
+    IDirectDraw7_Release(c.dd);
+    return 0;
+}
