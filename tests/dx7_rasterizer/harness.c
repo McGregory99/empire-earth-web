@@ -305,19 +305,20 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
           e->label);
 }
 
-static int run_plugin_checks(const struct Expect *e, const char *path)
+/* Returns the module, still loaded once, or NULL. */
+static HMODULE run_plugin_checks(const struct Expect *e, const char *path)
 {
     HMODULE h = load_plugin(path);
     CHECK(h != NULL, "%s: LoadLibraryExA(path, 0, 8) (GetLastError=%lu)", e->label,
           h ? 0UL : GetLastError());
     if (!h) {
-        return 1;
+        return NULL;
     }
 
     void *procs[4];
     check_exports(h, e, procs);
     if (!procs[1] || !procs[2]) {
-        return 1;
+        return h;
     }
     PimGetType get_type;
     PimIsValid is_valid;
@@ -338,7 +339,148 @@ static int run_plugin_checks(const struct Expect *e, const char *path)
     if (procs[3]) {
         check_rasterizer_object(e, h, procs[3], procs[2]);
     }
+    return h;
+}
+
+/*
+ * The engine's start-up pattern: PIMModule::GetModule loads every DLL of the game folder, asks it
+ * a question and frees it again, so a plugin that is not selected goes through load / unload
+ * several times (and our null rasterizer is freed after PIMIsValid says false).  Every cycle must
+ * really unload the module (its statics, including the counters, start from zero on the next
+ * load) and must leave the heap intact: DllMain's DETACH path destroys what ATTACH built.
+ */
+#define RELOAD_CYCLES 4
+
+static const char *base_name(const char *path, char *out, size_t size)
+{
+    char full[MAX_PATH];
+    if (!GetFullPathNameA(path, sizeof full, full, NULL)) {
+        out[0] = 0;
+        return out;
+    }
+    const char *slash = strrchr(full, '\\');
+    snprintf(out, size, "%s", slash ? slash + 1 : full);
+    return out;
+}
+
+/* Busy blocks and bytes of every heap of the process, to see what a load / unload cycle leaves behind. */
+static void heap_usage(size_t *blocks, size_t *bytes)
+{
+    HANDLE heaps[64];
+    DWORD n = GetProcessHeaps(64, heaps);
+    *blocks = 0;
+    *bytes = 0;
+    for (DWORD i = 0; i < n && i < 64; i++) {
+        PROCESS_HEAP_ENTRY entry;
+        memset(&entry, 0, sizeof entry);
+        if (!HeapLock(heaps[i])) {
+            continue;
+        }
+        while (HeapWalk(heaps[i], &entry)) {
+            if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
+                (*blocks)++;
+                *bytes += entry.cbData;
+            }
+        }
+        HeapUnlock(heaps[i]);
+    }
+}
+
+/* Is `p` a live (allocated) block of one of the process's heaps? */
+static int live_heap_block(const void *p)
+{
+    HANDLE heaps[64];
+    DWORD n = GetProcessHeaps(64, heaps);
+    for (DWORD i = 0; i < n && i < 64; i++) {
+        if (HeapValidate(heaps[i], 0, p)) {
+            return 1;
+        }
+    }
     return 0;
+}
+
+/* Unload `h`.  `name_buffer` is the heap block behind the plugin's name string: DllMain's DETACH path must free it. */
+static void check_unloaded(const struct Expect *e, HMODULE h, const char *base, const char *when, const void *name_buffer)
+{
+    int live_before = name_buffer != NULL && live_heap_block(name_buffer);
+    BOOL freed = FreeLibrary(h);
+    int live_after = name_buffer != NULL && live_heap_block(name_buffer);
+    CHECK(freed != 0, "%s: %s: FreeLibrary succeeds", e->label, when);
+    if (live_before) {
+        CHECK(!live_after, "%s: %s: DllMain's DETACH path freed the name string's buffer", e->label, when);
+    } else {
+        INFO("%s: %s: the name buffer is not a block of a Win32 heap, its release is not observable", e->label, when);
+    }
+    CHECK(GetModuleHandleA(base) == NULL, "%s: %s: the module is really unloaded (refcount was 1)", e->label, when);
+    CHECK(HeapValidate(GetProcessHeap(), 0, NULL) != 0, "%s: %s: the process heap is intact", e->label, when);
+}
+
+static void reload_cycles(const struct Expect *e, HMODULE first, const char *path)
+{
+    char base[MAX_PATH];
+    base_name(path, base, sizeof base);
+    if (first) {
+        check_unloaded(e, first, base, "after the contract checks", NULL);
+    }
+    for (int cycle = 1; cycle <= RELOAD_CYCLES; cycle++) {
+        char when[48];
+        size_t blocks_before, bytes_before;
+        heap_usage(&blocks_before, &bytes_before);
+        snprintf(when, sizeof when, "reload %d of %d", cycle, RELOAD_CYCLES);
+        HMODULE h = load_plugin(path);
+        CHECK(h != NULL, "%s: %s: LoadLibraryExA (GetLastError=%lu)", e->label, when, h ? 0UL : GetLastError());
+        if (!h) {
+            continue;
+        }
+        PimGetName get_name;
+        const void *name_buffer = NULL;
+        void *name_raw = proc_address(h, "PIMGetName");
+        memcpy(&get_name, &name_raw, sizeof get_name);
+        CHECK(name_raw != NULL, "%s: %s: PIMGetName is exported", e->label, when);
+        if (name_raw) {
+            check_name(e, get_name); /* a fresh load builds a fresh name object */
+            name_buffer = ((const UString *)get_name())->chars;
+        }
+        void *get_raster_raw = proc_address(h, "RPIMGetRasterizer");
+        void *is_valid_raw = proc_address(h, "PIMIsValid");
+        if (e->bases[0] != NULL && get_raster_raw && is_valid_raw) {
+            PimGetRasterizer get_rasterizer;
+            PimIsValid is_valid;
+            memcpy(&get_rasterizer, &get_raster_raw, sizeof get_rasterizer);
+            memcpy(&is_valid, &is_valid_raw, sizeof is_valid);
+            void *obj = get_rasterizer();
+            CHECK(obj != NULL, "%s: %s: RPIMGetRasterizer() returns an object", e->label, when);
+            if (obj) {
+                /* the DLL's statics start from zero on every fresh load */
+                long fresh = 0;
+                for (int k = 0; k < EEWEB_COUNTER_COUNT; k++) {
+                    fresh |= counter(obj, k);
+                }
+                CHECK(fresh == 0, "%s: %s: all %d counters are zero on a fresh load", e->label, when,
+                      EEWEB_COUNTER_COUNT);
+                CHECK(is_valid() == 0, "%s: %s: PIMIsValid() is false", e->label, when);
+                CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1 && counter(obj, EEWEB_COUNTER_DEACTIVATIONS) == 1 &&
+                          counter(obj, EEWEB_COUNTER_SELF_CHECKS) == 1 &&
+                          counter(obj, EEWEB_COUNTER_SELF_CHECK_FAILURES) == 0 &&
+                          counter(obj, EEWEB_COUNTER_DESTROYED) == 1,
+                      "%s: %s: one PIMIsValid call counted once (activate, deactivate, self-check, one temporary destroyed)",
+                      e->label, when);
+            }
+        }
+        check_unloaded(e, h, base, when, name_buffer);
+        size_t blocks_after, bytes_after;
+        heap_usage(&blocks_after, &bytes_after);
+        /* The first cycle may warm caches of the loader or of the original's CRT; from the second on, a full
+         * load / unload cycle must give back every block it took. */
+        if (cycle >= 2) {
+            CHECK(blocks_after == blocks_before && bytes_after == bytes_before,
+                  "%s: %s: load + unload leaves the heap as it was (blocks %zu -> %zu, bytes %zu -> %zu)", e->label,
+                  when, blocks_before, blocks_after, bytes_before, bytes_after);
+        } else {
+            INFO("%s: %s: heap blocks %zu -> %zu, bytes %zu -> %zu", e->label, when, blocks_before, blocks_after,
+                 bytes_before, bytes_after);
+        }
+    }
 }
 
 /* Child process: load the DLL and call PIMIsValid once.  Used to record what the
@@ -408,10 +550,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "unknown variant '%s'\n", argv[1]);
         return 64;
     }
-    run_plugin_checks(e, argv[2]);
+    HMODULE first = run_plugin_checks(e, argv[2]);
     if (e == &kOriginal) {
         record_original_isvalid(argv[0], argv[2]);
     }
+    reload_cycles(e, first, argv[2]);
     printf("%s: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
 }
