@@ -123,7 +123,7 @@ Smallest plugin (37 KB, 4 sections). Pure C ABI: 30 `NPIM*` + 3 `PIM*` exports, 
 
 - [ ] P1.8 Host path: which code opens 33336 and whether LAN search/host call the plugin (static, exe + LLE); relay-trace recipe and parser for an in-game run. — route: delegated mapper (read-only, Ghidra projects `ee_lle`/`ee_exe`), user authorized up to 4 parallel agents (2026-10-09).
 - [x] P1.9 Decompile the original searcher thread (`LAB_100032c4`) and compare with `search.c`. — route: delegated mapper (read-only, project `ee_tcp`). Result: **equivalent**. Loop, 50 ms `WaitForSingleObject`, FP precision/rounding calls (`UM*`, no FPU control instructions anywhere in the DLL), stop sequence, lock regions and detected-list update match. The scan's second parameter is always 0 (both callers: `NPIMPublish` 10001fdf and the thread 1000336d), so broadcast-only is correct. Differences not observable: missing `ESVerify("inService != NULL")` log line, handle read order, malloc vs `operator new`, NULL-lock guard. Decompile outside git: `~/Games/EmpireEarth-re/decomp/tcp_searcher.annotated.c`.
-- [ ] P2.0 Map the renderer plugin (`DX7HRTnLDisplay.dll`/`DX7HRDisplay.dll`): exports, engine contract, D3D7 usage, MSVC C++ ABI strategy, proposed Phase 2 tasks. — route: delegated mapper (read-only, project `ee_render`).
+- [x] P2.0 Map the renderer plugin (`DX7HRTnLDisplay.dll`/`DX7HRDisplay.dll`): exports, engine contract, D3D7 usage, MSVC C++ ABI strategy, proposed Phase 2 tasks. — route: delegated mapper (read-only, project `ee_render`). Result in "Phase 2 — plan" below; raw outputs in `~/Games/EmpireEarth-re/{decomp,inventory,scripts}/`.
 
 ### Known original defects kept for fidelity (follow-ups, not fixed)
 From the independent review; all present in the original and reproduced on purpose. Revisit when the transport is replaced (WebRTC) or if they bite in play: failed LAN scan leaks its reply socket and keeps 33334 bound (~20 handles/s while the searcher retries); `NPIMPublish` restarts Winsock and recreates locks/key table while other threads may use them; `NPIMXferSendTo` and datagram receive can loop indefinitely on a stalled or chatty peer while holding `transfer_lock`; unbounded client registration from unencrypted `0x22`/`0x37` datagrams; `NPIMReceiveFrom` returns success without writing outputs; aliased transfer connection record (possible double free); `NPIMSendSingle` can read past `h_addr_list`. Untested: multi-threaded NPIM calls, oversized datagrams, publish during a search; searcher thread body (`LAB_100032c4`) not decompiled.
@@ -145,6 +145,31 @@ Strict TDD (global config). Runner: `make test` (builds with `i686-w64-mingw32-g
 - Homebrew's `-mcrtdll=msvcrt` still links the UCRT (`libmsvcrt.a` is a copy of `libucrt.a`); use `-mcrtdll=msvcrt-os`.
 - Engine C++ methods are imported by mangled name: thiscall declarations with quoted asm labels, import library from `src/engine_abi/low_level_engine.def` via `dlltool --no-leading-underscore`.
 - Wine reports more adapters than the plugin's fixed 6400-byte `GetAdaptersInfo` buffer and reorders `gethostbyname` results, so the harness fakes both.
+
+## Phase 2 — plan: renderer plugin (`DX7HRTnLDisplay.dll`)
+Not started; proposal from the P2.0 mapping (2026-10-09), pending user go-ahead after Phase 1 closes.
+
+### Contract (evidence: LLE `GEInitialize` 0x1004a2cc → `PIMModule::GetModule` 0x100575d2)
+- Engine-facing surface is 4 plain C exports: `PIMGetName`, `PIMGetType` (must return `'rast'` 0x72617374), `PIMIsValid` (activates, checks screens, deactivates), `RPIMGetRasterizer` (returns a static `DX7TnLRasterizer`, "Direct3D Hardware TnL"). The other 251 mangled exports are unused class-export side effects (no exe/LLE references).
+- Everything else crosses through positional vtables: GERasterizer 78 slots (DX7Rasterizer extends to 82), GEScreen 20, GESurface 32, GEMovie 8, GEVertexArray 16, GEPolygonArray 10. The plugin also reads private fields of ~12 engine classes (GEModel, GEMaterial, GETerrainMesh, GETexture, GELight…) inline.
+- Selected by config `"Rasterizer Name"="Direct3D Hardware TnL"` in the Wine prefix, so TnL is the oracle. Non-TnL is the same source plus 4 differing vtable slots.
+- D3D7 usage is narrow: one FVF `0x152` (36-byte vertex), one ring vertex buffer per screen (2442 vertices), indexed triangle/line lists, fixed-function lighting and linear vertex fog, texture stage 0 only, textures are DDraw surfaces (12 formats incl. DXT1), GDI text on a surface DC, Bink to a locked surface (3 intro movies only). Heaviest: `TransformToCamera` (CPU, float-sensitive), terrain draw.
+
+### Recommended route
+Clean C++ clone built with clang `--target=i686-pc-windows-msvc` (MSVC vtable layout, mangling and overload slot order confirmed by a compile-only probe; link via `lld-link` not yet proven; fallback: hand-written C vtables under mingw). Front-end written against a `Dx7Device` seam: prove it trace-identical on real D3D7 under Wine, then swap in a WebGL2 backend. Oracle: our own tracing `ddraw` proxy in front of the existing 00xJS shim chain (pointers → ids, floats as hex bits, buffer contents hashed).
+
+### Proposed tasks (renumbered after P2.0)
+- P2.1 Toolchain spike: clang MSVC-target DLL with the 4 exports and a null rasterizer; engine loads it, `PIMIsValid` returns false cleanly.
+- P2.2 ABI headers generated from the vtable inventories; test that our vtable shapes match.
+- P2.3 Tracing `ddraw` proxy + golden recorder; original gives identical traces twice.
+- P2.4 Deterministic scenarios (activation, 2D menu, GE micro-harness, paused skirmish with fixed camera).
+- P2.5 Engine class layouts the plugin reads inline, with canary asserts.
+- P2.6 Reimplementation by area, RED→GREEN on traces: screen/surface/formats; state setters; scene and 2D draws; models/lights/textures; terrain/water; Bink.
+- P2.7 TnL subclass + non-TnL build from one source.
+- P2.8 In-game drop-in: A/B traces + screenshots.
+- P2.9 Extract the `Dx7Device` seam; trace diff unchanged.
+- P2.10 WebGL2 backend driven by recorded traces, compared to reference frames.
+Estimate (not measured): ~3–4 weeks to a verified drop-in clone. Risks: silent corruption from wrong engine layouts, scenario determinism (FPS counters, time-based animation), x87 vs SSE 1-ULP differences in culling, unproven link path.
 
 ## Next step
 P1.6: drop our `TCP Protocol.dll` into the Wine game copy (back up the original first), check the game loads it, then LAN host/join over localhost between two Wine instances if feasible.
