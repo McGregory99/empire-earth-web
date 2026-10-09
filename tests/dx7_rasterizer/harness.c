@@ -19,6 +19,7 @@
  * failed checks.
  */
 #include "low_level_engine.h" /* UString and the engine's own constructors; includes <windows.h> */
+#include "rasterizer_abi.h"   /* the null rasterizer's vtable contract */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -57,19 +58,29 @@ static int g_failures;
         fflush(stdout);                 \
     } while (0)
 
+#define THISCALL __attribute__((thiscall))
+typedef long(THISCALL *MethodNoArg)(void *self);
+typedef long(THISCALL *MethodLong)(void *self, long a);
+typedef long(THISCALL *MethodFloatLong)(void *self, float f, long a);
+typedef void *(THISCALL *DeletingDtor)(void *self, unsigned flags);
+
 /* What each variant is expected to export (ordinals as the linker assigned them). */
 struct Expect {
     const char *label;
     unsigned ordinal[4]; /* PIMGetName, PIMGetType, PIMIsValid, RPIMGetRasterizer */
     int is_valid;        /* expected low byte of PIMIsValid, or -1 = do not assert */
     const char *name;    /* text of the UString that PIMGetName returns */
+    const char *rtti;    /* RTTI name of the class RPIMGetRasterizer's object belongs to */
+    const char *bases[2]; /* expected RTTI class chain (most derived first), NULL = only report it */
 };
 
 static const char *const kExportNames[4] = {"PIMGetName", "PIMGetType", "PIMIsValid",
                                             "RPIMGetRasterizer"};
 
-static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1, "Direct3D Hardware TnL"};
-static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer"};
+static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1,
+                                        "Direct3D Hardware TnL", ".?AVDX7TnLRasterizer@@", {NULL, NULL}};
+static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
+                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_BASE}};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
 static void *proc_address(HMODULE h, const char *name_or_ordinal)
@@ -138,6 +149,160 @@ static void check_name(const struct Expect *e, PimGetName get_name)
     ustring_destruct(&copy);
 }
 
+/* ---- MSVC RTTI (x86: absolute pointers, no RVAs) ------------------------------------------- */
+struct RttiTypeDescriptor {
+    const void *vftable; /* the vtable of std::type_info */
+    void *spare;
+    char name[1];        /* ".?AVClass@@" */
+};
+struct RttiBaseClass {
+    const struct RttiTypeDescriptor *type;
+    uint32_t contained_bases;
+    int32_t mdisp, pdisp, vdisp;
+    uint32_t attributes;
+};
+struct RttiHierarchy {
+    uint32_t signature, attributes, count;
+    const struct RttiBaseClass *const *bases;
+};
+struct RttiLocator {
+    uint32_t signature, offset, cd_offset;
+    const struct RttiTypeDescriptor *type;
+    const struct RttiHierarchy *hierarchy;
+};
+
+/* The complete object locator sits in the slot before the first virtual function. */
+static const struct RttiLocator *locator_of(void *const *vtable)
+{
+    return (const struct RttiLocator *)vtable[-1];
+}
+
+static void check_rtti(const struct Expect *e, HMODULE h, void *const *vtable)
+{
+    const struct RttiLocator *col = locator_of(vtable);
+    CHECK(col != NULL && in_module(h, col) && col->signature == 0 && col->offset == 0 && col->cd_offset == 0,
+          "%s: vtable[-1] is an MSVC complete object locator (signature 0, offset 0)", e->label);
+    if (!col || !in_module(h, col) || !col->type || !col->hierarchy) {
+        return;
+    }
+    CHECK(strcmp(col->type->name, e->rtti) == 0, "%s: RTTI type name is %s (got %s)", e->label, e->rtti,
+          col->type->name);
+    const struct RttiHierarchy *chain = col->hierarchy;
+    CHECK(chain->count >= 1 && chain->count < 16, "%s: class hierarchy lists %u class(es)", e->label,
+          (unsigned)chain->count);
+    for (uint32_t i = 0; i < chain->count && i < 16; i++) {
+        const char *name = chain->bases[i]->type->name;
+        if (e->bases[0]) {
+            CHECK(i < 2 && strcmp(name, e->bases[i]) == 0, "%s: hierarchy[%u] is %s", e->label, (unsigned)i,
+                  name);
+        } else {
+            INFO("%s: hierarchy[%u] is %s", e->label, (unsigned)i, name);
+        }
+    }
+    if (e->bases[0]) {
+        CHECK(chain->count == 2, "%s: hierarchy has exactly the class and its base", e->label);
+    }
+}
+
+static void *slot(void *const *vtable, int index)
+{
+    return vtable[index];
+}
+
+static long counter(void *obj, long which)
+{
+    MethodLong get_counter;
+    void *fn = slot(*(void *const **)obj, EEWEB_VSLOT_GET_COUNTER);
+    memcpy(&get_counter, &fn, sizeof get_counter);
+    return get_counter(obj, which);
+}
+
+/*
+ * What RPIMGetRasterizer returns.  Both variants: a vtable inside the DLL and MSVC RTTI.  Ours is
+ * driven through its vtable exactly like the engine would (thiscall through positional slots),
+ * which pins the layout rules listed in rasterizer_abi.h.
+ */
+static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get_rasterizer_raw, void *is_valid_raw)
+{
+    PimGetRasterizer get_rasterizer;
+    memcpy(&get_rasterizer, &get_rasterizer_raw, sizeof get_rasterizer);
+    void *obj = get_rasterizer();
+    CHECK(obj != NULL, "%s: RPIMGetRasterizer() returns an object", e->label);
+    if (!obj) {
+        return;
+    }
+    CHECK(get_rasterizer() == obj, "%s: RPIMGetRasterizer() returns the same object every time", e->label);
+    void *const *vtable = *(void *const **)obj;
+    CHECK(in_module(h, vtable), "%s: the object's vtable lies inside the plugin", e->label);
+    check_rtti(e, h, vtable);
+    if (e->bases[0] == NULL) {
+        return;
+    }
+
+    /* Ours: every slot, called as the engine would. */
+    MethodNoArg m0;
+    MethodLong m1;
+    MethodFloatLong m2;
+    void *fn;
+    fn = slot(vtable, EEWEB_VSLOT_ACTIVATE);
+    memcpy(&m0, &fn, sizeof m0);
+    CHECK(m0(obj) == EEWEB_ACTIVATE_FAILED, "%s: slot %d is Activate()", e->label, EEWEB_VSLOT_ACTIVATE);
+    fn = slot(vtable, EEWEB_VSLOT_GET_SCREEN_COUNT);
+    memcpy(&m0, &fn, sizeof m0);
+    CHECK(m0(obj) == 0, "%s: slot %d is GetScreenCount()", e->label, EEWEB_VSLOT_GET_SCREEN_COUNT);
+    fn = slot(vtable, EEWEB_VSLOT_DRAW_SCALED);
+    memcpy(&m2, &fn, sizeof m2);
+    CHECK(m2(obj, 2.5f, 5) == EEWEB_DRAW_SCALED_BASE + 5 + 2, "%s: slot %d is Draw(float, long), the overload declared second",
+          e->label, EEWEB_VSLOT_DRAW_SCALED);
+    fn = slot(vtable, EEWEB_VSLOT_DRAW_PLAIN);
+    memcpy(&m1, &fn, sizeof m1);
+    CHECK(m1(obj, 5) == EEWEB_DRAW_PLAIN_BASE + 5, "%s: slot %d is Draw(long), the overload declared first", e->label,
+          EEWEB_VSLOT_DRAW_PLAIN);
+    fn = slot(vtable, EEWEB_VSLOT_DESCRIBE);
+    memcpy(&m0, &fn, sizeof m0);
+    CHECK(m0(obj) == EEWEB_DESCRIBE_RESULT, "%s: slot %d is Describe(), inherited from the base class", e->label,
+          EEWEB_VSLOT_DESCRIBE);
+    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1, "%s: the Activate() call above was counted", e->label);
+
+    /* PIMIsValid runs the DLL's internal exercise of the class: Activate / GetScreenCount /
+     * Deactivate on the shared object, and new + dynamic_cast + virtual delete on a temporary. */
+    PimIsValid is_valid;
+    memcpy(&is_valid, &is_valid_raw, sizeof is_valid);
+    long before[5], after[5];
+    for (int k = 0; k < 5; k++) {
+        before[k] = counter(obj, k);
+    }
+    CHECK(is_valid() == 0, "%s: PIMIsValid() is still false", e->label);
+    for (int k = 0; k < 5; k++) {
+        after[k] = counter(obj, k);
+    }
+    CHECK(after[EEWEB_COUNTER_ACTIVATIONS] == before[EEWEB_COUNTER_ACTIVATIONS] + 1,
+          "%s: PIMIsValid activated the rasterizer through its vtable", e->label);
+    CHECK(after[EEWEB_COUNTER_DEACTIVATIONS] == before[EEWEB_COUNTER_DEACTIVATIONS] + 1,
+          "%s: PIMIsValid deactivated it again", e->label);
+    CHECK(after[EEWEB_COUNTER_SELF_CHECKS] == before[EEWEB_COUNTER_SELF_CHECKS] + 1,
+          "%s: PIMIsValid ran the internal class self-check once", e->label);
+    CHECK(after[EEWEB_COUNTER_SELF_CHECK_FAILURES] == 0,
+          "%s: the self-check (new, virtual calls, dynamic_cast, virtual delete) found no fault", e->label);
+    CHECK(after[EEWEB_COUNTER_DESTROYED] == before[EEWEB_COUNTER_DESTROYED] + 1,
+          "%s: the temporary object's deleting destructor ran exactly once", e->label);
+
+    /* Last, because it destroys the shared object: the deleting-destructor slot with flags 0
+     * (destroy, do not free) must run the derived destructor and then the base one. */
+    DeletingDtor destroy;
+    fn = slot(vtable, EEWEB_VSLOT_DELETING_DESTRUCTOR);
+    memcpy(&destroy, &fn, sizeof destroy);
+    long destroyed_before = counter(obj, EEWEB_COUNTER_DESTROYED);
+    destroy(obj, 0);
+    void *const *after_vtable = *(void *const **)obj;
+    CHECK(after_vtable != vtable, "%s: slot %d (deleting destructor) ran: the vptr was reset", e->label,
+          EEWEB_VSLOT_DELETING_DESTRUCTOR);
+    CHECK(counter(obj, EEWEB_COUNTER_DESTROYED) == destroyed_before + 1, "%s: the derived destructor ran once", e->label);
+    const struct RttiLocator *base_col = locator_of(after_vtable);
+    CHECK(in_module(h, base_col) && strcmp(base_col->type->name, EEWEB_RTTI_BASE) == 0,
+          "%s: the object was left with the base class vtable (the base destructor ran)", e->label);
+}
+
 static int run_plugin_checks(const struct Expect *e, const char *path)
 {
     HMODULE h = load_plugin(path);
@@ -165,11 +330,11 @@ static int run_plugin_checks(const struct Expect *e, const char *path)
     check_name(e, get_name);
 
     if (e->is_valid >= 0) {
-        for (int i = 0; i < 3; i++) {
-            unsigned al = is_valid();
-            CHECK(al == (unsigned)e->is_valid, "%s: PIMIsValid() call %d returns %d in AL (got %u)",
-                  e->label, i + 1, e->is_valid, al);
-        }
+        unsigned al = is_valid();
+        CHECK(al == (unsigned)e->is_valid, "%s: PIMIsValid() returns %d in AL (got %u)", e->label, e->is_valid, al);
+    }
+    if (procs[3]) {
+        check_rasterizer_object(e, h, procs[3], procs[2]);
     }
     return 0;
 }

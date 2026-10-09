@@ -195,8 +195,8 @@ $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcr
 	    /subsystem:windows,5.0 /opt:ref /filealign:512 $(RAST_OBJECTS) \
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
 
-$(RAST_HARNESS): tests/dx7_rasterizer/harness.c src/engine_abi/low_level_engine.h $(ENGINE_LIB)
-	$(CC) $(CFLAGS) -o $@ $< -L $(BUILD) -lengine
+$(RAST_HARNESS): tests/dx7_rasterizer/harness.c src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ENGINE_LIB)
+	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine
 
 # Exports, ordinals and imports of our DLL against the contract (tests/dx7_rasterizer/).
 check-abi-rasterizer: $(RAST_DLL)
@@ -204,8 +204,9 @@ check-abi-rasterizer: $(RAST_DLL)
 	diff -u tests/dx7_rasterizer/expected_exports.txt $(RAST_BUILD)/exports-ours.txt && echo "PASS: exports and ordinals are as defined"
 	python3 -I tests/dx7_rasterizer/check_imports.py "$(RAST_DLL)" --require $(RAST_REQUIRED_IMPORTS)
 
-# msvcrt.dll imports that prove the C++ constructs were linked (filled in as the DLL grows).
-RAST_REQUIRED_IMPORTS ?=
+# msvcrt.dll imports that prove the C++ constructs were really compiled and linked: pure virtual
+# slots, dynamic_cast, operator new and delete.  Quoted because of the `?` and `@` characters.
+RAST_REQUIRED_IMPORTS := '_purecall' '__RTDynamicCast' '??2@YAPAXI@Z' '??3@YAXPAX@Z'
 
 # Test beds: the engine DLLs sit next to the plugin (altered search path), like in the game dir.
 testbed-rasterizer: $(RAST_DLL) $(RAST_HARNESS)
