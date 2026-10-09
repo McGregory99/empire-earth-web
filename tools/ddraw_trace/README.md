@@ -124,8 +124,8 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 * Timing-dependent calls (`GetFlipStatus`, `GetBltStatus`, `WaitForVerticalBlank`, `GetScanLine`,
   `GetVerticalBlankStatus`) are written as `... = ? [timing]` with masked results, and a run of identical lines
   collapses to one (polling loops have no reproducible length).
-* A "present" is `IDirectDrawSurface7::Flip`, or `Blt`/`BltFast` whose destination was created with
-  `DDSCAPS_PRIMARYSURFACE`. After `DDT_MAX_PRESENTS` of them the trace gets its end marker and stops; the game
+* A "present" is `IDirectDrawSurface7::Flip`, or a `Blt` onto a surface created with `DDSCAPS_PRIMARYSURFACE` that has a
+  source surface and no destination rectangle (a whole-surface copy; sprite blits, colour fills and `BltFast` are not frames). After `DDT_MAX_PRESENTS` of them the trace gets its end marker and stops; the game
   keeps running untraced.
 
 ## Configuration
@@ -167,9 +167,15 @@ Next to the trace (not part of the normalized trace, so they never break a diff)
 Gate: two captures with the original renderer must be identical. Results on this machine (Mac display 1710x1107,
 Wine Stable 11.0, d7vk stack, the launcher's `EE_*` switches off as in the task):
 
-* Cap of 60 presents (the default): **identical** in every pair so far (three pairs, 10,980 lines each, with hashes of
-  every locked surface and vertex buffer, indices and vertices).
-* Cap of 300: the traces differ, always at the same kind of event. After 111 to 152 frames (four runs: 111, 119, 126, 128, 152;
+* Cap of 60 presents (the default): **identical**. Final build: two pairs (the gate, and two `make game-trace` runs),
+  11,439 lines each, with the hashes of every locked surface and vertex buffer and of every index and vertex array. Earlier
+  builds gave three identical pairs of 10,980 lines (before index hashing and the present rule below).
+* One race seen once in about eight captures, before the present rule changed: the software cursor is drawn by a third
+  thread (`T3`) that races the render thread when the menu first appears. Its 32x32 sprite blits then came in a different
+  order and, because Blts to the primary used to count as presents, moved the cap by one frame. Now only a whole-surface
+  `Blt` (no destination rectangle, a source surface) or a `Flip` is a present, and the gate, if two raw traces differ,
+  compares them again after `scripts/normalize.py` removed the 32x32 sprite blits.
+* Cap of 300: the traces differ, always at the same kind of event. After 111 to 152 frames (five runs: 111, 119, 126, 128, 152;
   frames are paced at 60 Hz, so about 2 s after the menu appears) two extra untextured quads appear in each frame, and
   they toggle on and off later. The frame goes from 153 to 164 lines. Cause: a wall-clock-driven element of the menu, not
   the proxy. The default cap ends well before it. Under heavy load the event arrives in fewer frames, so lower
@@ -190,7 +196,7 @@ data) and `startup-menu-n60.summary.txt` (call counts per method, render states,
 * Vertex buffer hashes cover the whole locked range, which for the game's ring buffer is all 87,912 bytes at every
   `Unlock`. That is deterministic here but says nothing about which part changed; a dirty-range hash or a hash of the
   vertex range at draw time would localize differences.
-* Pixels drawn through a surface DC (`GetDC`/`ReleaseDC` with GDI text) are not hashed: 56 pairs in the captured window.
+* Pixels drawn through a surface DC (`GetDC`/`ReleaseDC` with GDI text) are not hashed: 59 pairs in the captured window.
 * The Bink movie path is not exercised (the launcher skips the intro movies).
 * No normalization of the wall-clock menu element: the capture ends before it.
 * `DDCAPS` prints `dwVidMemFree`; it was constant here. Other volatile fields may exist outside the captured window.

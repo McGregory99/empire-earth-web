@@ -1,24 +1,24 @@
-== lines: 10977 calls, 1212 callback lines
+== lines: 11436 calls, 1212 callback lines
 == calls per interface.method
-1512 vb.Unlock
-1512 vb.Lock
-1512 dev7.DrawIndexedPrimitiveVB
-1469 dev7.SetTextureStageState
-1456 dev7.SetTexture
- 470 dev7.SetRenderState
+1593 vb.Unlock
+1593 vb.Lock
+1593 dev7.DrawIndexedPrimitiveVB
+1547 dev7.SetTextureStageState
+1534 dev7.SetTexture
+ 491 dev7.SetRenderState
  301 surf.Unlock
  301 surf.Lock
- 173 surf.Blt
- 172 dev7.SetTransform
+ 182 surf.Blt
+ 181 dev7.SetTransform
  120 surf.GetAttachedSurface
   74 dd7.CreateSurface
-  60 dev7.SetViewport
-  57 surf.Flip
-  57 dev7.Clear
-  56 surf.ReleaseDC
-  56 surf.GetDC
-  56 dev7.EndScene
-  56 dev7.BeginScene
+  63 dev7.SetViewport
+  60 surf.Flip
+  60 dev7.Clear
+  59 surf.ReleaseDC
+  59 surf.GetDC
+  59 dev7.EndScene
+  59 dev7.BeginScene
   48 surf.SetColorKey
   40 surf.Release
   36 dd7.GetCaps
@@ -43,10 +43,10 @@
   18 DirectDrawCreateEx
    6 DirectDrawEnumerateExA
 == distinct render states set
- 114 SRCBLEND(19)
- 114 DESTBLEND(20)
- 114 ALPHABLENDENABLE(27)
-  58 CLIPPING(136)
+ 120 SRCBLEND(19)
+ 120 DESTBLEND(20)
+ 120 ALPHABLENDENABLE(27)
+  61 CLIPPING(136)
    5 LIGHTING(137)
    5 CULLMODE(22)
    4 ZFUNC(23)
@@ -74,8 +74,8 @@
    2 ALPHAREF(24)
    2 ALPHAFUNC(25)
 == distinct texture stage state types set
- 729 COLOROP(1)
- 729 ALPHAOP(4)
+ 768 COLOROP(1)
+ 768 ALPHAOP(4)
    2 TEXCOORDINDEX(11)
    1 MIPMAPLODBIAS(19)
    1 MIPFILTER(18)
@@ -102,4 +102,4 @@
    2 {dwSize=124, dwFlags=0x1007, dwHeight=2, dwWidth=2, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=16, dwRBitMask=0xf800, dwGBitMask=0x7e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x10006040, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
    2 {dwSize=124, dwFlags=0x1007, dwHeight=16, dwWidth=16, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x1000, dwCaps2=0x18, dwCaps3=0x0, dwCaps4=0x0}}
    1 {dwSize=124, dwFlags=0x1007, dwHeight=16, dwWidth=16, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x840, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
-== presents: 230 flip/blit calls; end marker: # end: 60 presents
+== presents: 242 flip/blit calls; end marker: # end: 60 presents
