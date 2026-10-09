@@ -65,7 +65,7 @@ test-normalize:
 
 # The shared game-run library and the drivers that use it, against a fake world (never the real game).
 test-game-run:
-	@for t in core snapshot wrapper trace-driver; do bash $(TESTDIR)/../game_run/test-$$t.sh || exit 1; done
+	@for t in core snapshot wrapper trace-driver check-driver; do bash $(TESTDIR)/../game_run/test-$$t.sh || exit 1; done
 
 # Test bed: our proxy as ddraw.dll, Wine's builtin ddraw copied under the name the proxy forwards to.
 test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe

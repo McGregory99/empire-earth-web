@@ -10,214 +10,116 @@
 #   - RPIMGetRasterizer was therefore never called;
 #   - the original DX7HRTnLDisplay.dll stayed loaded and the game rendered (BeginScene);
 #   - nothing crashed (no err:seh, no Wine Program Error).
-# Then it stops the game with the prefix's own wineserver, removes the DLL and every registry
-# value it added, and verifies the sha256 manifest of the game directory against the one taken
-# before.  Everything is restored on any exit path, and the game-run lock is always released.
+# Then it stops the game with the prefix's own wineserver, removes the DLL and the registry value it added,
+# and verifies the sha256 manifest of the game directory against the one taken before.
 #
-# Protocol (shared with the other agents that use the game copy):
-#   - take the lock `mkdir $RE_DIR/locks/game-run` (atomic; wait and retry while it exists);
-#   - never touch the game directory while the game is running;
-#   - restore the directory, then `rmdir` the lock.
+# The protocol (the game-run lock, the anchored game detection, the verified snapshot and exact restore, the
+# signal-safe teardown that keeps lock and snapshot when it cannot finish, the launcher as a background job) is the
+# shared library tools/game_run/lib.sh, also used by the trace driver; tests/game_run/ tests it against a fake world.
 set -u -o pipefail
 
 DLL_SRC=${1:?usage: game_check.sh <dll> <file name>}
 DLL_NAME=${2:?usage: game_check.sh <dll> <file name>}
 
-RE_DIR=${RE_DIR:-$HOME/Games/EmpireEarth-re}
-SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-$HOME/Library/Application Support/EmpireEarthMac}
-PREFIX=$SUPPORT/wineprefix
-GAME="$PREFIX/drive_c/GOG Games/Empire Earth Gold Edition/Empire Earth"
-WINE_BIN="$SUPPORT/runtime/Wine Stable.app/Contents/Resources/wine/bin"
-LAUNCHER_DIR=${EE_LAUNCHER_DIR:-$HOME/Games/tools/ee-macos}
-LOG_DIR="$SUPPORT/logs"
-LOCK="$RE_DIR/locks/game-run"
-LOCK_WAIT=${GAME_LOCK_WAIT:-3600}
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../../tools/game_run/lib.sh
+. "$HERE/../../tools/game_run/lib.sh"
+GR_TOOL=game-check
+
 OUT=${GAME_CHECK_OUT:-build/game-check-rasterizer}
+LAUNCH_LIMIT=900
+gr_test_hook
+gr_sanitize_env
+
 SNOOP_KEY='HKCU\Software\Wine\Debug'
 SNOOP_MODULE="${DLL_NAME%.dll}.*"
-# Files the game or its launcher rewrites on every run: the game's logs, and the two shim DLLs
-# that scripts/launch.sh (apply-launch-patches.sh) copies from its helper build into the game
-# directory each time (ddraw.dll, version.dll; their content follows the helper build of the
-# moment, not this check).  They are stashed before and put back afterwards, so the game
-# directory ends up exactly as found; the run's own copies of the logs are kept as evidence.
-RUNTIME_FILES="ee-ddraw.log ee-version.log 0_Error.log ddraw.dll version.dll"
 
-mkdir -p "$OUT" "$RE_DIR/locks"
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/game-check.XXXXXX")
+mkdir -p "$OUT"
+GR_LOG_FILE="$OUT/game-check.log"
 LOG="$OUT/launch.log"
-
-have_lock=0
-dll_installed=0
-reg_changed=0
-game_started=0
-restored=0
 failures=0
 
 say() { printf '[game-check] %s\n' "$*"; }
 pass() { printf 'ok   %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*"; failures=$((failures + 1)); }
 
-wine_env() { WINEPREFIX="$PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$@"; }
-
-# pgrep as the project's protocol prescribes, minus Rosetta processes left stuck mid-exit with a
-# few KB resident (they match the pattern for minutes and are not a running game).
-game_pids() {
-  local pid rss
-  for pid in $(pgrep -f 'C:.GOG Games.*Empire Earth.exe' 2>/dev/null); do
-    rss=$(ps -o rss= -p "$pid" 2>/dev/null | tr -d ' ')
-    if [ -n "$rss" ] && [ "$rss" -gt 1024 ]; then
-      echo "$pid"
-    fi
-  done
+wine_env() { WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$@"; }
+snoop_value() {
+  wine_env "$GR_WINE_ROOT/bin/wine" reg query "$SNOOP_KEY" /v SnoopInclude 2>/dev/null |
+    sed -n 's/^[[:space:]]*SnoopInclude[[:space:]]*REG_SZ[[:space:]]*//p' | tr -d '\r'
 }
+# The wineserver of a `wine reg` call must exit (and write the registry) before the launcher starts one.
+flush_registry() { WINEPREFIX="$GR_PREFIX" "$GR_WINE_ROOT/bin/wineserver" -k >/dev/null 2>&1; }
 
-wait_until_game_gone() {
-  local seconds=$1 waited=0
-  while [ -n "$(game_pids)" ]; do
-    if [ "$waited" -ge "$seconds" ]; then
-      return 1
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  return 0
-}
+cleanup() { gr_teardown; }
+gr_install_traps cleanup
 
-stop_game() {
-  # The prefix's own wineserver ends every process of this prefix and nothing else.
-  WINEPREFIX="$PREFIX" "$WINE_BIN/wineserver" -k >/dev/null 2>&1
-  if ! wait_until_game_gone 60; then
-    WINEPREFIX="$PREFIX" "$WINE_BIN/wineserver" -k >/dev/null 2>&1
-    wait_until_game_gone 30
-  fi
-}
+# ---- 1. the game-run lock -------------------------------------------------------------------------------------------
 
-manifest() {
-  (cd "$GAME" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256)
-}
+gr_lock_acquire || exit 2
 
-# ---- restoring ----------------------------------------------------------------------------------
-
-restore_registry() {
-  if [ "$reg_changed" -eq 1 ]; then
-    if [ -n "${prev_snoop-}" ]; then
-      wine_env "$WINE_BIN/wine" reg add "$SNOOP_KEY" /v SnoopInclude /t REG_SZ /d "$prev_snoop" /f >/dev/null 2>&1
-    else
-      wine_env "$WINE_BIN/wine" reg delete "$SNOOP_KEY" /v SnoopInclude /f >/dev/null 2>&1
-    fi
-    reg_changed=0
-    # Let the short-lived wineserver that served `wine reg` write the registry and exit.
-    WINEPREFIX="$PREFIX" "$WINE_BIN/wineserver" -k >/dev/null 2>&1
-  fi
-}
-
-restore_all() {
-  [ "$restored" -eq 1 ] && return 0
-  if [ "$game_started" -eq 1 ]; then # only a game this script launched is ever stopped
-    stop_game
-  fi
-  if [ "$dll_installed" -eq 1 ] && [ -z "$(game_pids)" ]; then
-    rm -f "$GAME/$DLL_NAME"
-    dll_installed=0
-  fi
-  restore_registry
-  if [ -d "$WORK/stash" ] && [ -z "$(game_pids)" ]; then
-    local f
-    for f in $RUNTIME_FILES; do
-      if [ -e "$WORK/stash/$f" ]; then
-        cp -p "$WORK/stash/$f" "$GAME/$f"
-      elif [ -e "$WORK/stash/$f.absent" ]; then
-        rm -f "$GAME/$f"
-      fi
-    done
-  fi
-  restored=1
-}
-
-cleanup() {
-  restore_all
-  if [ "$have_lock" -eq 1 ]; then
-    rmdir "$LOCK" 2>/dev/null && say "released $LOCK"
-    have_lock=0
-  fi
-  rm -rf "$WORK"
-}
-trap cleanup EXIT
-trap 'exit 130' INT TERM
-
-# ---- 1. the game-run lock ---------------------------------------------------------------------
-
-waited=0
-until mkdir "$LOCK" 2>/dev/null; do
-  if [ "$waited" -ge "$LOCK_WAIT" ]; then
-    say "could not take $LOCK within ${LOCK_WAIT}s: another agent is using the game"
-    exit 2
-  fi
-  say "waiting for the game-run lock ($LOCK exists; another agent is using the game)"
-  sleep 15
-  waited=$((waited + 15))
-done
-have_lock=1
-say "took $LOCK"
-
-# ---- 2. preconditions -------------------------------------------------------------------------
+# ---- 2. preconditions -----------------------------------------------------------------------------------------------
 
 [ -f "$DLL_SRC" ] || { say "no such DLL: $DLL_SRC"; exit 2; }
-[ -d "$GAME" ] || { say "no game copy at $GAME"; exit 2; }
-[ -x "$LAUNCHER_DIR/scripts/launch.sh" ] || { say "no launcher at $LAUNCHER_DIR"; exit 2; }
-[ ! -e "$GAME/$DLL_NAME" ] || { say "$GAME/$DLL_NAME already exists; refusing to overwrite it"; exit 2; }
-if [ -n "$(game_pids)" ]; then
-  say "the game is already running (pgrep 'C:.GOG Games.*Empire Earth.exe'); not touching it"
+[ -d "$GR_GAME" ] || { say "no game copy at $GR_GAME"; exit 2; }
+[ -x "$GR_LAUNCHER_DIR/scripts/launch.sh" ] || { say "no launcher at $GR_LAUNCHER_DIR"; exit 2; }
+gr_check_leftovers "$DLL_NAME" || exit 2
+gr_assert_config || exit 2
+blocking="$(gr_blocking_pids | tr '\n' ' ')"
+if [ -n "$blocking" ]; then
+  say "the game, Art of Conquest or another program of the GOG install is running (pid $blocking); not touching it"
   exit 2
 fi
 
-# ---- 3. manifest, stash, registry ---------------------------------------------------------------
+# ---- 3. manifest, snapshot, registry --------------------------------------------------------------------------------
 
-say "taking the sha256 manifest of the game directory"
-manifest > "$OUT/manifest-before.txt" || { say "manifest failed"; exit 2; }
-say "$(wc -l < "$OUT/manifest-before.txt" | tr -d ' ') files"
+say "taking the sha256 manifest and a verified snapshot of the game directory"
+gr_state_begin && gr_snapshot_take || exit 2
+cp "$GAME_RUN_STATE/manifest.before" "$OUT/manifest-before.txt"
+say "$(wc -l <"$OUT/manifest-before.txt" | tr -d ' ') files"
 
-mkdir -p "$WORK/stash"
-for f in $RUNTIME_FILES; do
-  if [ -e "$GAME/$f" ]; then cp -p "$GAME/$f" "$WORK/stash/$f"; else : > "$WORK/stash/$f.absent"; fi
-done
-
-prev_snoop=$(wine_env "$WINE_BIN/wine" reg query "$SNOOP_KEY" /v SnoopInclude 2>/dev/null |
-  sed -n 's/^[[:space:]]*SnoopInclude[[:space:]]*REG_SZ[[:space:]]*//p' | tr -d '\r')
+prev_snoop="$(snoop_value)"
+flush_registry
+# the undo steps run before the restore, also from recover.sh after an interrupted run
+if [ -n "$prev_snoop" ]; then
+  gr_undo_add env "WINEPREFIX=$GR_PREFIX" WINEDEBUG=-all "WINEDLLOVERRIDES=mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" \
+    reg add "$SNOOP_KEY" /v SnoopInclude /t REG_SZ /d "$prev_snoop" /f
+else
+  gr_undo_add env "WINEPREFIX=$GR_PREFIX" WINEDEBUG=-all "WINEDLLOVERRIDES=mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" \
+    reg delete "$SNOOP_KEY" /v SnoopInclude /f
+fi
+gr_undo_add env "WINEPREFIX=$GR_PREFIX" "$GR_WINE_ROOT/bin/wineserver" -k
 new_snoop=$SNOOP_MODULE
 [ -n "$prev_snoop" ] && new_snoop="$prev_snoop;$SNOOP_MODULE"
-wine_env "$WINE_BIN/wine" reg add "$SNOOP_KEY" /v SnoopInclude /t REG_SZ /d "$new_snoop" /f >/dev/null 2>&1 || {
+wine_env "$GR_WINE_ROOT/bin/wine" reg add "$SNOOP_KEY" /v SnoopInclude /t REG_SZ /d "$new_snoop" /f >/dev/null 2>&1 || {
   say "could not set SnoopInclude"; exit 2; }
-reg_changed=1
-# Make the wineserver of that `wine reg` call exit (writing the registry) before the launcher starts one.
-WINEPREFIX="$PREFIX" "$WINE_BIN/wineserver" -k >/dev/null 2>&1
+flush_registry
 say "SnoopInclude = $new_snoop"
 
-# ---- 4. install and launch ----------------------------------------------------------------------
+# ---- 4. install and launch --------------------------------------------------------------------------------------------
 
-cp "$DLL_SRC" "$GAME/$DLL_NAME"
-dll_installed=1
-say "installed $DLL_NAME ($(shasum -a 256 "$GAME/$DLL_NAME" | cut -c1-16)...)"
+cp "$DLL_SRC" "$GR_GAME/$DLL_NAME"
+say "installed $DLL_NAME ($(shasum -a 256 "$GR_GAME/$DLL_NAME" | cut -c1-16)...)"
 
-ls "$LOG_DIR"/launch-*.log 2>/dev/null | sort > "$WORK/logs-before.txt"
-game_started=1
+mkdir -p "$GR_LOG_DIR"
+ls "$GR_LOG_DIR"/launch-*.log 2>/dev/null | sort >"$GAME_RUN_STATE/logs-before.txt"
+gr_launcher_log_mark
 say "launching the game (returns at the first frame)"
-(
-  cd "$LAUNCHER_DIR" &&
-    EE_BIG_ARMIES=0 EE_BIG_CROWDS=0 EE_X87T=0 EE_SSE_MATH=0 EE_MEMFILE_DOUBLE=0 EE_POINTLIST_GUARD=0 \
-    EE_ANIMATION_SMOOTHING=0 WINEDEBUG='-all,+err,+loaddll,+snoop' \
-    perl -e 'alarm shift; exec @ARGV' 900 ./scripts/launch.sh
-) > "$OUT/launch.stdout" 2>&1
+gr_run_launcher "$LAUNCH_LIMIT" "$OUT/launch.stdout" \
+  bash -c 'cd "$1" && shift && exec "$@"' _ "$GR_LAUNCHER_DIR" \
+  env EE_BIG_ARMIES=0 EE_BIG_CROWDS=0 EE_X87T=0 EE_SSE_MATH=0 EE_MEMFILE_DOUBLE=0 EE_POINTLIST_GUARD=0 \
+  EE_ANIMATION_SMOOTHING=0 WINEDEBUG='-all,+err,+loaddll,+snoop' \
+  "$GR_LAUNCHER_DIR/scripts/launch.sh"
 launch_status=$?
 say "launch.sh exit status $launch_status"
 
-newest=$(ls -t "$LOG_DIR"/launch-*.log 2>/dev/null | head -1)
-if [ -z "$newest" ] || grep -qxF "$newest" "$WORK/logs-before.txt"; then
+newest=$(ls -t "$GR_LOG_DIR"/launch-*.log 2>/dev/null | head -1)
+if [ -z "$newest" ] || grep -qxF "$newest" "$GAME_RUN_STATE/logs-before.txt"; then
   fail "launch.sh produced no new log"
   exit 1
 fi
 cp "$newest" "$LOG"
-cp "$GAME/ee-ddraw.log" "$OUT/ee-ddraw.log" 2>/dev/null || : > "$OUT/ee-ddraw.log"
+cp "$GR_GAME/ee-ddraw.log" "$OUT/ee-ddraw.log" 2>/dev/null || : >"$OUT/ee-ddraw.log"
 say "log: $newest"
 
 # ---- 5. what the log must show ------------------------------------------------------------------
@@ -276,31 +178,44 @@ else
   pass "no err: line mentions the module"
 fi
 
-# ---- 6. stop the game and put everything back -------------------------------------------------------------
+# ---- 6. stop the game and put everything back --------------------------------------------------------------------------
+
+if gr_check_launcher_log; then
+  pass "the launcher installed the version.dll shim (the game is the one the user plays)"
+else
+  fail "the launcher did not install the version.dll shim"
+fi
 
 say "stopping the game with the prefix's wineserver"
-stop_game
-game_started=0
-if [ -z "$(game_pids)" ]; then pass "the game process is gone"; else fail "the game is still running"; fi
+if gr_stop_game; then pass "the game process is gone"; else fail "the game is still running"; fi
 
-restore_all
-[ ! -e "$GAME/$DLL_NAME" ] && pass "$DLL_NAME removed from the game directory" || fail "$DLL_NAME is still installed"
+# Undo steps, restore and verification; the lock is kept until the registry and the manifest have been read back.
+GR_KEEP_LOCK=1
+if ! gr_teardown; then
+  fail "the teardown did not finish: the lock and the snapshot are kept (see the recovery commands above)"
+  say "FAIL: $failures check(s) failed; evidence in $OUT/"
+  exit 1
+fi
+pass "everything was put back: the undo steps ran and the game directory matches its manifest"
+[ ! -e "$GR_GAME/$DLL_NAME" ] && pass "$DLL_NAME removed from the game directory" || fail "$DLL_NAME is still installed"
 
-now_snoop=$(wine_env "$WINE_BIN/wine" reg query "$SNOOP_KEY" /v SnoopInclude 2>/dev/null |
-  sed -n 's/^[[:space:]]*SnoopInclude[[:space:]]*REG_SZ[[:space:]]*//p' | tr -d '\r')
-WINEPREFIX="$PREFIX" "$WINE_BIN/wineserver" -k >/dev/null 2>&1
+now_snoop="$(snoop_value)"
+flush_registry
 if [ "$now_snoop" = "$prev_snoop" ]; then
   pass "registry restored (SnoopInclude ${prev_snoop:+was }${prev_snoop:-absent before and is absent again})"
 else
   fail "registry differs: SnoopInclude was '$prev_snoop', is '$now_snoop'"
 fi
 
-manifest > "$OUT/manifest-after.txt"
-if diff -u "$OUT/manifest-before.txt" "$OUT/manifest-after.txt" > "$OUT/manifest.diff"; then
-  pass "the game directory matches the manifest taken before ($(wc -l < "$OUT/manifest-after.txt" | tr -d ' ') files, sha256)"
+gr_manifest "$GR_GAME" "$OUT/manifest-after.txt"
+if diff -u "$OUT/manifest-before.txt" "$OUT/manifest-after.txt" >"$OUT/manifest.diff"; then
+  pass "the game directory matches the manifest taken before ($(wc -l <"$OUT/manifest-after.txt" | tr -d ' ') files, sha256)"
 else
-  fail "the game directory differs from the manifest taken before:"; head -20 "$OUT/manifest.diff"
+  fail "the game directory differs from the manifest taken before:"
+  head -20 "$OUT/manifest.diff"
 fi
+GR_KEEP_LOCK=0
+gr_lock_release
 
 if [ "$failures" -eq 0 ]; then
   say "PASS: the engine loads $DLL_NAME, calls PIMGetType and PIMIsValid (false), frees it, and keeps the original TnL renderer"
