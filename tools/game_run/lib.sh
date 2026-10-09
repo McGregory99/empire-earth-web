@@ -273,3 +273,6 @@ gr_kill_launcher() {
   GR_LAUNCHER_PGID=""
   return 0
 }
+
+# shellcheck source=snapshot.sh
+. "$GR_LIB_DIR/snapshot.sh"
