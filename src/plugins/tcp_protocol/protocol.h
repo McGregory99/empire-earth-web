@@ -39,14 +39,20 @@ typedef enum NetStatus {
 #define PACKET_JOIN_B 0x37           /* ... registers a new client with a server */
 #define PACKET_JOIN_MIN_SIZE 4       /* ... provided it is at least this long, header included */
 
-/* Game-discovery datagrams have fixed sizes; names are NUL-terminated within their field. */
-#define DISCOVERY_NAME_FIELD 65  /* up to 64 characters plus the terminator */
-#define DISCOVERY_PROBE_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_NAME_FIELD)                          /* 67 */
-#define DISCOVERY_REPLY_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_NAME_FIELD + DISCOVERY_NAME_FIELD + 4) /* 136 */
+/*
+ * Game-discovery datagrams have fixed sizes; the names in them are NUL-terminated within
+ * their field.  A probe holds the service name; a reply holds the service name and the
+ * game's name.  The game-name field of a reply is wider than the service field: it takes up
+ * the 4 spare bytes at the end of the datagram as well.
+ */
+#define DISCOVERY_SERVICE_FIELD 65    /* up to 64 characters plus the terminator */
+#define DISCOVERY_GAME_NAME_FIELD 69  /* up to 68 characters plus the terminator */
+#define DISCOVERY_PROBE_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_SERVICE_FIELD)                                 /* 67 */
+#define DISCOVERY_REPLY_SIZE (PACKET_HEADER_SIZE + 1 + DISCOVERY_SERVICE_FIELD + DISCOVERY_GAME_NAME_FIELD)     /* 136 */
 
 #define DISCOVERY_PROBE_SERVICE_OFFSET 2
 #define DISCOVERY_REPLY_SERVICE_OFFSET 2
-#define DISCOVERY_REPLY_NAME_OFFSET (DISCOVERY_REPLY_SERVICE_OFFSET + DISCOVERY_NAME_FIELD)
+#define DISCOVERY_REPLY_NAME_OFFSET (DISCOVERY_REPLY_SERVICE_OFFSET + DISCOVERY_SERVICE_FIELD)
 
 /* Where the engine's assertion hook is told a failed check happened (the original source location). */
 #define ENGINE_ASSERT_FILE "C:\\SSSI Development\\Low-Level Engine\\Network Engine\\TCP Protocol\\TCP Protocol.cpp"

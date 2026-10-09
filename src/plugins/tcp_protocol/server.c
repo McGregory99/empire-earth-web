@@ -318,6 +318,19 @@ static size_t find_client(const ServerState *state, const struct sockaddr_in *ad
 }
 
 /*
+ * A game name of 69 or more characters does not fit its field.  The original copies it with
+ * strcpy into a 69-byte stack buffer that is followed by the address the reply is sent to; the
+ * overflow garbles the address family, sendto fails and nothing is sent.  We do not overflow,
+ * but likewise send nothing, and report what Winsock reported there: "invalid argument" for
+ * exactly 69 characters (the terminator zeroes the family), "bad address" for longer names
+ * (up to about 84 characters; beyond that the original corrupts its stack further).
+ */
+static void report_unsendable_reply(const char *game_name)
+{
+    report_native_error_and_acknowledge(strlen(game_name) == DISCOVERY_GAME_NAME_FIELD ? WSAEINVAL : WSAEFAULT);
+}
+
+/*
  * Answer a discovery probe (already decrypted) with the service and game name, but only if it asks
  * for our service and we are an accepting, non-internet, LAN-announced game.  The reply goes to
  * the asker's address on the game port, from a throw-away socket.
@@ -337,7 +350,11 @@ static void answer_probe(const ServerState *state, const uint8_t *probe, const s
         report_socket_error_and_acknowledge();
         return;
     }
-    packet_fill_reply(reply, state->service.chars, state->name.chars);
+    if (!packet_fill_reply(reply, state->service.chars, state->name.chars)) {
+        report_unsendable_reply(state->name.chars);
+        closesocket(s);
+        return;
+    }
     datagram_seal(reply, sizeof reply);
 
     destination = *asker;

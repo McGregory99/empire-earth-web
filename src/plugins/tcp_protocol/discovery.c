@@ -58,7 +58,7 @@ static bool broadcast_probe(SOCKET probe_socket, const UString *service)
 /* Remember the game that sent `reply`, unless that host has already answered during this scan. */
 static void record_reply(const uint8_t *reply, const struct sockaddr_in *from)
 {
-    char service[DISCOVERY_NAME_FIELD], game_name[DISCOVERY_NAME_FIELD];
+    char service[DISCOVERY_SERVICE_FIELD], game_name[DISCOVERY_GAME_NAME_FIELD];
     DetectedGame *game = detected_game_create();
 
     if (!game) {
