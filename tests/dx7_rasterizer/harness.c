@@ -18,11 +18,12 @@
  * EEWebRasterizer.dll, a null rasterizer.  The exit status is the number of
  * failed checks.
  */
+#include "low_level_engine.h" /* UString and the engine's own constructors; includes <windows.h> */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
 
 #define PIM_TYPE_RAST 0x72617374u /* 'rast' */
 
@@ -61,13 +62,14 @@ struct Expect {
     const char *label;
     unsigned ordinal[4]; /* PIMGetName, PIMGetType, PIMIsValid, RPIMGetRasterizer */
     int is_valid;        /* expected low byte of PIMIsValid, or -1 = do not assert */
+    const char *name;    /* text of the UString that PIMGetName returns */
 };
 
 static const char *const kExportNames[4] = {"PIMGetName", "PIMGetType", "PIMIsValid",
                                             "RPIMGetRasterizer"};
 
-static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1};
-static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0};
+static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1, "Direct3D Hardware TnL"};
+static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer"};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
 static void *proc_address(HMODULE h, const char *name_or_ordinal)
@@ -99,6 +101,43 @@ static void check_exports(HMODULE h, const struct Expect *e, void *procs[4])
     }
 }
 
+static int in_module(HMODULE module, const void *p)
+{
+    const unsigned char *base = (const unsigned char *)module;
+    const IMAGE_DOS_HEADER *dos = (const IMAGE_DOS_HEADER *)base;
+    const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(base + dos->e_lfanew);
+    return (const unsigned char *)p >= base &&
+           (const unsigned char *)p < base + nt->OptionalHeader.SizeOfImage;
+}
+
+/*
+ * PIMGetName returns `const UString &`.  The engine only ever hands it to UString code, so the
+ * object must have been built by the engine's own constructor: its vtable lives in
+ * Low-Level Engine.dll, and the engine's copy constructor and operator== must accept it.
+ */
+static void check_name(const struct Expect *e, PimGetName get_name)
+{
+    const UString *name = (const UString *)get_name();
+    CHECK(name != NULL, "%s: PIMGetName() returns an object", e->label);
+    if (!name) {
+        return;
+    }
+    CHECK(name->chars != NULL && strcmp(name->chars, e->name) == 0, "%s: name text is \"%s\" (got \"%s\")",
+          e->label, e->name, name->chars ? name->chars : "(null)");
+    CHECK(name->chars != NULL && name->length == strlen(name->chars), "%s: name length field is %u",
+          e->label, (unsigned)name->length);
+    HMODULE engine = GetModuleHandleA("Low-Level Engine.dll");
+    CHECK(engine != NULL && in_module(engine, name->vtable), "%s: name vtable %p lies in Low-Level Engine.dll",
+          e->label, name->vtable);
+    CHECK(get_name() == (const void *)name, "%s: PIMGetName() returns the same object every time", e->label);
+
+    UString copy;
+    ustring_construct_copy(&copy, name);
+    CHECK(copy.chars != NULL && strcmp(copy.chars, e->name) == 0, "%s: the engine copies the name", e->label);
+    CHECK(ustring_equal(&copy, name) != 0, "%s: the engine finds the copy equal to the name", e->label);
+    ustring_destruct(&copy);
+}
+
 static int run_plugin_checks(const struct Expect *e, const char *path)
 {
     HMODULE h = load_plugin(path);
@@ -120,6 +159,10 @@ static int run_plugin_checks(const struct Expect *e, const char *path)
 
     uint32_t type = get_type();
     CHECK(type == PIM_TYPE_RAST, "%s: PIMGetType() == 'rast' (got 0x%08x)", e->label, type);
+
+    PimGetName get_name;
+    memcpy(&get_name, &procs[0], sizeof get_name);
+    check_name(e, get_name);
 
     if (e->is_valid >= 0) {
         for (int i = 0; i < 3; i++) {

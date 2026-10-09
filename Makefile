@@ -195,9 +195,8 @@ $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcr
 	    /subsystem:windows,5.0 /opt:ref /filealign:512 $(RAST_OBJECTS) \
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
 
-$(RAST_HARNESS): tests/dx7_rasterizer/harness.c $(HARNESS_HEADERS)
-	mkdir -p "$(BUILD)"
-	$(CC) $(CFLAGS) -o $@ $<
+$(RAST_HARNESS): tests/dx7_rasterizer/harness.c src/engine_abi/low_level_engine.h $(ENGINE_LIB)
+	$(CC) $(CFLAGS) -o $@ $< -L $(BUILD) -lengine
 
 # Exports, ordinals and imports of our DLL against the contract (tests/dx7_rasterizer/).
 check-abi-rasterizer: $(RAST_DLL)
