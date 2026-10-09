@@ -83,6 +83,7 @@ void *wrap_new(int iface, void *real);            /* wrapper for a real interfac
 void *unwrap(void *maybe_wrapper);                /* the real pointer behind one of our wrappers; others unchanged */
 const char *wrap_label(void *maybe_wrapper, char tmp[24]); /* "surf#3", "NULL" or "raw" */
 
+int ddt_selfcheck_problems(const char **first);   /* classification self-check: problems found, and the first one's text */
 void dispatch_init(void);                         /* method tables, vtables, registry; called once from ddt_init */
 
 #endif

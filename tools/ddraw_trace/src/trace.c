@@ -171,6 +171,14 @@ static void open_locked(void) {
     }
     n = snprintf(head, sizeof head, "# ddraw_trace v1\n# modules: %s\n", g_cfg.modules);
     put_locked(head, (unsigned)n);
+    {
+        const char *first = NULL;
+        int problems = ddt_selfcheck_problems(&first);
+        if (problems) { /* the method tables and the type map disagree: the trace cannot be trusted */
+            n = snprintf(head, sizeof head, "# ERROR: classification self-check found %d problem(s): %s\n", problems, first);
+            put_locked(head, (unsigned)n);
+        }
+    }
 }
 
 static int active_locked(void) {

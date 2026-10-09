@@ -166,7 +166,10 @@ static const struct { const char *type; uint8_t kind, aux; } type_map[] = {
     {"D3DPRIMITIVETYPE", K_PT, 0},
     {"LPDWORD", K_OUT_DWORD, 0}, {"DWORD*", K_OUT_DWORD, 0}, {"WINBOOL*", K_OUT_BOOL, 0}, {"LPLONG", K_OUT_LONG, 0},
     {"void**", K_VOIDPP, 0}, {"LPVOID*", K_VOIDPP, 0},
-    {"LPDIRECTDRAWSURFACE7", K_IFACE_IN, IF_SURF7}, {"IDirectDrawSurface7*", K_IFACE_IN, IF_SURF7},
+#ifndef DDT_TEST_BREAK_CLASSIFICATION /* the Makefile builds a proxy without this entry to prove the self-check notices */
+    {"LPDIRECTDRAWSURFACE7", K_IFACE_IN, IF_SURF7},
+#endif
+    {"IDirectDrawSurface7*", K_IFACE_IN, IF_SURF7},
     {"LPDIRECTDRAWSURFACE7*", K_IFACE_OUT, IF_SURF7}, {"IDirectDrawSurface7**", K_IFACE_OUT, IF_SURF7},
     {"IDirect3DVertexBuffer7*", K_IFACE_IN, IF_VB7}, {"IDirect3DVertexBuffer7**", K_IFACE_OUT, IF_VB7},
     {"IDirect3DDevice7*", K_IFACE_IN, IF_DEV7}, {"IDirect3DDevice7**", K_IFACE_OUT, IF_DEV7},
@@ -276,6 +279,10 @@ static const void *const all_thunks[] = {
 #undef DDT_IFACE
 #undef DDT_METHOD
 
+static char g_selfcheck_msg[256];
+static int g_selfcheck_problems;
+static void selfcheck_classification(void);
+
 void dispatch_init(void) {
     int i, s, k = 0, base = 0;
     InitializeCriticalSection(&g_reg_cs);
@@ -301,6 +308,58 @@ void dispatch_init(void) {
                     m->timing = 1;
         }
     }
+    selfcheck_classification();
+    if (g_selfcheck_problems)
+        OutputDebugStringA(g_selfcheck_msg);
+}
+
+/* A type string that names a COM interface but is classified as a plain pointer would reach the real object as one of our
+ * wrappers (or leave it unwrapped): the tables come from the SDK headers, and a new spelling there must not slip through
+ * silently.  Interfaces we deliberately do not wrap are listed. */
+static int com_like(const char *type) {
+    return !strncmp(type, "LPDIRECT", 8) || !strncmp(type, "IDirect", 7) || !strncmp(type, "IUnknown", 8);
+}
+
+static const char *const raw_by_design[] = {"LPDIRECTDRAW", "LPDIRECTDRAWCLIPPER", "LPDIRECTDRAWPALETTE", "IUnknown*"};
+
+static void selfcheck_classification(void) {
+    int i, s;
+    unsigned j, k;
+    g_selfcheck_problems = 0;
+    g_selfcheck_msg[0] = 0;
+    for (i = 0; i < IF_COUNT; i++)
+        for (s = 0; s < slot_counts[i]; s++) {
+            const MethodDef *m = &g_methods[i][s];
+            for (j = 0; j < m->nargs; j++) {
+                const ArgDef *d = &m->a[j];
+                int ok = 1;
+                if (com_like(d->type) && d->kind == K_PTR) {
+                    ok = 0;
+                    for (k = 0; k < sizeof raw_by_design / sizeof *raw_by_design; k++)
+                        if (!strcmp(d->type, raw_by_design[k]))
+                            ok = 1;
+                }
+                if (!ok) {
+                    if (!g_selfcheck_problems)
+                        snprintf(g_selfcheck_msg, sizeof g_selfcheck_msg, "%s.%s argument %s has COM interface type %s but is classified as a plain pointer",
+                                 if_short[i], m->name, d->name, d->type);
+                    g_selfcheck_problems++;
+                }
+            }
+        }
+}
+
+int ddt_selfcheck_problems(const char **first) {
+    if (first)
+        *first = g_selfcheck_msg;
+    return g_selfcheck_problems;
+}
+
+/* Exported for the unit tests: the number of problems the self-check found. */
+int WINAPI ddt_x_DDT_SelfCheck(void) __asm__("_ddt_x_DDT_SelfCheck");
+int WINAPI ddt_x_DDT_SelfCheck(void) {
+    ddt_init();
+    return g_selfcheck_problems;
 }
 
 /* ---- calling the real object --------------------------------------------------------------------- */

@@ -15,3 +15,4 @@ DirectDrawEnumerateW=ddt_x_DirectDrawEnumerateW
 DllCanUnloadNow=ddt_x_DllCanUnloadNow PRIVATE
 DllGetClassObject=ddt_x_DllGetClassObject PRIVATE
 ReleaseDDThreadLock=ddt_x_ReleaseDDThreadLock
+DDT_SelfCheck=ddt_x_DDT_SelfCheck
