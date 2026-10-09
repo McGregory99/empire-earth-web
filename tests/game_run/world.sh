@@ -42,20 +42,27 @@ wait_for() { # wait_for <tenths> <command...>
 # shell ignores them, and a trap cannot re-enable a signal that was ignored on entry).
 start_job() { perl -e '$SIG{INT} = "DEFAULT"; $SIG{QUIT} = "DEFAULT"; exec @ARGV' "$@" & }
 
+# The real HOME, kept for the few checks that look at the real launcher's source.  world_make then moves HOME into the fake
+# world, so that the fixed default paths of the library (~/Games/EmpireEarth-re/locks/game-run, ~/Library/Application
+# Support/EmpireEarthMac, ~/Games/tools/ee-macos) resolve inside it: a driver that, by some mistake, does not load the test
+# config still cannot reach the real game, lock or launcher.
+REAL_HOME="${REAL_HOME:-$HOME}"
+
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOL_DIR="$(cd "$TESTS_DIR/../../tools/game_run" && pwd)"
 
 world_make() {
   W="$(mktemp -d "${TMPDIR:-/tmp}/gr world.XXXXXX")"
   W="$(cd "$W" && pwd -P)"
-  local sup="$W/Library/Application Support/EmpireEarthMac"
+  W_HOME="$W/home"
+  local sup="$W_HOME/Library/Application Support/EmpireEarthMac"
   local wine="$sup/runtime/Wine Stable.app/Contents/Resources/wine"
   W_SUP="$sup"
   W_PREFIX="$sup/wineprefix"
   W_GAME="$W_PREFIX/drive_c/GOG Games/Empire Earth Gold Edition/Empire Earth"
   W_WINE_ROOT="$wine"
-  W_LAUNCHER="$W/ee macos"
-  mkdir -p "$W/bin" "$W/locks" "$W_GAME/Data" "$W_GAME/Users" "$sup/logs" "$wine/bin" \
+  W_LAUNCHER="$W_HOME/Games/tools/ee-macos"
+  mkdir -p "$W/bin" "$W_HOME/Games/EmpireEarth-re/locks" "$W_GAME/Data" "$W_GAME/Users" "$sup/logs" "$wine/bin" \
     "$wine/lib/wine/i386-windows" "$wine/share" "$W_LAUNCHER/scripts"
   : >"$W/ps.out"
   export FAKE_PS_FILE="$W/ps.out" FAKE_WORLD="$W"
@@ -160,8 +167,8 @@ LAUNCH
 
   # the overrides a driver applies after sourcing the library (GR_TEST_CONFIG)
   cat >"$W/config.sh" <<CONF
-GAME_RUN_LOCK="$W/locks/game-run"
-GAME_RUN_STATE="$W/game-run-state"
+GAME_RUN_LOCK="$W_HOME/Games/EmpireEarth-re/locks/game-run"
+GAME_RUN_STATE="$W_HOME/Games/EmpireEarth-re/game-run-state"
 GR_SUPPORT="$sup"
 GR_PREFIX="$W_PREFIX"
 GR_GAME="$W_GAME"
@@ -181,6 +188,16 @@ export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup" FAKE_WINE="$wine/bin/wine"
 CONF
   : >"$W_SUP/logs/launcher.log"
   export PATH="$W/bin:$PATH"
+  export HOME="$W_HOME"
+}
+
+# Refuse to go on unless every path the library will use is inside the fake world.
+world_assert_isolated() {
+  case "$GAME_RUN_LOCK:$GAME_RUN_STATE:$GR_GAME:$GR_LAUNCHER_DIR:$GR_WINE_ROOT" in
+    *"$W"/*:*"$W"/*:*"$W"/*:*"$W"/*:*"$W"/*) return 0 ;;
+  esac
+  echo "refusing to run: a path of the library points outside the fake world ($W)"
+  exit 2
 }
 
 world_clean() {

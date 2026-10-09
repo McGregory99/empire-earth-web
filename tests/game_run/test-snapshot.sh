@@ -10,6 +10,7 @@ trap 'world_clean' EXIT
 export W TOOL_DIR
 . "$TOOL_DIR/lib.sh"
 . "$W/config.sh"
+world_assert_isolated
 GR_TOOL=test-snapshot
 STATE="$GAME_RUN_STATE"
 

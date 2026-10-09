@@ -16,6 +16,7 @@ if ! grep -q 'gr_test_hook' "$DRIVER"; then
 fi
 . "$TOOL_DIR/lib.sh"
 . "$W/config.sh"
+world_assert_isolated
 STATE="$GAME_RUN_STATE"
 printf 'PROXY' >"$W/proxy.dll"
 export GR_TEST_CONFIG="$W/config.sh"

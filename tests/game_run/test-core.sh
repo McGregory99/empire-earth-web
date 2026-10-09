@@ -17,9 +17,19 @@ check_eq "the lock path is fixed, not derived from RE_DIR" "lock=$HOME/Games/Emp
 check_eq "no ambient EE_*, EMPIRE_EARTH_*, WINE* or DXVK_* variable survives" "" "$(echo "$out" | grep -E '^(EE_|EMPIRE_EARTH_|WINE|DXVK_)')"
 check "unrelated variables are left alone" test "$(echo "$out" | grep -c '^keep=1$')" -eq 1
 
+# the test hook fails closed: a missing test config must not fall back to the real installation
+out="$(GR_TEST_CONFIG="$W/does-not-exist.sh" bash -c '. "$1/lib.sh"; gr_test_hook; echo "went on"' _ "$TOOL_DIR" 2>&1)"
+rc=$?
+check_eq "a GR_TEST_CONFIG that does not exist stops the run (exit 2)" "2" "$rc"
+check "... and says so, without going on" test "$(echo "$out" | grep -c 'does not exist')" -eq 1 -a "$(echo "$out" | grep -c 'went on')" -eq 0
+# the fixed default paths follow HOME, so a world under a fake HOME is isolated even without a test config
+out="$(env HOME="$W/home" bash -c '. "$1/lib.sh"; echo "$GAME_RUN_LOCK|$GAME_RUN_STATE|$GR_GAME|$GR_LAUNCHER_DIR|$GR_WINE_ROOT"' _ "$TOOL_DIR")"
+check "with a fake HOME every default path of the library is inside it" test "$(echo "$out" | tr '|' '\n' | grep -c "^$W/home/")" -eq 5
+
 # ---- 2. game detection: the launcher's anchored logic ------------------------------------------------------------------
 . "$TOOL_DIR/lib.sh"
 . "$W/config.sh"
+world_assert_isolated
 : >"$W/ps.out"
 check_eq "no process, no game" "" "$(gr_game_pids)"
 cat >"$W/ps.out" <<'PS'
@@ -45,7 +55,7 @@ check_not "gr_game_running is false when nothing lists" gr_game_running
 echo '  204 90000 C:\GOG Games\Empire Earth Gold Edition\Empire Earth\dxcfg.exe' >"$W/ps.out"
 check_eq "another program of the GOG tree blocks a start" "204" "$(gr_blocking_pids)"
 check_eq "... but it is not 'the game'" "" "$(gr_game_pids)"
-launcher_lib="$HOME/Games/tools/ee-macos/scripts/lib.sh"
+launcher_lib="$REAL_HOME/Games/tools/ee-macos/scripts/lib.sh"
 if [ -f "$launcher_lib" ]; then
   check "the launcher's own game_pids uses the regex the library uses" \
     grep -qF '$0 ~ /^[A-Za-z]:\\.*\\(Empire Earth|EE-AOC)\.exe/' "$launcher_lib"

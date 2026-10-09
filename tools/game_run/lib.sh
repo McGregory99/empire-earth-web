@@ -44,11 +44,15 @@ gr_log() {
 
 # Tests (and only tests) override the fixed defaults above through a file named by GR_TEST_CONFIG.
 gr_test_hook() {
-  if [ -n "${GR_TEST_CONFIG:-}" ] && [ -f "$GR_TEST_CONFIG" ]; then
-    # shellcheck source=/dev/null
-    . "$GR_TEST_CONFIG"
-    gr_log "TEST CONFIG ACTIVE: paths come from $GR_TEST_CONFIG, not from the real installation"
+  [ -n "${GR_TEST_CONFIG:-}" ] || return 0
+  if [ ! -f "$GR_TEST_CONFIG" ]; then
+    # A test asked for a fake world that is not there (removed, mistyped): going on would run against the real installation.
+    gr_log "FAIL: GR_TEST_CONFIG=$GR_TEST_CONFIG does not exist; refusing to run against the real game"
+    exit 2
   fi
+  # shellcheck source=/dev/null
+  . "$GR_TEST_CONFIG"
+  gr_log "TEST CONFIG ACTIVE: paths come from $GR_TEST_CONFIG, not from the real installation"
   return 0
 }
 

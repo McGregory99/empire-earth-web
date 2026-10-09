@@ -10,6 +10,7 @@ trap 'world_clean' EXIT
 export W TOOL_DIR
 . "$TOOL_DIR/lib.sh"
 . "$W/config.sh"
+world_assert_isolated
 GR_TOOL=test-wrapper
 SWAP_IN="$(cd "$HERE/../../tools/ddraw_trace/scripts" && pwd)/swap-in.sh"
 dead_pid() { bash -c 'echo $$'; }
