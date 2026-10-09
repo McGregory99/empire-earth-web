@@ -276,3 +276,5 @@ gr_kill_launcher() {
 
 # shellcheck source=snapshot.sh
 . "$GR_LIB_DIR/snapshot.sh"
+# shellcheck source=wrapper.sh
+. "$GR_LIB_DIR/wrapper.sh"
