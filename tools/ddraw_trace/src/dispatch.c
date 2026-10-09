@@ -223,6 +223,9 @@ static void classify(ArgDef *d, const char *method) {
             d->aux = type_map[i].aux;
             if (d->kind == K_STRUCT)
                 d->out = (!strncmp(method, "Get", 3) || !strcmp(method, "Lock")) && d->aux != ST_RECT && d->aux != ST_POINT;
+            /* the capabilities asked for are an input of these two Get* methods */
+            if (d->aux == ST_DDSCAPS2 && (!strcmp(method, "GetAttachedSurface") || !strcmp(method, "GetAvailableVidMem")))
+                d->out = 0;
             if (d->kind == K_VOIDPP && !strcmp(method, "Lock"))
                 d->kind = K_OUTPTR; /* IDirect3DVertexBuffer7::Lock hands back a data pointer, not an interface */
             return;
@@ -803,6 +806,8 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
         for (i = 0; i < m->nargs; i++)
             if (is_out_kind(&m->a[i]))
                 render_arg(&c, i, 1, (HRESULT)result);
+        /* DDERR_WASSTILLDRAWING: the caller retries until the driver is ready, and how often is not reproducible */
+        int busy = !m->timing && m->hook != H_ADDREF && m->hook != H_RELEASE && (HRESULT)result == DDERR_WASSTILLDRAWING;
         buf_printf(&b, "%s.%s(", wrap_label(self, lbl), m->name);
         for (i = 0; i < m->nargs; i++)
             buf_printf(&b, "%s%s", i ? ", " : "", c.txt[i]);
@@ -811,10 +816,11 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
         else if (m->timing)
             buf_puts(&b, ") = ? [timing]");
         else
-            buf_printf(&b, ") = %s", hr_name((HRESULT)result, res));
+            buf_printf(&b, ") = %s%s", hr_name((HRESULT)result, res), busy ? " [timing]" : "");
         buf_puts(&b, c.suffix);
-        trace_emit(0, b.p, m->timing);
-        if (is_present)
+        trace_emit(0, b.p, m->timing || busy);
+        /* only a call that worked shows a frame: a Flip or Blt that reports DDERR_WASSTILLDRAWING is retried */
+        if (is_present && SUCCEEDED((HRESULT)result))
             trace_present();
     }
     return result;

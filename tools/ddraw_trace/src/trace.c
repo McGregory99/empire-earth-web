@@ -12,7 +12,12 @@ static int g_opened, g_capped;
 static unsigned g_presents;
 static char g_out[1 << 16];
 static unsigned g_out_len;
-static char g_last[1024];
+/* Per thread: its number (in order of its first traced call) and its last timing line, so that another thread's lines
+ * in between do not break a run of identical polls. */
+typedef struct ThreadState {
+    unsigned id;
+    char last[1024];
+} ThreadState;
 static DWORD g_tls = TLS_OUT_OF_INDEXES;
 static unsigned g_nthreads;
 static char g_modlist[16][64];
@@ -215,7 +220,7 @@ int trace_wants(void *ra) {
 void trace_emit(int depth, const char *text, int timing) {
     char line[8400];
     unsigned n;
-    unsigned tid;
+    ThreadState *ts;
 
     if (!g_cfg.trace_path[0])
         return;
@@ -226,20 +231,25 @@ void trace_emit(int depth, const char *text, int timing) {
     }
     if (g_tls == TLS_OUT_OF_INDEXES)
         g_tls = TlsAlloc();
-    tid = (unsigned)(uintptr_t)TlsGetValue(g_tls);
-    if (!tid) {
-        tid = ++g_nthreads;
-        TlsSetValue(g_tls, (void *)(uintptr_t)tid);
+    ts = TlsGetValue(g_tls);
+    if (!ts) {
+        ts = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof *ts); /* lives as long as the process: threads are few */
+        if (!ts) {
+            unlock();
+            return;
+        }
+        ts->id = ++g_nthreads;
+        TlsSetValue(g_tls, ts);
     }
-    n = (unsigned)snprintf(line, sizeof line, "T%u %*s%s\n", tid, depth * 2, "", text);
+    n = (unsigned)snprintf(line, sizeof line, "T%u %*s%s\n", ts->id, depth * 2, "", text);
     if (n >= sizeof line)
         n = sizeof line - 1;
     /* A run of identical timing-dependent calls (polling) is written once: its length is not reproducible. */
-    if (timing && !strncmp(g_last, line, sizeof g_last)) {
+    if (timing && !strncmp(ts->last, line, sizeof ts->last)) {
         unlock();
         return;
     }
-    lstrcpynA(g_last, timing ? line : "", sizeof g_last);
+    lstrcpynA(ts->last, timing ? line : "", sizeof ts->last);
     put_locked(line, n);
     if (g_cfg.flush_each)
         flush_locked();
