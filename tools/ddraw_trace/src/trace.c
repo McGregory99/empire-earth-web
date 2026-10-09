@@ -6,7 +6,8 @@
 
 static CRITICAL_SECTION g_cs;
 static volatile LONG g_cs_ready;
-static HANDLE g_file = INVALID_HANDLE_VALUE;
+static HANDLE g_file = INVALID_HANDLE_VALUE, g_times = INVALID_HANDLE_VALUE;
+static LARGE_INTEGER g_t0, g_freq;
 static int g_opened, g_capped;
 static unsigned g_presents;
 static char g_out[1 << 16];
@@ -16,6 +17,8 @@ static DWORD g_tls = TLS_OUT_OF_INDEXES;
 static unsigned g_nthreads;
 static char g_modlist[16][64];
 static int g_nmods;
+static struct { char name[64]; unsigned calls; int traced; } g_callers[32];
+static int g_ncallers;
 
 void buf_init(Buf *b, char *storage, unsigned cap) {
     b->p = storage;
@@ -77,6 +80,41 @@ static void lock(void) {
 
 static void unlock(void) { LeaveCriticalSection(&g_cs); }
 
+/* Count the calls per calling module (traced or not) for the <trace>.callers diagnostic. */
+static void note_caller_locked(const char *name, int traced) {
+    int i;
+    for (i = 0; i < g_ncallers; i++)
+        if (!lstrcmpiA(g_callers[i].name, name)) {
+            g_callers[i].calls++;
+            return;
+        }
+    if (g_ncallers < 32) {
+        lstrcpynA(g_callers[g_ncallers].name, name, sizeof g_callers[0].name);
+        g_callers[g_ncallers].calls = 1;
+        g_callers[g_ncallers].traced = traced;
+        g_ncallers++;
+    }
+}
+
+static void write_callers_locked(void) {
+    char path[MAX_PATH + 12], line[128];
+    HANDLE h;
+    DWORD done;
+    int i, n;
+    if (!g_cfg.trace_path[0])
+        return;
+    snprintf(path, sizeof path, "%s.callers", g_cfg.trace_path);
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    for (i = 0; i < g_ncallers; i++) {
+        n = snprintf(line, sizeof line, "%s %u %s\n", g_callers[i].name, g_callers[i].calls,
+                     g_callers[i].traced ? "traced" : "untraced");
+        WriteFile(h, line, (DWORD)n, &done, NULL);
+    }
+    CloseHandle(h);
+}
+
 static void flush_locked(void) {
     DWORD done;
     if (g_file != INVALID_HANDLE_VALUE && g_out_len)
@@ -109,6 +147,15 @@ static void open_locked(void) {
                          FILE_ATTRIBUTE_NORMAL, NULL);
     if (g_file == INVALID_HANDLE_VALUE)
         return;
+    /* <trace>.times: wall-clock milliseconds of every present, a diagnostic that stays out of the normalized trace */
+    {
+        char times[MAX_PATH + 8];
+        snprintf(times, sizeof times, "%s.times", g_cfg.trace_path);
+        g_times = CreateFileA(times, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+        QueryPerformanceFrequency(&g_freq);
+        QueryPerformanceCounter(&g_t0);
+    }
     lstrcpynA(list, g_cfg.modules, sizeof list);
     for (tok = list; tok && *tok && g_nmods < 16;) {
         c = strchr(tok, ',');
@@ -159,6 +206,9 @@ int trace_wants(void *ra) {
             hit = 1;
             break;
         }
+    lock();
+    note_caller_locked(base, hit);
+    unlock();
     return hit;
 }
 
@@ -204,16 +254,28 @@ void trace_present(void) {
     if (!g_cfg.trace_path[0])
         return;
     lock();
-    if (active_locked() && ++g_presents == g_cfg.max_presents && g_cfg.max_presents) {
-        n = snprintf(line, sizeof line, "# end: %u presents\n", g_presents);
-        put_locked(line, (unsigned)n);
-        flush_locked();
-        g_capped = 1;
-        /* A marker file tells the driver script that the capture is complete. */
-        snprintf(done, sizeof done, "%s.done", g_cfg.trace_path);
-        h = CreateFileA(done, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (h != INVALID_HANDLE_VALUE)
-            CloseHandle(h);
+    if (active_locked()) {
+        LARGE_INTEGER now;
+        DWORD written;
+        ++g_presents;
+        if (g_times != INVALID_HANDLE_VALUE && g_freq.QuadPart) {
+            QueryPerformanceCounter(&now);
+            n = snprintf(line, sizeof line, "%u %ld\n", g_presents,
+                         (long)((now.QuadPart - g_t0.QuadPart) * 1000 / g_freq.QuadPart));
+            WriteFile(g_times, line, (DWORD)n, &written, NULL);
+        }
+        if (g_cfg.max_presents && g_presents == g_cfg.max_presents) {
+            n = snprintf(line, sizeof line, "# end: %u presents\n", g_presents);
+            put_locked(line, (unsigned)n);
+            flush_locked();
+            write_callers_locked();
+            g_capped = 1;
+            /* A marker file tells the driver script that the capture is complete. */
+            snprintf(done, sizeof done, "%s.done", g_cfg.trace_path);
+            h = CreateFileA(done, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (h != INVALID_HANDLE_VALUE)
+                CloseHandle(h);
+        }
     }
     unlock();
 }
@@ -226,4 +288,11 @@ void trace_flush(void) {
     unlock();
 }
 
-void ddt_shutdown(void) { trace_flush(); }
+void ddt_shutdown(void) {
+    trace_flush();
+    if (g_cs_ready && !g_capped) {
+        lock();
+        write_callers_locked();
+        unlock();
+    }
+}

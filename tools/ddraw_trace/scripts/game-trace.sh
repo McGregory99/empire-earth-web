@@ -22,12 +22,18 @@ LAUNCHER_DIR="${LAUNCHER_DIR:-$HOME/Games/tools/ee-macos}"
 GAME_DIR="$PREFIX/drive_c/GOG Games/Empire Earth Gold Edition/Empire Earth"
 LOCK="$RE_DIR/locks/game-run"
 OUT="$HERE/build/game-trace"
-PRESENTS="${DDT_PRESENTS:-300}"
+PRESENTS="${DDT_PRESENTS:-60}"      # the menu changes by wall clock after ~110 frames (README, "Determinism")
 LOCK_WAIT="${DDT_LOCK_WAIT:-1800}"       # seconds to wait for another agent's game run
 CAPTURE_WAIT="${DDT_CAPTURE_WAIT:-420}"  # seconds from launch to the capture cap
 EXIT_WAIT=90                             # seconds for the game to disappear after wineserver -k
 
 mkdir -p "$OUT" "$RE_DIR/locks"
+
+# Keep the display awake for the length of this script.  A run once stalled for four minutes in Present while the
+# idle display slept, and the game quit when the display woke; caffeinate ends together with this script (-w).
+if command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -d -i -w $$ >/dev/null 2>&1 &
+fi
 
 # shellcheck source=lib.sh
 . "$HERE/scripts/lib.sh"
@@ -66,7 +72,7 @@ one_run() {
   # writing ddraw.dll, so nothing overwrites the proxy afterwards.
   win_raw="Z:$(printf '%s' "$raw" | tr '/' '\\')"
   rm -rf "$OUT/wrap" && mkdir -p "$wrapper"
-  rm -f "$raw" "$raw.done"
+  rm -f "$raw" "$raw.done" "$raw.times" "$raw.callers"
   ln -s "$WINE_ROOT/bin/wineserver" "$wrapper/wineserver"
   cat >"$wrapper/wine" <<WRAP
 #!/bin/bash
@@ -108,6 +114,8 @@ WRAP
   stop_game || return 7
   launched=0
   cp "$raw" "$OUT/trace.$tag.txt"
+  [ -f "$raw.times" ] && cp "$raw.times" "$OUT/trace.$tag.times"
+  [ -f "$raw.callers" ] && cp "$raw.callers" "$OUT/trace.$tag.callers"
   log "trace saved: $OUT/trace.$tag.txt"
   restore_game_dir || return 6
   release_lock

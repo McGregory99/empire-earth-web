@@ -297,6 +297,49 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
     check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "nothing is traced after the cap");
     sprintf(done, "%s.done", trace ? trace : "");
     check(GetFileAttributesA(done) != INVALID_FILE_ATTRIBUTES, "the cap writes the .done marker for the driver script");
+
+    /* diagnostics outside the normalized trace: wall-clock milliseconds of each present, in <trace>.times */
+    {
+        char times[600], text[4096];
+        FILE *f;
+        size_t n;
+        int lines = 0, ok = 1, i2;
+        long prev = -1;
+        sprintf(times, "%s.times", trace ? trace : "");
+        f = fopen(times, "rb");
+        n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+        if (f)
+            fclose(f);
+        text[n] = 0;
+        for (i2 = 0; text[i2];) {
+            int idx = 0;
+            long ms = 0;
+            if (sscanf(text + i2, "%d %ld", &idx, &ms) != 2 || idx != lines + 1 || ms < prev)
+                ok = 0;
+            prev = ms;
+            lines++;
+            while (text[i2] && text[i2] != '\n')
+                i2++;
+            if (text[i2])
+                i2++;
+        }
+        check(lines == 3 && ok, "<trace>.times has one 'n milliseconds' line per traced present, increasing");
+    }
+
+    /* diagnostics: which modules called ddraw, and whether their calls were traced (attribution evidence) */
+    {
+        char callers[600], text[2048];
+        FILE *f;
+        size_t n;
+        sprintf(callers, "%s.callers", trace ? trace : "");
+        f = fopen(callers, "rb");
+        n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+        if (f)
+            fclose(f);
+        text[n] = 0;
+        check(strstr(text, "fakeplugin.dll ") && strstr(text, " traced\n") != NULL, "<trace>.callers lists the plugin as traced");
+        check(strstr(text, "harness.exe 1 untraced") != NULL, "<trace>.callers lists the exe's single call as untraced");
+    }
 }
 
 int main(void) {
