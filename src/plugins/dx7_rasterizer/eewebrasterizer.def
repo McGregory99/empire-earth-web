@@ -1,0 +1,11 @@
+; Exports of EEWebRasterizer.dll: the four plain C entry points the engine resolves with
+; GetProcAddress in PIMModule::GetModule (and RPIMGetRasterizer in GEInitialize).  All are
+; cdecl.  Ordinals are numbered alphabetically from 1, as the linker did for the original's
+; plain exports (which sit at 252..255 behind its 251 mangled class exports).  The names are
+; exported undecorated: the linker maps `PIMGetName` to the cdecl symbol `_PIMGetName`.
+LIBRARY EEWebRasterizer
+EXPORTS
+    PIMGetName          @1
+    PIMGetType          @2
+    PIMIsValid          @3
+    RPIMGetRasterizer   @4

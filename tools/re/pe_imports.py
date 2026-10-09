@@ -31,8 +31,8 @@ def read(path):
         return data[o:data.index(b"\0", o)].decode("latin1")
 
     imports = {}
-    o = off(imp_rva)
-    while True:
+    o = off(imp_rva) if imp_rva else None  # a DLL without any import has no import directory
+    while o is not None:
         ilt, _, _, name_rva, iat = struct.unpack_from("<IIIII", data, o)
         if not name_rva:
             break

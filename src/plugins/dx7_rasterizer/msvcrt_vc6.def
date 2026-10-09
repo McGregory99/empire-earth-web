@@ -1,0 +1,19 @@
+; Import definition for the VC6-era msvcrt.dll, which is the C runtime the game's processes
+; load (the original plugins import exactly this DLL, never the UCRT).  Only functions that
+; exist in that DLL may be listed: `make` turns this file into the import library the plugin
+; links against, so a reference to anything else fails at link time instead of at run time.
+; C names are written undecorated (llvm-dlltool adds the leading underscore for cdecl on x86);
+; C++ names are the MSVC-decorated ones.
+LIBRARY msvcrt.dll
+EXPORTS
+    ; abstract-class vtable slots
+    _purecall
+    ; dynamic_cast / RTTI
+    __RTDynamicCast
+    ??1type_info@@UAE@XZ
+    ; operator new / delete (the sized form ??3@YAXPAXI@Z does not exist in this DLL)
+    ??2@YAPAXI@Z
+    ??3@YAXPAX@Z
+    ; compiler-generated block copies and fills
+    memcpy
+    memset

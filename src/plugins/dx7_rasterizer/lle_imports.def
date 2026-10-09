@@ -1,0 +1,7 @@
+; Import definition for the part of the original "Low-Level Engine.dll" that this plugin
+; calls.  Names are the MSVC 6 decorated C++ names; see ../../engine_abi/low_level_engine.def
+; for the larger list the TCP plugin uses.
+LIBRARY "Low-Level Engine.dll"
+EXPORTS
+    ??0UString@@QAE@PBD@Z
+    ??1UString@@UAE@XZ
