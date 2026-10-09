@@ -4,7 +4,8 @@
 #   make test         unit tests: harness + fake plugin under Wine in front of Wine's builtin ddraw
 #   make check-tables regenerate src/*.inc from the SDK headers and compare
 #   make gen-tables   regenerate src/methods.inc and src/names.inc
-#   make game-trace   in-game determinism gate (takes the game-run lock, launches the game, ~3 min)
+#   make game-trace   one in-game capture (takes the game-run lock, launches the game, ~3 min); compares with the previous run
+#   make game-gate    two in-game captures and their diff: the determinism gate
 #   make clean
 #
 # Everything outside the repository (Wine, the test prefix, the game) is configured below and never
@@ -34,7 +35,7 @@ HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test check-tables gen-tables game-trace clean
+.PHONY: all test test-unit test-restore check-tables gen-tables game-trace game-gate clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -56,8 +57,13 @@ $(BUILD)/fakeplugin.dll: $(TESTDIR)/fakeplugin.c $(TESTDIR)/scenario.h | $(BUILD
 $(BUILD)/harness.exe: $(TESTDIR)/harness.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -s -o $@ $< -Wl,--enable-stdcall-fixup -static-libgcc -lddraw -ldxguid -luser32
 
+test: test-restore test-unit
+
+test-restore:
+	$(TESTDIR)/test-restore.sh .
+
 # Test bed: our proxy as ddraw.dll, Wine's builtin ddraw copied under the name the proxy forwards to.
-test: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe
+test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe
 	rm -rf $(TESTBED) && mkdir -p $(TESTBED)
 	cp $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe $(TESTBED)/
 	cp "$(WINE_ROOT)/lib/wine/i386-windows/ddraw.dll" $(TESTBED)/ddraw_next.dll
@@ -68,6 +74,9 @@ test: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe
 
 game-trace: $(BUILD)/ddraw.dll
 	scripts/game-trace.sh $(BUILD)/ddraw.dll
+
+game-gate: $(BUILD)/ddraw.dll
+	scripts/game-trace.sh $(BUILD)/ddraw.dll --gate
 
 clean:
 	rm -rf $(BUILD)
