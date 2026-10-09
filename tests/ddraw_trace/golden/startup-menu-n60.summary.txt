@@ -1,0 +1,105 @@
+== lines: 10977 calls, 1212 callback lines
+== calls per interface.method
+1512 vb.Unlock
+1512 vb.Lock
+1512 dev7.DrawIndexedPrimitiveVB
+1469 dev7.SetTextureStageState
+1456 dev7.SetTexture
+ 470 dev7.SetRenderState
+ 301 surf.Unlock
+ 301 surf.Lock
+ 173 surf.Blt
+ 172 dev7.SetTransform
+ 120 surf.GetAttachedSurface
+  74 dd7.CreateSurface
+  60 dev7.SetViewport
+  57 surf.Flip
+  57 dev7.Clear
+  56 surf.ReleaseDC
+  56 surf.GetDC
+  56 dev7.EndScene
+  56 dev7.BeginScene
+  48 surf.SetColorKey
+  40 surf.Release
+  36 dd7.GetCaps
+  22 dd7.QueryInterface
+  21 d3d7.Release
+  18 dd7.GetDisplayMode
+  18 dd7.EnumDisplayModes
+  18 d3d7.EnumDevices
+  15 dd7.Release
+   9 dd7.SetCooperativeLevel
+   6 dd7.GetAvailableVidMem
+   4 d3d7.CreateDevice
+   3 dev7.Release
+   2 dev7.SetRenderTarget
+   2 dev7.SetMaterial
+   2 dev7.GetCaps
+   2 dev7.EnumTextureFormats
+   2 dd7.SetDisplayMode
+   2 d3d7.CreateVertexBuffer
+   1 vb.Release
+== exports
+  18 DirectDrawCreateEx
+   6 DirectDrawEnumerateExA
+== distinct render states set
+ 114 SRCBLEND(19)
+ 114 DESTBLEND(20)
+ 114 ALPHABLENDENABLE(27)
+  58 CLIPPING(136)
+   5 LIGHTING(137)
+   5 CULLMODE(22)
+   4 ZFUNC(23)
+   4 SPECULARENABLE(29)
+   4 DITHERENABLE(26)
+   4 COLORKEYENABLE(41)
+   4 AMBIENT(139)
+   4 ALPHATESTENABLE(15)
+   2 ZWRITEENABLE(14)
+   2 ZENABLE(7)
+   2 SPECULARMATERIALSOURCE(146)
+   2 SHADEMODE(9)
+   2 NORMALIZENORMALS(143)
+   2 LOCALVIEWER(142)
+   2 FOGVERTEXMODE(140)
+   2 FOGENABLE(28)
+   2 FOGCOLOR(34)
+   2 FILLMODE(8)
+   2 EXTENTS(138)
+   2 EMISSIVEMATERIALSOURCE(148)
+   2 DIFFUSEMATERIALSOURCE(145)
+   2 COLORVERTEX(141)
+   2 ANTIALIAS(2)
+   2 AMBIENTMATERIALSOURCE(147)
+   2 ALPHAREF(24)
+   2 ALPHAFUNC(25)
+== distinct texture stage state types set
+ 729 COLOROP(1)
+ 729 ALPHAOP(4)
+   2 TEXCOORDINDEX(11)
+   1 MIPMAPLODBIAS(19)
+   1 MIPFILTER(18)
+   1 MINFILTER(17)
+   1 MAGFILTER(16)
+   1 COLORARG2(3)
+   1 COLORARG1(2)
+   1 ALPHAARG2(6)
+   1 ALPHAARG1(5)
+   1 ADDRESS(12)
+== texture formats offered by EnumTextureFormats
+   2 {dwSize=32, dwFlags=0x40, dwRGBBitCount=16, dwRBitMask=0x7c00, dwGBitMask=0x3e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x0}
+   2 {dwSize=32, dwFlags=0x40, dwRGBBitCount=16, dwRBitMask=0xf800, dwGBitMask=0x7e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x0}
+   2 {dwSize=32, dwFlags=0x40, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0x0}
+   2 {dwSize=32, dwFlags=0x41, dwRGBBitCount=16, dwRBitMask=0x7c00, dwGBitMask=0x3e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x8000}
+   2 {dwSize=32, dwFlags=0x41, dwRGBBitCount=16, dwRBitMask=0xf00, dwGBitMask=0xf0, dwBBitMask=0xf, dwRGBAlphaBitMask=0xf000}
+   2 {dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}
+== surfaces created (distinct descriptions, ids stripped)
+  48 {dwSize=124, dwFlags=0x11007, dwHeight=32, dwWidth=32, ddckCKSrcBlt={0x0, 0x0}, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x10004040, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
+  13 {dwSize=124, dwFlags=0x21007, dwHeight=256, dwWidth=256, dwMipMapCount=9, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x401008, dwCaps2=0x18, dwCaps3=0x0, dwCaps4=0x0}}
+   4 {dwSize=124, dwFlags=0x1007, dwHeight=32, dwWidth=32, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x10004040, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
+   2 {dwSize=124, dwFlags=0x21007, dwHeight=128, dwWidth=128, dwMipMapCount=8, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x401008, dwCaps2=0x18, dwCaps3=0x0, dwCaps4=0x0}}
+   2 {dwSize=124, dwFlags=0x21, dwBackBufferCount=1, ddsCaps={dwCaps=0x10006218, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
+   2 {dwSize=124, dwFlags=0x1007, dwHeight=2, dwWidth=2, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=16, dwRBitMask=0xf800, dwGBitMask=0x7e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x10006040, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
+   2 {dwSize=124, dwFlags=0x1007, dwHeight=16, dwWidth=16, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x1000, dwCaps2=0x18, dwCaps3=0x0, dwCaps4=0x0}}
+   1 {dwSize=124, dwFlags=0x1007, dwHeight=16, dwWidth=16, ddpfPixelFormat={dwSize=32, dwFlags=0x41, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0xff000000}, ddsCaps={dwCaps=0x840, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}
+== presents: 230 flip/blit calls; end marker: # end: 60 presents

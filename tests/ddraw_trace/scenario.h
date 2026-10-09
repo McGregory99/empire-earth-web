@@ -23,7 +23,7 @@ typedef struct ScenarioB {
     HRESULT hr_transform, hr_viewport, hr_material, hr_light, hr_light_enable;
     HRESULT hr_vb_create, hr_vb_lock, hr_vb_unlock, hr_draw_vb, hr_vb_desc;
     HRESULT hr_tex_lock, hr_tex_unlock, hr_clipper, hr_clipper_use, hr_clipper_raw, hr_qi_dd4, hr_dd4_caps;
-    HRESULT hr_flip_status, hr_scanline;
+    HRESULT hr_flip_status, hr_scanline, hr_draw_indexed, hr_draw_prim;
     int format_callbacks;
     DWORD vb_fvf, vb_vertices;  /* what GetVertexBufferDesc reported back */
     DWORD tex_pitch;            /* reported by Lock */
@@ -33,7 +33,7 @@ typedef int(WINAPI *ScenarioBFn)(HWND hwnd, ScenarioB *out);
 
 /* Scenario C: present-equivalent calls and the capture cap. */
 typedef struct ScenarioC {
-    HRESULT hr_setup, hr_blt[6];
+    HRESULT hr_setup, hr_blt[6], hr_partial, hr_fill;
 } ScenarioC;
 typedef int(WINAPI *ScenarioCFn)(HWND hwnd, ScenarioC *out);
 

@@ -218,6 +218,8 @@ static void cycle_b(HMODULE plugin, HWND hwnd) {
     check_hr(r.hr_vb_lock, DD_OK, "vertex buffer Lock result");
     check_hr(r.hr_vb_unlock, DD_OK, "vertex buffer Unlock result");
     check_hr(r.hr_draw_vb, DD_OK, "DrawPrimitiveVB with a wrapped vertex buffer");
+    check_hr(r.hr_draw_indexed, DD_OK, "DrawIndexedPrimitiveVB result");
+    check_hr(r.hr_draw_prim, DD_OK, "DrawPrimitive with application vertices result");
     check_hr(r.hr_vb_desc, DD_OK, "GetVertexBufferDesc result");
     check(r.vb_fvf == VB_FVF && r.vb_vertices == VB_VERTICES, "GetVertexBufferDesc reports the creation parameters");
     check_hr(r.hr_clipper, DD_OK, "CreateClipper result (unwrapped interface)");
@@ -260,6 +262,16 @@ static void cycle_b(HMODULE plugin, HWND hwnd) {
     sprintf(pat, "T1 vb#1.Unlock() = DD_OK locked={bytes=144, hash=%s}", hash);
     expect(pat);
     expect("T1 dev7#2.DrawPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=0, vertex_count=3, flags=0x0) = DD_OK");
+    {
+        unsigned short idx[6] = {0, 1, 2, 2, 1, 3};
+        char h1[40], h2[40];
+        hash_text(h1, idx, sizeof idx);
+        hash_text(h2, vertices, 3 * VB_VERTEX_SIZE);
+        sprintf(pat, "T1 dev7#2.DrawIndexedPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=0, vertex_count=4, indices=u16[6]:%s, index_count=6, flags=0x0) = DD_OK", h1);
+        expect(pat);
+        sprintf(pat, "T1 dev7#2.DrawPrimitive(primitive_type=TRIANGLELIST(4), fvf=0x152, vertices=fvf[3x36]:%s, vertex_count=3, flags=0x0) = DD_OK", h2);
+        expect(pat);
+    }
     expect("T1 vb#1.GetVertexBufferDesc(desc=>{dwSize=16, dwCaps=0x*, dwFVF=0x152, dwNumVertices=4}) = DD_OK");
     expect("T1 dd7#2.CreateClipper(dwFlags=0x0, lplpDDClipper->raw, pUnkOuter=NULL) = DD_OK");
     expect("T1 surf#3.SetClipper(lpDDClipper=P) = DD_OK");
@@ -290,8 +302,13 @@ static void cycle_c(HMODULE plugin, HWND hwnd) {
     load_trace_again();
     if (!g_nlines)
         return;
-    /* the cap is DDT_MAX_PRESENTS=3: exactly three present-equivalent calls are traced, then the trace ends */
-    expect_count("T1 surf#6.Blt(*", 3);
+    check_hr(r.hr_partial, DD_OK, "sprite Blt to the primary passes through");
+    check_hr(r.hr_fill, DD_OK, "colour fill of the primary passes through");
+    /* the cap is DDT_MAX_PRESENTS=3: a sprite blit and a colour fill do not count, three whole-surface blits do, then
+     * the trace ends */
+    expect("T1 surf#6.Blt(lpDestRect={10,10,42,42}, lpDDSrcSurface=surf#7, lpSrcRect={10,10,42,42}, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
+    expect("T1 surf#6.Blt(lpDestRect=NULL, lpDDSrcSurface=NULL, lpSrcRect=NULL, dwFlags=0x1000400, lpDDBltFx={dwSize=100,*}) = DD_OK");
+    expect_count("T1 surf#6.Blt(*", 5);
     expect("T1 surf#6.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#7, lpSrcRect=NULL, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK");
     expect("# end: 3 presents");
     check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "nothing is traced after the cap");

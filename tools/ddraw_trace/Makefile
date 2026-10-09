@@ -6,6 +6,7 @@
 #   make gen-tables   regenerate src/methods.inc and src/names.inc
 #   make game-trace   one in-game capture (takes the game-run lock, launches the game, ~3 min); compares with the previous run
 #   make game-gate    two in-game captures and their diff: the determinism gate
+#   make game-check   one capture compared with tests/ddraw_trace/golden (this machine's display)
 #   make clean
 #
 # Everything outside the repository (Wine, the test prefix, the game) is configured below and never
@@ -35,7 +36,7 @@ HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test test-unit test-restore check-tables gen-tables game-trace game-gate clean
+.PHONY: all test test-unit test-restore test-normalize check-tables gen-tables game-trace game-gate game-check clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -57,7 +58,10 @@ $(BUILD)/fakeplugin.dll: $(TESTDIR)/fakeplugin.c $(TESTDIR)/scenario.h | $(BUILD
 $(BUILD)/harness.exe: $(TESTDIR)/harness.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -s -o $@ $< -Wl,--enable-stdcall-fixup -static-libgcc -lddraw -ldxguid -luser32
 
-test: test-restore test-unit
+test: test-restore test-normalize test-unit
+
+test-normalize:
+	$(TESTDIR)/test-normalize.sh .
 
 test-restore:
 	$(TESTDIR)/test-restore.sh .
@@ -77,6 +81,12 @@ game-trace: $(BUILD)/ddraw.dll
 
 game-gate: $(BUILD)/ddraw.dll
 	scripts/game-trace.sh $(BUILD)/ddraw.dll --gate
+
+# One capture compared with the golden trace of this machine (display modes and Wine's GPU strings are machine specific).
+game-check: $(BUILD)/ddraw.dll
+	scripts/game-trace.sh $(BUILD)/ddraw.dll
+	gzip -dc $(TESTDIR)/golden/startup-menu-n60.trace.gz | diff - $(BUILD)/game-trace/last.txt >/dev/null \
+	    && echo 'game-check: identical to the golden trace' || { echo 'game-check: DIFFERS from the golden trace'; exit 1; }
 
 clean:
 	rm -rf $(BUILD)

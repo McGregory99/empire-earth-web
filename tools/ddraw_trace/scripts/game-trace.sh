@@ -122,16 +122,38 @@ WRAP
   return 0
 }
 
+# Two traces are equal if they are identical, or identical after the cursor-sprite normalization (scripts/normalize.py).
+compare_traces() {
+  local a="$1" b="$2" na nb
+  if cmp -s "$a" "$b"; then
+    log "traces identical ($(wc -l <"$a" | tr -d ' ') lines)"
+    return 0
+  fi
+  na="$(mktemp "$OUT/norm.XXXXXX")"
+  nb="$(mktemp "$OUT/norm.XXXXXX")"
+  python3 -I "$HERE/scripts/normalize.py" <"$a" >"$na"
+  python3 -I "$HERE/scripts/normalize.py" <"$b" >"$nb"
+  if cmp -s "$na" "$nb"; then
+    log "traces differ raw but are identical after removing the cursor-sprite blits ($(wc -l <"$na" | tr -d ' ') lines left; raw $(wc -l <"$a" | tr -d ' ') and $(wc -l <"$b" | tr -d ' '))"
+    rm -f "$na" "$nb"
+    return 0
+  fi
+  diff -u "$na" "$nb" >"$OUT/diff.normalized.txt"
+  log "traces DIFFER, also after normalization: $(grep -c '^[-+][^-+]' "$OUT/diff.normalized.txt") changed lines, see $OUT/diff.normalized.txt"
+  rm -f "$na" "$nb"
+  return 1
+}
+
 stamp="$(date '+%Y%m%d-%H%M%S')"
 if [ "$MODE" = "--gate" ]; then
   one_run "A.$stamp" || exit $?
   # give the filesystem and Wine a moment, then the second run
   sleep 5
   one_run "B.$stamp" || exit $?
-  if diff -u "$OUT/trace.A.$stamp.txt" "$OUT/trace.B.$stamp.txt" >"$OUT/diff.$stamp.txt"; then
-    log "GATE PASS: the two traces are identical ($(wc -l <"$OUT/trace.A.$stamp.txt" | tr -d ' ') lines)"
+  if compare_traces "$OUT/trace.A.$stamp.txt" "$OUT/trace.B.$stamp.txt"; then
+    log "GATE PASS"
   else
-    log "GATE DIFFERENCES: $(grep -c '^[-+][^-+]' "$OUT/diff.$stamp.txt") changed lines, see $OUT/diff.$stamp.txt"
+    log "GATE DIFFERENCES"
     exit 1
   fi
 else
@@ -139,10 +161,6 @@ else
   [ -f "$OUT/last.txt" ] && mv -f "$OUT/last.txt" "$OUT/prev.txt"
   cp "$OUT/trace.$stamp.txt" "$OUT/last.txt"
   if [ -f "$OUT/prev.txt" ]; then
-    if diff -q "$OUT/prev.txt" "$OUT/last.txt" >/dev/null; then
-      log "identical to the previous run's trace"
-    else
-      log "DIFFERS from the previous run's trace: diff -u $OUT/prev.txt $OUT/last.txt"
-    fi
+    compare_traces "$OUT/prev.txt" "$OUT/last.txt" || exit 1
   fi
 fi

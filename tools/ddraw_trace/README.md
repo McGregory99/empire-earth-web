@@ -119,6 +119,8 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 * Suffix at `Unlock`: ` locked={rect=NULL|{l,t,r,b}, bytes=N, hash=fnv1a64:<16 hex>}` for surfaces (the locked rows
   without pitch padding; block-compressed surfaces as one run) and ` locked={bytes=N, hash=...}` for vertex buffers
   (the whole locked range). The hash is 64-bit FNV-1a of the bytes the plugin wrote, taken before the real `Unlock`.
+* Draw calls hash the plugin-owned arrays they carry: `indices=u16[6]:fnv1a64:<hash>` (index array, `index_count` x 2 bytes)
+  and `vertices=fvf[3x36]:fnv1a64:<hash>` (application vertices, `vertex_count` x the FVF's vertex size).
 * Timing-dependent calls (`GetFlipStatus`, `GetBltStatus`, `WaitForVerticalBlank`, `GetScanLine`,
   `GetVerticalBlankStatus`) are written as `... = ? [timing]` with masked results, and a run of identical lines
   collapses to one (polling loops have no reproducible length).
@@ -151,7 +153,48 @@ Interfaces that are not wrapped (`IDirectDrawClipper`, `IDirectDrawPalette`, oth
 out as the real objects and appear as `raw`; they work, but calls on them are not traced. Exports other than
 `DirectDrawCreateEx`, `DirectDrawEnumerateA` and `DirectDrawEnumerateExA` are forwarded by a tail jump, untraced.
 
+## Side files
+
+Next to the trace (not part of the normalized trace, so they never break a diff):
+
+* `<trace>.times`: `<present number> <milliseconds since the first traced call>` per present.
+* `<trace>.callers`: `<module> <calls> traced|untraced`, the attribution evidence. In the game, only the two plugins
+  call ddraw (the exe and the engine DLL make no direct ddraw calls), so nothing is excluded.
+* `<trace>.done`: empty marker, created when the present cap is reached.
+
+## Determinism
+
+Gate: two captures with the original renderer must be identical. Results on this machine (Mac display 1710x1107,
+Wine Stable 11.0, d7vk stack, the launcher's `EE_*` switches off as in the task):
+
+* Cap of 60 presents (the default): **identical** in every pair so far (three pairs, 10,980 lines each, with hashes of
+  every locked surface and vertex buffer, indices and vertices).
+* Cap of 300: the traces differ, always at the same kind of event. After 111 to 152 frames (four runs: 111, 119, 126, 128, 152;
+  frames are paced at 60 Hz, so about 2 s after the menu appears) two extra untextured quads appear in each frame, and
+  they toggle on and off later. The frame goes from 153 to 164 lines. Cause: a wall-clock-driven element of the menu, not
+  the proxy. The default cap ends well before it. Under heavy load the event arrives in fewer frames, so lower
+  `DDT_PRESENTS` if a pair ever differs; `<trace>.times` and a frame-size histogram show where.
+* Environment effects seen: the launcher's first attempt dies before its first frame in roughly half of the runs here
+  (it retries up to 6 times; this also happened in launches without our proxy). One run stalled for 4 minutes inside
+  Present while the idle display slept, and the game quit when the display woke; `game-trace.sh` now runs `caffeinate`.
+* The display mode list (`EnumDisplayModes`) and the adapter names come from the Mac's display and Wine, so the golden
+  trace in `tests/ddraw_trace/golden/` is machine specific: `make game-check` is meaningful on this Mac only.
+
+Golden: `tests/ddraw_trace/golden/startup-menu-n60.trace.gz` (the 60-present trace, call metadata and hashes only, no game
+data) and `startup-menu-n60.summary.txt` (call counts per method, render states, texture formats).
+
 ## Known gaps
 
-See the report that came with this slice; the short list is at the end of `odd/tasks/empire-earth-web.md` once the
-parent has folded it in.
+* Only five interfaces are wrapped. `IDirectDrawClipper`, `IDirectDrawPalette`, gamma/colour control and other
+  `IDirectDraw*` versions pass through raw and untraced (the game never obtained one in the captured window).
+* Vertex buffer hashes cover the whole locked range, which for the game's ring buffer is all 87,912 bytes at every
+  `Unlock`. That is deterministic here but says nothing about which part changed; a dirty-range hash or a hash of the
+  vertex range at draw time would localize differences.
+* Pixels drawn through a surface DC (`GetDC`/`ReleaseDC` with GDI text) are not hashed: 56 pairs in the captured window.
+* The Bink movie path is not exercised (the launcher skips the intro movies).
+* No normalization of the wall-clock menu element: the capture ends before it.
+* `DDCAPS` prints `dwVidMemFree`; it was constant here. Other volatile fields may exist outside the captured window.
+* Strided draws, clip planes, `ComputeSphereVisibility` arrays and `GetDC` handles print as `P` only.
+* The insertion needs the launcher's `EMPIRE_EARTH_WINE` override and its `wine start /unix` call. If the launcher is
+  restructured, `swap-in.sh` has to be triggered another way (the byte-exact restore does not depend on it).
+* The Wine prefix registry and the launcher logs are not restored.

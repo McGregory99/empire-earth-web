@@ -16,7 +16,7 @@
 
 enum Kind {
     K_HEX, K_DEC, K_F32, K_PTR, K_HANDLE, K_GUID, K_IFACE_IN, K_IFACE_OUT, K_VOIDPP, K_STRUCT, K_CALLBACK,
-    K_RS, K_TSS, K_XFORM, K_PT, K_OUT_DWORD, K_OUT_BOOL, K_OUT_LONG, K_RAWOUT, K_OUTPTR
+    K_RS, K_TSS, K_XFORM, K_PT, K_OUT_DWORD, K_OUT_BOOL, K_OUT_LONG, K_RAWOUT, K_OUTPTR, K_INDICES, K_VERTICES
 };
 enum Cb { CB_MODES, CB_SURFACES, CB_DEVICES, CB_PIXFMT };
 enum Hook {
@@ -227,7 +227,11 @@ static void classify(ArgDef *d, const char *method) {
                 d->kind = K_OUTPTR; /* IDirect3DVertexBuffer7::Lock hands back a data pointer, not an interface */
             return;
         }
-    if (strchr(d->type, '*') || !strncmp(d->type, "LP", 2))
+    if (!strcmp(d->type, "WORD*") && !strcmp(d->name, "indices"))
+        d->kind = K_INDICES; /* index array of the DrawIndexedPrimitive calls: hashed */
+    else if (!strcmp(d->type, "void*") && !strcmp(d->name, "vertices"))
+        d->kind = K_VERTICES; /* application vertex array of DrawPrimitive / DrawIndexedPrimitive: hashed */
+    else if (strchr(d->type, '*') || !strncmp(d->type, "LP", 2))
         d->kind = K_PTR;
     else if (name_is_decimal(d->name))
         d->kind = K_DEC;
@@ -415,6 +419,16 @@ static void fmt_guid_arg(Buf *b, const void *g) {
         buf_puts(b, guid_name(g, tmp));
 }
 
+static unsigned fvf_vertex_size(DWORD fvf);
+
+static int arg_index(const MethodDef *m, const char *name) {
+    unsigned i;
+    for (i = 0; i < m->nargs; i++)
+        if (!strcmp(m->a[i].name, name))
+            return (int)i;
+    return -1;
+}
+
 static void enum_name(Buf *b, const char *name, DWORD v, const char *what) {
     if (name)
         buf_printf(b, "%s(%u)", name, (unsigned)v);
@@ -444,6 +458,26 @@ static void render_arg(CallRec *c, unsigned i, int post, HRESULT hr) {
         fmt_guid_arg(&b, (const void *)(uintptr_t)v);
         break;
     case K_IFACE_IN: buf_printf(&b, "%s=%s", d->name, wrap_label((void *)(uintptr_t)v, lbl)); break;
+    case K_INDICES:
+    case K_VERTICES: {
+        int ci = arg_index(c->m, d->kind == K_INDICES ? "index_count" : "vertex_count");
+        int fi = arg_index(c->m, "fvf");
+        unsigned count = ci >= 0 ? c->a[ci + 1] : 0;
+        unsigned unit = d->kind == K_INDICES ? 2 : (fi >= 0 ? fvf_vertex_size(c->a[fi + 1]) : 0);
+        buf_printf(&b, "%s=", d->name);
+        if (!v)
+            buf_puts(&b, "NULL");
+        else if (!count || !unit || IsBadReadPtr((void *)(uintptr_t)v, count * unit))
+            buf_puts(&b, "P");
+        else {
+            uint64_t h = fnv1a64((const void *)(uintptr_t)v, count * unit);
+            if (d->kind == K_INDICES)
+                buf_printf(&b, "u16[%u]:fnv1a64:%08x%08x", count, (unsigned)(h >> 32), (unsigned)h);
+            else
+                buf_printf(&b, "fvf[%ux%u]:fnv1a64:%08x%08x", count, unit, (unsigned)(h >> 32), (unsigned)h);
+        }
+        break;
+    }
     case K_RS:
         buf_printf(&b, "%s=", d->name);
         enum_name(&b, rs_name(v), v, "rs");
@@ -755,7 +789,10 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
     case H_CREATEVB: post_create_vb(&c); break;
     case H_FLIP: is_present = 1; break;
     case H_BLT:
-    case H_BLTFAST: is_present = (self->caps & DDSCAPS_PRIMARYSURFACE) != 0; break;
+        /* A copy of a whole surface onto the primary.  Sprite blits (the software cursor) and colour fills are not
+         * frames; counting them made the capture length depend on a cursor thread's timing. */
+        is_present = (self->caps & DDSCAPS_PRIMARYSURFACE) != 0 && a[1] == 0 && a[2] != 0;
+        break;
     default: break;
     }
 

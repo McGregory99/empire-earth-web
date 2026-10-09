@@ -180,6 +180,13 @@ __declspec(dllexport) int WINAPI scenario_b(HWND hwnd, ScenarioB *r) {
         r->hr_vb_unlock = IDirect3DVertexBuffer7_Unlock(vb);
         IDirect3DDevice7_BeginScene(dev);
         r->hr_draw_vb = IDirect3DDevice7_DrawPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 3, 0);
+        {
+            WORD idx[6] = {0, 1, 2, 2, 1, 3};
+            unsigned char verts[VB_VERTICES * VB_VERTEX_SIZE];
+            fill_vertices(verts);
+            r->hr_draw_indexed = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 4, idx, 6, 0);
+            r->hr_draw_prim = IDirect3DDevice7_DrawPrimitive(dev, D3DPT_TRIANGLELIST, VB_FVF, verts, 3, 0);
+        }
         IDirect3DDevice7_EndScene(dev);
         memset(&got, 0, sizeof got);
         got.dwSize = sizeof got;
@@ -248,6 +255,17 @@ __declspec(dllexport) int WINAPI scenario_c(HWND hwnd, ScenarioC *r) {
     sd.dwWidth = 64;
     sd.dwHeight = 64;
     IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);
+    /* not presents: a sprite blit (the software cursor) and a colour fill of the primary */
+    {
+        RECT sprite = {10, 10, 42, 42};
+        DDBLTFX fx;
+        r->hr_partial = IDirectDrawSurface7_Blt(primary, &sprite, back, &sprite, DDBLT_WAIT, NULL);
+        memset(&fx, 0, sizeof fx);
+        fx.dwSize = sizeof fx;
+        fx.dwFillColor = 0x00ff00ff;
+        r->hr_fill = IDirectDrawSurface7_Blt(primary, NULL, NULL, NULL, DDBLT_COLORFILL | DDBLT_WAIT, &fx);
+    }
+    /* presents: whole-surface blits from another surface */
     for (i = 0; i < 6; i++)
         r->hr_blt[i] = IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_WAIT, NULL);
     IDirectDrawSurface7_Release(back);
