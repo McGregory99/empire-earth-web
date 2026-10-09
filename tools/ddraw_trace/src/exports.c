@@ -36,6 +36,7 @@ void *__cdecl ddt_raw_enter(int idx, void *return_address) {
     return (void *)export_target[idx];
 }
 
+/* DirectDrawCreateEx and DirectDrawEnumerateA/ExA are implemented in dispatch.c. */
 #define RAW_THUNK(i, n) \
     __attribute__((naked)) void ddt_x_##n(void) { \
         __asm__("pushl (%esp)\n\t" \
@@ -44,4 +45,9 @@ void *__cdecl ddt_raw_enter(int idx, void *return_address) {
                 "addl $8, %esp\n\t" \
                 "jmp *%eax\n\t"); \
     }
-EXPORT_LIST(RAW_THUNK)
+#define TRACED(i, n)
+#define RAW_LIST(X) \
+    X(0, AcquireDDThreadLock) X(1, CompleteCreateSysmemSurface) X(2, D3DParseUnknownCommand) X(3, DDInternalLock) \
+    X(4, DDInternalUnlock) X(5, DirectDrawCreate) X(6, DirectDrawCreateClipper) X(10, DirectDrawEnumerateExW) \
+    X(11, DirectDrawEnumerateW) X(12, DllCanUnloadNow) X(13, DllGetClassObject) X(14, ReleaseDDThreadLock)
+RAW_LIST(RAW_THUNK)

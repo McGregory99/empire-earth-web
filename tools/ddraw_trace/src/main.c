@@ -67,6 +67,7 @@ void ddt_init(void) {
     EnterCriticalSection(&g_init_cs);
     if (!g_inited) {
         cfg_load();
+        dispatch_init();
         g_inited = 1;
     }
     LeaveCriticalSection(&g_init_cs);
@@ -106,6 +107,8 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, void *reserved) {
         g_self = inst;
         DisableThreadLibraryCalls(inst);
         InitializeCriticalSection(&g_init_cs);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        ddt_shutdown();
     }
     return TRUE;
 }

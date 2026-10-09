@@ -159,7 +159,7 @@ static void cycle_a(HMODULE plugin, HWND hwnd) {
     expect("# modules: fakeplugin.dll");
     expect("T1 DirectDrawEnumerateExA(lpCallback=P, lpContext=P, dwFlags=0x7) = DD_OK");
     expect("T1 DirectDrawEnumerateA(lpCallback=P, lpContext=P) = DD_OK");
-    expect_count("*DirectDrawEnumerateA(*", 1);
+    expect_count("T1 DirectDrawEnumerateA(*", 1);
     expect("T1 DirectDrawCreateEx(lpGuid=NULL, lplpDD->dd7#1, iid=IID_IDirectDraw7, pUnkOuter=NULL) = DD_OK");
     expect("T1 dd7#1.SetCooperativeLevel(hWnd=P, dwFlags=0x8) = DD_OK");
     expect("T1 dd7#1.QueryInterface(riid=IID_IDirect3D7, ppvObject->d3d7#1) = DD_OK");

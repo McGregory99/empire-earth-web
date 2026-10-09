@@ -2,8 +2,8 @@
 #
 #   make              build build/ddraw.dll (the proxy)
 #   make test         unit tests: harness + fake plugin under Wine in front of Wine's builtin ddraw
-#   make check-methods  regenerate src/methods.inc from the SDK headers and compare
-#   make gen-methods  regenerate src/methods.inc
+#   make check-tables regenerate src/*.inc from the SDK headers and compare
+#   make gen-tables   regenerate src/methods.inc and src/names.inc
 #   make game-trace   in-game determinism gate (takes the game-run lock, launches the game, ~3 min)
 #   make clean
 #
@@ -30,11 +30,11 @@ BUILD    := build
 TESTBED  := $(BUILD)/testbed
 SDK_INC  := $(shell $(CC) -print-sysroot)/$(TARGET)/include
 SRC      := $(wildcard src/*.c)
-HDR      := $(wildcard src/*.h) src/methods.inc
+HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test check-methods gen-methods game-trace clean
+.PHONY: all test check-tables gen-tables game-trace clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -44,11 +44,11 @@ $(BUILD):
 $(BUILD)/ddraw.dll: $(SRC) $(HDR) ddraw.def | $(BUILD)
 	$(CC) $(CFLAGS) -shared -s -o $@ $(SRC) ddraw.def -Wl,--enable-stdcall-fixup -static-libgcc -ldxguid -luser32 -lkernel32
 
-gen-methods:
-	python3 -I gen_methods.py "$(SDK_INC)" > src/methods.inc
+gen-tables:
+	python3 -I gen_tables.py "$(SDK_INC)" src
 
-check-methods:
-	python3 -I gen_methods.py "$(SDK_INC)" --check src/methods.inc
+check-tables:
+	python3 -I gen_tables.py "$(SDK_INC)" src --check
 
 $(BUILD)/fakeplugin.dll: $(TESTDIR)/fakeplugin.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -shared -s -o $@ $< -Wl,--enable-stdcall-fixup,--kill-at -static-libgcc -lddraw -ldxguid -luser32
