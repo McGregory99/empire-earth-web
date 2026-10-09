@@ -1,0 +1,161 @@
+# Test support for the game-run library: a fake world with spaces in its paths, a fake ps, fake wine and a fake
+# launcher.  Sourced by the tests; nothing here touches the real game, Wine or launcher.
+#
+# The fake game is a line in $W/ps.out (what the fake `ps -axo pid=,rss=,args=` prints), not a real process, so a test
+# can never be mistaken for the real game by another agent's check.
+
+fails=0
+checks=0
+check() { # check <description> <command...>
+  local what="$1"
+  shift
+  checks=$((checks + 1))
+  if "$@"; then echo "ok   $what"; else echo "FAIL $what"; fails=$((fails + 1)); fi
+}
+check_not() { # check_not <description> <command...>: the command must fail
+  local what="$1"
+  shift
+  checks=$((checks + 1))
+  if "$@" >/dev/null 2>&1; then echo "FAIL $what"; fails=$((fails + 1)); else echo "ok   $what"; fi
+}
+check_eq() { # check_eq <description> <expected> <actual>
+  checks=$((checks + 1))
+  if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1 (expected '$2', got '$3')"; fails=$((fails + 1)); fi
+}
+summary() {
+  echo "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL): $checks checks, $fails failed"
+  [ "$fails" -eq 0 ]
+}
+
+# Wait up to N tenths of a second for a command to succeed.
+wait_for() { # wait_for <tenths> <command...>
+  local n=$1 i=0
+  shift
+  while ! "$@" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge "$n" ] && return 1
+    sleep 0.1
+  done
+}
+
+# Start a command the way a user's shell does, so that INT and QUIT are not ignored (a plain `&` in a non-interactive
+# shell ignores them, and a trap cannot re-enable a signal that was ignored on entry).
+start_job() { perl -e '$SIG{INT} = "DEFAULT"; $SIG{QUIT} = "DEFAULT"; exec @ARGV' "$@" & }
+
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOL_DIR="$(cd "$TESTS_DIR/../../tools/game_run" && pwd)"
+
+world_make() {
+  W="$(mktemp -d "${TMPDIR:-/tmp}/gr world.XXXXXX")"
+  W="$(cd "$W" && pwd -P)"
+  local sup="$W/Library/Application Support/EmpireEarthMac"
+  local wine="$sup/runtime/Wine Stable.app/Contents/Resources/wine"
+  W_SUP="$sup"
+  W_PREFIX="$sup/wineprefix"
+  W_GAME="$W_PREFIX/drive_c/GOG Games/Empire Earth Gold Edition/Empire Earth"
+  W_WINE_ROOT="$wine"
+  W_LAUNCHER="$W/ee macos"
+  mkdir -p "$W/bin" "$W/locks" "$W_GAME/Data" "$W_GAME/Users" "$sup/logs" "$wine/bin" \
+    "$wine/lib/wine/i386-windows" "$wine/share" "$W_LAUNCHER/scripts"
+  : >"$W/ps.out"
+  export FAKE_PS_FILE="$W/ps.out" FAKE_WORLD="$W"
+
+  # the game directory
+  printf 'launcher ddraw v1' >"$W_GAME/ddraw.dll"
+  printf 'D7VK' >"$W_GAME/ddraw_eeorig.dll"
+  printf 'shim v1' >"$W_GAME/version.dll"
+  printf 'wine version' >"$W_GAME/version_eeorig.dll"
+  printf 'exe' >"$W_GAME/Empire Earth.exe"
+  printf 'payload a' >"$W_GAME/Data/a.bin"
+  printf 'payload b' >"$W_GAME/Data/b file.bin"
+  printf 'setting=1' >"$W_GAME/Users/cfg"
+  printf 'log0' >"$W_GAME/ee-ddraw.log"
+  printf 'wine version dll' >"$wine/lib/wine/i386-windows/version.dll"
+  printf '{ "base_exe": "%s/Empire Earth.exe", "game_dir": "%s" }\n' "$W_GAME" "$W_GAME" >"$sup/config.json"
+
+  cat >"$W/bin/ps" <<'PS'
+#!/bin/bash
+# fake ps: the process listing the library asks for comes from a file; everything else is the real ps
+if [ "$*" = "-axo pid=,rss=,args=" ]; then
+  cat "$FAKE_PS_FILE" 2>/dev/null
+  exit 0
+fi
+exec /bin/ps "$@"
+PS
+  chmod +x "$W/bin/ps"
+
+  # fake Wine: `start /unix <exe>` starts the fake game (a line in ps.out) and, when the proxy's config is present,
+  # plays the proxy's part (writes the trace and its .done marker)
+  cat >"$wine/bin/wine" <<'WINE'
+#!/bin/bash
+echo "wine $*" >>"$FAKE_WORLD/wine.log"
+if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
+  game_dir="$(dirname "$3")"
+  echo "4242 50000 C:\\GOG Games\\Fake\\Empire Earth.exe" >>"$FAKE_PS_FILE"
+  if [ -f "$game_dir/ddraw_trace.cfg" ]; then
+    trace="$(sed -n 's/^DDT_TRACE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
+    printf '# ddraw_trace v1\nT1 fake\n# end: 3 presents\n' >"$trace"
+    : >"$trace.done"
+  fi
+fi
+exit 0
+WINE
+  cat >"$wine/bin/wineserver" <<'WS'
+#!/bin/bash
+echo "wineserver $* (WINEPREFIX=${WINEPREFIX:-})" >>"$FAKE_WORLD/wine.log"
+if [ "${1:-}" = -k ] && [ ! -e "$FAKE_WORLD/refuse-stop" ]; then
+  grep -v 'Empire Earth.exe\|EE-AOC.exe' "$FAKE_PS_FILE" >"$FAKE_PS_FILE.new"
+  mv "$FAKE_PS_FILE.new" "$FAKE_PS_FILE"
+fi
+exit 0
+WS
+  printf '#!/bin/bash\necho "wineboot" >>"$FAKE_WORLD/wine.log"\n' >"$wine/bin/wineboot"
+  chmod +x "$wine/bin/wine" "$wine/bin/wineserver" "$wine/bin/wineboot"
+
+  # fake launcher: like the real one it rewrites the game directory, looks for Wine's version.dll relative to the
+  # wine it was given, and starts the game through `$EMPIRE_EARTH_WINE start /unix`
+  cat >"$W_LAUNCHER/scripts/launch.sh" <<'LAUNCH'
+#!/bin/bash
+game="$FAKE_GAME"
+log="$FAKE_SUPPORT/logs/launcher.log"
+echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset}" >>"$FAKE_WORLD/launch.log"
+wine_path="${EMPIRE_EARTH_WINE:?}"
+orig="$(cd "$(dirname "$wine_path")/.." 2>/dev/null && pwd -P)/lib/wine/i386-windows/version.dll"
+printf 'launcher ddraw %s' "$$" >"$game/ddraw.dll"
+printf 'run log %s' "$$" >"$game/ee-ddraw.log"
+if [ -f "$orig" ]; then
+  echo "[t] Installed the version.dll shim in $game" >>"$log"
+else
+  echo "[t] WARNING: version.dll shim not installed in $game (Wine's copy: $orig)" >>"$log"
+fi
+[ -e "$FAKE_WORLD/launcher-fail-before-game" ] && exit 3
+"$wine_path" start /unix "$game/Empire Earth.exe"
+[ -e "$FAKE_WORLD/launcher-hang" ] && { sleep 300 & echo $! >"$FAKE_WORLD/launcher-child.pid"; wait; }
+exit 0
+LAUNCH
+  chmod +x "$W_LAUNCHER/scripts/launch.sh"
+
+  # the overrides a driver applies after sourcing the library (GR_TEST_CONFIG)
+  cat >"$W/config.sh" <<CONF
+GAME_RUN_LOCK="$W/locks/game-run"
+GAME_RUN_STATE="$W/game-run-state"
+GR_SUPPORT="$sup"
+GR_PREFIX="$W_PREFIX"
+GR_GAME="$W_GAME"
+GR_WINE_ROOT="$wine"
+GR_LAUNCHER_DIR="$W_LAUNCHER"
+GR_LOG_DIR="$sup/logs"
+GR_CONFIG_JSON="$sup/config.json"
+GR_MIN_RSS_KB=0
+GR_STOP_WAIT=2
+GR_LOCK_WAIT=2
+GR_LOCK_POLL=0.2
+export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup"
+CONF
+  : >"$W_SUP/logs/launcher.log"
+  export PATH="$W/bin:$PATH"
+}
+
+world_clean() {
+  [ -n "${W:-}" ] && [ -d "$W" ] && rm -rf "$W"
+}
