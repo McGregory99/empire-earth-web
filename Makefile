@@ -27,7 +27,10 @@ CFLAGS  += -std=c99 -Wall -Wextra -D_WIN32_WINNT=0x0501 $(CRT) -I src/engine_abi
 RE_DIR     ?= $(HOME)/Games/EmpireEarth-re
 GAME_DIR   ?= $(HOME)/Games/EmpireEarth/Empire Earth
 WINE       ?= $(HOME)/Library/Application Support/EmpireEarthMac/runtime/Wine Stable.app/Contents/Resources/wine/bin/wine
-WINEPREFIX ?= $(RE_DIR)/wineprefix-test
+# Always the project's own prefix (":=", not "?="): an ambient WINEPREFIX, typically the game's, must
+# never receive the registry changes of `make wine-prefix` or run the tests.  Override on the make
+# command line (`make WINEPREFIX=...`) if you really mean to.
+WINEPREFIX := $(RE_DIR)/wineprefix-test
 TESTBED    ?= $(RE_DIR)/testbed
 ORIGINAL_DLL := $(RE_DIR)/bin/TCP Protocol.dll
 ENGINE_DLL   := $(RE_DIR)/bin/Low-Level Engine.dll
@@ -48,11 +51,12 @@ HARNESS   := $(BUILD)/harness.exe
 ENGINE_LIB := $(BUILD)/libengine.a
 GOLDEN    := tests/tcp_protocol/golden.txt
 
-# RED stage: "ours" is still the failing stub, there is no reimplementation yet.
+# Every source depends on every header of its program: the DLL and the harness are built in one
+# compiler invocation, so a stale build after a header edit would let `make test` pass on old code.
 HARNESS_SOURCES := $(wildcard tests/tcp_protocol/*.c)
-HARNESS_HEADERS := $(wildcard tests/tcp_protocol/*.h)
+HARNESS_HEADERS := $(wildcard tests/tcp_protocol/*.h) src/engine_abi/low_level_engine.h
 PLUGIN_SOURCES := $(wildcard src/plugins/tcp_protocol/*.c)
-PLUGIN_HEADERS := src/engine_abi/low_level_engine.h
+PLUGIN_HEADERS := $(wildcard src/plugins/tcp_protocol/*.h) src/engine_abi/low_level_engine.h
 
 .PHONY: all test golden determinism test-stub check-abi wine-prefix clean testbed-ours testbed-original testbed-stub
 
@@ -72,7 +76,7 @@ $(PLUGIN): $(PLUGIN_SOURCES) $(PLUGIN_HEADERS) src/plugins/tcp_protocol/tcp_prot
 $(STUB): tests/tcp_protocol/stub/stub.c src/plugins/tcp_protocol/tcp_protocol.def | $(BUILD)/stub
 	$(CC) $(CFLAGS) -shared -o "$@" tests/tcp_protocol/stub/stub.c src/plugins/tcp_protocol/tcp_protocol.def
 
-$(HARNESS): $(HARNESS_SOURCES) $(HARNESS_HEADERS) $(ENGINE_LIB) src/engine_abi/low_level_engine.h | $(BUILD)/ours
+$(HARNESS): $(HARNESS_SOURCES) $(HARNESS_HEADERS) $(ENGINE_LIB) | $(BUILD)/ours
 	$(CC) $(CFLAGS) -I tests/tcp_protocol -o $@ $(HARNESS_SOURCES) -L $(BUILD) -lengine -lws2_32
 
 # ---- test beds: a directory per variant with the engine DLLs next to the plugin -------
