@@ -89,6 +89,20 @@ PS
   cat >"$wine/bin/wine" <<'WINE'
 #!/bin/bash
 echo "wine $*" >>"$FAKE_WORLD/wine.log"
+if [ "${1:-}" = reg ]; then
+  value_file="$FAKE_WORLD/snoop.value"
+  case "${2:-}" in
+    query)
+      [ -f "$value_file" ] || exit 1
+      printf '\r\nHKEY_CURRENT_USER\\Software\\Wine\\Debug\r\n    SnoopInclude    REG_SZ    %s\r\n\r\n' "$(cat "$value_file")"
+      ;;
+    add)
+      while [ $# -gt 0 ]; do [ "$1" = /d ] && { printf '%s' "$2" >"$value_file"; break; }; shift; done
+      ;;
+    delete) rm -f "$value_file" ;;
+  esac
+  exit 0
+fi
 if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
   game_dir="$(dirname "$3")"
   echo "4242 50000 C:\\GOG Games\\Fake\\Empire Earth.exe" >>"$FAKE_PS_FILE"
@@ -119,7 +133,7 @@ WS
 game="$FAKE_GAME"
 log="$FAKE_SUPPORT/logs/launcher.log"
 echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset} EE_GRAPHICS=${EE_GRAPHICS:-unset} EE_BIG_ARMIES=${EE_BIG_ARMIES:-unset} SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-unset}" >>"$FAKE_WORLD/launch.log"
-wine_path="${EMPIRE_EARTH_WINE:?}"
+wine_path="${EMPIRE_EARTH_WINE:-$FAKE_WINE}"   # the real launcher finds its own Wine when none is given
 orig="$(cd "$(dirname "$wine_path")/.." 2>/dev/null && pwd -P)/lib/wine/i386-windows/version.dll"
 printf 'launcher ddraw %s' "$$" >"$game/ddraw.dll"
 printf 'run log %s' "$$" >"$game/ee-ddraw.log"
@@ -127,6 +141,10 @@ if [ -f "$orig" ]; then
   echo "[t] Installed the version.dll shim in $game" >>"$log"
 else
   echo "[t] WARNING: version.dll shim not installed in $game (Wine's copy: $orig)" >>"$log"
+fi
+if [ -f "$FAKE_WORLD/launch-log-template" ]; then
+  sed "s/@DLL@/${FAKE_DLL:-EEWebRasterizer}/g" "$FAKE_WORLD/launch-log-template" >"$FAKE_SUPPORT/logs/launch-$(date +%Y%m%d-%H%M%S)-$$.log"
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do echo "BeginScene ENTER $i" >>"$game/ee-ddraw.log"; done
 fi
 [ -e "$FAKE_WORLD/launcher-fail-before-game" ] && exit 3
 if [ -e "$FAKE_WORLD/launcher-late-start" ]; then
@@ -159,7 +177,7 @@ OUT="$W/out"
 PRESENTS=3
 CAPTURE_WAIT=6
 LAUNCH_LIMIT=60
-export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup"
+export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup" FAKE_WINE="$wine/bin/wine"
 CONF
   : >"$W_SUP/logs/launcher.log"
   export PATH="$W/bin:$PATH"
