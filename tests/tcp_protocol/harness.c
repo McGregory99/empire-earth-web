@@ -45,6 +45,7 @@ static const struct Scenario {
     { "probe-flags", scenario_probe_flags, 0 },
     { "discovery", scenario_discovery, 0 },
     { "close-order", scenario_close_order_quirk, 0 },
+    { "long-names", scenario_long_names, 0 },
     { "leak-scan-sendto", scenario_leak_scan_sendto, 1 },
     { "leak-scan-ioctl", scenario_leak_scan_ioctl, 1 },
     { "leak-transfer-listener", scenario_leak_transfer_listener, 1 },

@@ -71,3 +71,59 @@ long publish(NeHandle *server, const char *service_text, const char *name_text, 
     return rc;
 }
 
+
+/* ------------------------------------------------------------------------ */
+/* A fake game on the LAN                                                    */
+/* ------------------------------------------------------------------------ */
+
+/* Keep answering "a game of service S named N lives here" to port 33334 on this host. */
+static DWORD WINAPI feeder_main(LPVOID argument)
+{
+    Feeder *feeder = argument;
+    SOCKET s = udp_socket(NULL, 0, 0);
+    struct sockaddr_in target = make_addr("127.0.0.1", GAME_PORT);
+    while (feeder->running) {
+        udp_send(s, feeder->datagram, sizeof feeder->datagram, &target);
+        Sleep(60);
+    }
+    closesocket(s);
+    return 0;
+}
+
+void feeder_start(Feeder *feeder, const char *service, const char *name)
+{
+    uint8_t plain[0x87];
+    size_t service_length = strlen(service) < 64 ? strlen(service) : 64;
+    size_t name_length = strlen(name) < 68 ? strlen(name) : 68;  /* the 69-byte name field holds 68 characters */
+
+    memset(plain, 0, sizeof plain);
+    plain[0] = 0x16;
+    memcpy(plain + 1, service, service_length);
+    memcpy(plain + 0x42, name, name_length);
+    seal(feeder->datagram, 0x37, plain, sizeof plain);
+    feeder->running = 1;
+    feeder->thread = CreateThread(NULL, 0, feeder_main, feeder, 0, NULL);
+}
+
+void feeder_stop(Feeder *feeder)
+{
+    feeder->running = 0;
+    WaitForSingleObject(feeder->thread, 3000);
+    CloseHandle(feeder->thread);
+}
+
+/* Can this host send a UDP broadcast?  (A LAN scan needs it.) */
+int broadcast_available(void)
+{
+    SOCKET s = udp_socket(NULL, 0, 0);
+    BOOL on = TRUE;
+    struct sockaddr_in to = make_addr("255.255.255.255", 9);
+    int ok;
+    if (s == INVALID_SOCKET) {
+        return 0;
+    }
+    setsockopt(s, SOL_SOCKET, SO_BROADCAST, (const char *)&on, sizeof on);
+    ok = udp_send(s, "x", 1, &to) == 1;
+    closesocket(s);
+    return ok;
+}

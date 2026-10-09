@@ -208,6 +208,17 @@ void free_server_events(ServerEvents *events);
 long publish(NeHandle *server, const char *service_text, const char *name_text, unsigned long protocols,
              ServerEvents *events, int skip_duplicate_check, int visible);
 
+/* A background thread that keeps announcing one game of service S, named N, to the plugin's scans. */
+typedef struct Feeder {
+    volatile LONG running;
+    uint8_t datagram[0x88];
+    HANDLE thread;
+} Feeder;
+
+void feeder_start(Feeder *feeder, const char *service, const char *name);
+void feeder_stop(Feeder *feeder);
+int broadcast_available(void);
+
 /* ---- scenarios -------------------------------------------------------------- */
 
 /* Everything after the activation scenario needs a working Winsock stack inside the plugin. */
@@ -228,6 +239,7 @@ void scenario_udp_server(void);
 void scenario_probe_flags(void);
 void scenario_discovery(void);
 void scenario_close_order_quirk(void);
+void scenario_long_names(void);
 void scenario_faults(void);
 /* These leave the game port bound; harness.c runs each in a process of its own. */
 void scenario_leak_scan_sendto(void);

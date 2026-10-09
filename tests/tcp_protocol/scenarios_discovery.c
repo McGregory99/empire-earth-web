@@ -5,60 +5,6 @@
 /* LAN game discovery                                                        */
 /* ------------------------------------------------------------------------ */
 
-typedef struct Feeder {
-    volatile LONG running;
-    uint8_t datagram[0x88];
-    HANDLE thread;
-} Feeder;
-
-/* Keep answering "a game of service S named N lives here" to port 33334 on this host. */
-static DWORD WINAPI feeder_main(LPVOID argument)
-{
-    Feeder *feeder = argument;
-    SOCKET s = udp_socket(NULL, 0, 0);
-    struct sockaddr_in target = make_addr("127.0.0.1", GAME_PORT);
-    while (feeder->running) {
-        udp_send(s, feeder->datagram, sizeof feeder->datagram, &target);
-        Sleep(60);
-    }
-    closesocket(s);
-    return 0;
-}
-
-static void feeder_start(Feeder *feeder, const char *service, const char *name)
-{
-    uint8_t plain[0x87];
-    memset(plain, 0, sizeof plain);
-    plain[0] = 0x16;
-    strcpy((char *)plain + 1, service);
-    strcpy((char *)plain + 0x42, name);
-    seal(feeder->datagram, 0x37, plain, sizeof plain);
-    feeder->running = 1;
-    feeder->thread = CreateThread(NULL, 0, feeder_main, feeder, 0, NULL);
-}
-
-static void feeder_stop(Feeder *feeder)
-{
-    feeder->running = 0;
-    WaitForSingleObject(feeder->thread, 3000);
-    CloseHandle(feeder->thread);
-}
-
-static int broadcast_available(void)
-{
-    SOCKET s = udp_socket(NULL, 0, 0);
-    BOOL on = TRUE;
-    struct sockaddr_in to = make_addr("255.255.255.255", 9);
-    int ok;
-    if (s == INVALID_SOCKET) {
-        return 0;
-    }
-    setsockopt(s, SOL_SOCKET, SO_BROADCAST, (const char *)&on, sizeof on);
-    ok = udp_send(s, "x", 1, &to) == 1;
-    closesocket(s);
-    return ok;
-}
-
 void scenario_discovery(void)
 {
     UString nothing, service, address, game_service;

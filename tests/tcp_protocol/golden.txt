@@ -230,6 +230,30 @@ NPIMAccept -> 0 connection=created
 NPIMCloseConnection -> 0 connection=cleared
 NPIMCloseServer -> 1 server=still set
 NPIMCloseServer (again) -> 1 server=still set
+== game names at the limit of the discovery datagrams
+64-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; reply of 136 bytes with 64 name characters, terminated, equal to the name's start: yes; engine: no errors reported
+  NPIMCloseServer -> 0
+65-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; reply of 136 bytes with 65 name characters, terminated, equal to the name's start: yes; engine: no errors reported
+  NPIMCloseServer -> 0
+68-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; reply of 136 bytes with 68 name characters, terminated, equal to the name's start: yes; engine: no errors reported
+  NPIMCloseServer -> 0
+69-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; no reply; engine: record(10022) acknowledge 
+  NPIMCloseServer -> 0
+70-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; no reply; engine: record(10014) acknowledge 
+  NPIMCloseServer -> 0
+72-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; no reply; engine: record(10014) acknowledge 
+  NPIMCloseServer -> 0
+84-character name: NPIMPublish -> 0, NPIMReceiveFrom(probe) -> 7; no reply; engine: record(10014) acknowledge 
+  NPIMCloseServer -> 0
+64-character name advertised on the LAN: NPIMGetDetectedGame -> 0, name of 64 characters, intact: yes
+  publishing a game of that name, duplicate check on -> 1
+  publishing a game whose name differs in the last character -> 0
+65-character name advertised on the LAN: NPIMGetDetectedGame -> 0, name of 65 characters, intact: yes
+  publishing a game of that name, duplicate check on -> 1
+  publishing a game whose name differs in the last character -> 0
+68-character name advertised on the LAN: NPIMGetDetectedGame -> 0, name of 68 characters, intact: yes
+  publishing a game of that name, duplicate check on -> 1
+  publishing a game whose name differs in the last character -> 0
 == a failed LAN scan keeps the game port (probe not sent)
 sendto fails during the LAN scan: NPIMPublish(UDP, duplicate check on) -> 1; fault used; engine: record(10065) acknowledge record(10048) acknowledge 
 a second NPIMPublish(UDP) -> 1 server=null; no fault armed; engine: record(10048) acknowledge 
