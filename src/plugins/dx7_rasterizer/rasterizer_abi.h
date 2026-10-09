@@ -46,7 +46,9 @@ enum {
     EEWEB_COUNTER_DEACTIVATIONS = 1,  /* Deactivate() calls on this object */
     EEWEB_COUNTER_SELF_CHECKS = 2,    /* internal self-checks run by PIMIsValid */
     EEWEB_COUNTER_SELF_CHECK_FAILURES = 3,
-    EEWEB_COUNTER_DESTROYED = 4       /* destructor runs of any null rasterizer in the DLL */
+    EEWEB_COUNTER_DESTROYED = 4,      /* EEWebNullRasterizer destructor runs, any object in the DLL */
+    EEWEB_COUNTER_BASE_DESTROYED = 5, /* EEWebRasterizerBase destructor runs, any object in the DLL */
+    EEWEB_COUNTER_COUNT = 6
 };
 
 /* Results of the null implementation. */

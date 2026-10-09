@@ -240,6 +240,7 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     }
 
     /* Ours: every slot, called as the engine would. */
+    long activations_before = counter(obj, EEWEB_COUNTER_ACTIVATIONS);
     MethodNoArg m0;
     MethodLong m1;
     MethodFloatLong m2;
@@ -262,18 +263,19 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     memcpy(&m0, &fn, sizeof m0);
     CHECK(m0(obj) == EEWEB_DESCRIBE_RESULT, "%s: slot %d is Describe(), inherited from the base class", e->label,
           EEWEB_VSLOT_DESCRIBE);
-    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1, "%s: the Activate() call above was counted", e->label);
+    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == activations_before + 1,
+          "%s: the Activate() call above was counted", e->label);
 
     /* PIMIsValid runs the DLL's internal exercise of the class: Activate / GetScreenCount /
      * Deactivate on the shared object, and new + dynamic_cast + virtual delete on a temporary. */
     PimIsValid is_valid;
     memcpy(&is_valid, &is_valid_raw, sizeof is_valid);
-    long before[5], after[5];
-    for (int k = 0; k < 5; k++) {
+    long before[EEWEB_COUNTER_COUNT], after[EEWEB_COUNTER_COUNT];
+    for (int k = 0; k < EEWEB_COUNTER_COUNT; k++) {
         before[k] = counter(obj, k);
     }
     CHECK(is_valid() == 0, "%s: PIMIsValid() is still false", e->label);
-    for (int k = 0; k < 5; k++) {
+    for (int k = 0; k < EEWEB_COUNTER_COUNT; k++) {
         after[k] = counter(obj, k);
     }
     CHECK(after[EEWEB_COUNTER_ACTIVATIONS] == before[EEWEB_COUNTER_ACTIVATIONS] + 1,
@@ -288,19 +290,19 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
           "%s: the temporary object's deleting destructor ran exactly once", e->label);
 
     /* Last, because it destroys the shared object: the deleting-destructor slot with flags 0
-     * (destroy, do not free) must run the derived destructor and then the base one. */
+     * (destroy, do not free) must run the derived destructor and then the base one.  (The
+     * vptr is not checked: optimizers drop the stores that reset it in a dying object.) */
     DeletingDtor destroy;
     fn = slot(vtable, EEWEB_VSLOT_DELETING_DESTRUCTOR);
     memcpy(&destroy, &fn, sizeof destroy);
-    long destroyed_before = counter(obj, EEWEB_COUNTER_DESTROYED);
+    long derived_before = counter(obj, EEWEB_COUNTER_DESTROYED);
+    long base_before = counter(obj, EEWEB_COUNTER_BASE_DESTROYED);
     destroy(obj, 0);
-    void *const *after_vtable = *(void *const **)obj;
-    CHECK(after_vtable != vtable, "%s: slot %d (deleting destructor) ran: the vptr was reset", e->label,
+    CHECK(counter(obj, EEWEB_COUNTER_DESTROYED) == derived_before + 1,
+          "%s: slot %d (deleting destructor) ran the derived destructor once", e->label,
           EEWEB_VSLOT_DELETING_DESTRUCTOR);
-    CHECK(counter(obj, EEWEB_COUNTER_DESTROYED) == destroyed_before + 1, "%s: the derived destructor ran once", e->label);
-    const struct RttiLocator *base_col = locator_of(after_vtable);
-    CHECK(in_module(h, base_col) && strcmp(base_col->type->name, EEWEB_RTTI_BASE) == 0,
-          "%s: the object was left with the base class vtable (the base destructor ran)", e->label);
+    CHECK(counter(obj, EEWEB_COUNTER_BASE_DESTROYED) == base_before + 1, "%s: ... and then the base destructor once",
+          e->label);
 }
 
 static int run_plugin_checks(const struct Expect *e, const char *path)
