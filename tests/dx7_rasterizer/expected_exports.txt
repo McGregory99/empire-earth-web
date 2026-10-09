@@ -1,0 +1,4 @@
+1 PIMGetName
+2 PIMGetType
+3 PIMIsValid
+4 RPIMGetRasterizer
