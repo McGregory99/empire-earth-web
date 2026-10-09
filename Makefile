@@ -151,6 +151,8 @@ check-abi: $(PLUGIN)
 # and the heap with it, so the plugin is compiled with clang for i686-pc-windows-msvc and linked
 # by lld-link against the VC6-era msvcrt.dll only: the import libraries below come from the .def
 # files, never from a Windows SDK or the UCRT.  The test harness is plain C built with mingw.
+# Tools: Homebrew `llvm` (clang++, llvm-dlltool) and `lld` (lld-link): `brew install llvm lld`.
+# /brepro makes the link reproducible (no timestamp), so equal sources give an equal sha256.
 CLANGXX      ?= /opt/homebrew/opt/llvm/bin/clang++
 LLD_LINK     ?= /opt/homebrew/opt/lld/bin/lld-link
 LLVM_DLLTOOL ?= /opt/homebrew/opt/llvm/bin/llvm-dlltool
@@ -192,7 +194,7 @@ $(RAST_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) | $(RAST_BUILD)
 
 $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
 	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
-	    /subsystem:windows,5.0 /opt:ref /filealign:512 $(RAST_OBJECTS) \
+	    /subsystem:windows,5.0 /opt:ref /filealign:512 /brepro $(RAST_OBJECTS) \
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
 
 $(RAST_HARNESS): tests/dx7_rasterizer/harness.c src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ENGINE_LIB)
