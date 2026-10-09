@@ -101,8 +101,9 @@ game-gate: $(BUILD)/ddraw.dll
 # One capture compared with the golden trace of this machine (display modes and Wine's GPU strings are machine specific).
 game-check: $(BUILD)/ddraw.dll
 	scripts/game-trace.sh $(BUILD)/ddraw.dll
-	gzip -dc $(TESTDIR)/golden/startup-menu-n60.trace.gz | diff - $(BUILD)/game-trace/last.txt >/dev/null \
-	    && echo 'game-check: identical to the golden trace' || { echo 'game-check: DIFFERS from the golden trace'; exit 1; }
+	gzip -dc $(TESTDIR)/golden/startup-menu-n60.trace.gz | python3 -I scripts/normalize.py >$(BUILD)/golden.normalized.txt
+	python3 -I scripts/normalize.py <$(BUILD)/game-trace/last.txt | diff $(BUILD)/golden.normalized.txt - >/dev/null \
+	    && echo 'game-check: identical to the golden trace (cursor blits normalized)' || { echo 'game-check: DIFFERS from the golden trace'; exit 1; }
 
 clean:
 	rm -rf $(BUILD)

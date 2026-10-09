@@ -154,11 +154,16 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 * Draw calls hash the plugin-owned arrays they carry: `indices=u16[6]:fnv1a64:<hash>` (index array, `index_count` x 2 bytes)
   and `vertices=fvf[3x36]:fnv1a64:<hash>` (application vertices, `vertex_count` x the FVF's vertex size).
 * Timing-dependent calls (`GetFlipStatus`, `GetBltStatus`, `WaitForVerticalBlank`, `GetScanLine`,
-  `GetVerticalBlankStatus`) are written as `... = ? [timing]` with masked results, and a run of identical lines
-  collapses to one (polling loops have no reproducible length).
-* A "present" is `IDirectDrawSurface7::Flip`, or a `Blt` onto a surface created with `DDSCAPS_PRIMARYSURFACE` that has a
-  source surface and no destination rectangle (a whole-surface copy; sprite blits, colour fills and `BltFast` are not frames). After `DDT_MAX_PRESENTS` of them the trace gets its end marker and stops; the game
-  keeps running untraced.
+  `GetVerticalBlankStatus`) are written as `... = ? [timing]` with masked results, and any call that returns
+  `DDERR_WASSTILLDRAWING` (the caller retries until the driver is ready) as `... = DDERR_WASSTILLDRAWING [timing]`. A run of
+  identical timing lines collapses to one, per thread: another thread's lines in between do not break it (polling and
+  retry loops have no reproducible length).
+* A "present" is a successful `IDirectDrawSurface7::Flip`, or a successful `Blt` onto a surface created with
+  `DDSCAPS_PRIMARYSURFACE` that has a source surface and no destination rectangle (a whole-surface copy; sprite blits, colour
+  fills and `BltFast` are not frames; a call that reports `DDERR_WASSTILLDRAWING` was not a frame). After `DDT_MAX_PRESENTS`
+  of them the trace gets its end marker and stops; the game keeps running untraced.
+* Input structures of `Get*` methods (the `DDSCAPS2` asked for by `GetAttachedSurface` and `GetAvailableVidMem`) are printed
+  as inputs (`name={...}`), outputs as `name=>{...}`.
 
 ## Configuration
 
@@ -202,11 +207,17 @@ Wine Stable 11.0, d7vk stack, the launcher's `EE_*` switches off as in the task)
 * Cap of 60 presents (the default): **identical**. Final build: two pairs (the gate, and two `make game-trace` runs),
   11,439 lines each, with the hashes of every locked surface and vertex buffer and of every index and vertex array. Earlier
   builds gave three identical pairs of 10,980 lines (before index hashing and the present rule below).
-* One race seen once in about eight captures, before the present rule changed: the software cursor is drawn by a third
+* With the version.dll shim now really installed (the first captures ran without it, see "Insertion"), the gate's pair: the raw
+  traces differed in 8 lines, all cursor-race lines (a `T3` blit before or after the render thread's own cursor blits, and the
+  alternating scratch surface), and were identical after `scripts/normalize.py`; the trace content is otherwise the same as
+  without the shim. `make game-check` compares normalized traces for the same reason.
+* A race seen before the present rule changed: the software cursor is drawn by a third
   thread (`T3`) that races the render thread when the menu first appears. Its 32x32 sprite blits then came in a different
   order and, because Blts to the primary used to count as presents, moved the cap by one frame. Now only a whole-surface
   `Blt` (no destination rectangle, a source surface) or a `Flip` is a present, and the gate, if two raw traces differ,
-  compares them again after `scripts/normalize.py` removed the 32x32 sprite blits.
+  compares them again after `scripts/normalize.py` removed the software cursor's blits: non-waiting Blts (`DDBLT_DONOTWAIT`)
+  with a 32x32 rectangle whose source or target is a 32x32 surface that the trace shows being created. A waiting blit, or a
+  32x32 blit between other surfaces, stays.
 * Cap of 300: the traces differ, always at the same kind of event. After 111 to 152 frames (five runs: 111, 119, 126, 128, 152;
   frames are paced at 60 Hz, so about 2 s after the menu appears) two extra untextured quads appear in each frame, and
   they toggle on and off later. The frame goes from 153 to 164 lines. Cause: a wall-clock-driven element of the menu, not
@@ -220,6 +231,15 @@ Wine Stable 11.0, d7vk stack, the launcher's `EE_*` switches off as in the task)
 
 Golden: `tests/ddraw_trace/golden/startup-menu-n60.trace.gz` (the 60-present trace, call metadata and hashes only, no game
 data) and `startup-menu-n60.summary.txt` (call counts per method, render states, texture formats).
+
+## Self-check
+
+`dispatch_init` checks the argument classification: every argument type string that looks like a COM interface (`LPDIRECT*`,
+`IDirect*`, `IUnknown*`) must be classified as an interface, or be one of the interfaces the proxy deliberately does not wrap
+(`LPDIRECTDRAW`, clipper, palette, `IUnknown*`). A mismatch, for example after regenerating `src/methods.inc` from other
+headers, would hand wrapper pointers to the real object. The proxy exports `DDT_SelfCheck` (the number of problems), puts a
+`# ERROR:` line in the trace header and calls `OutputDebugString`; `make test` runs the check against the real build (0
+problems) and against a build without the `LPDIRECTDRAWSURFACE7` map entry (it must notice), and depends on `check-tables`.
 
 ## Known gaps
 
