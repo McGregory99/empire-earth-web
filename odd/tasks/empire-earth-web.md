@@ -148,7 +148,7 @@ Strict TDD (global config). Runner: `make test` (builds with `i686-w64-mingw32-g
 - Wine reports more adapters than the plugin's fixed 6400-byte `GetAdaptersInfo` buffer and reorders `gethostbyname` results, so the harness fakes both.
 
 ## Phase 2 — plan: renderer plugin (`DX7HRTnLDisplay.dll`)
-Not started; proposal from the P2.0 mapping (2026-10-09), pending user go-ahead after Phase 1 closes.
+**Started 2026-10-09** (user go-ahead after Phase 1 closed). Branch `phase2-renderer` (local, no remote). Delivery: work-unit commits with explicit pathspecs (parallel writers share the tree); native review per work unit kept well under the reviewer context budget (Phase 1's 6290-line candidate was refused), so slices of roughly 400–2000 authored lines. Game runs are automated (launch, read the Wine log, stop the prefix) so the user does not repeat manual steps; only one agent may run or modify the game copy at a time: take the lock `mkdir ~/Games/EmpireEarth-re/locks/game-run` (atomic; wait if it exists), restore the game dir afterwards, then `rmdir` the lock. Never swap a DLL while `pgrep -f 'C:.GOG Games.*Empire Earth.exe'` finds the game. TDD: strict (global config); each task records its runner.
 
 ### Contract (evidence: LLE `GEInitialize` 0x1004a2cc → `PIMModule::GetModule` 0x100575d2)
 - Engine-facing surface is 4 plain C exports: `PIMGetName`, `PIMGetType` (must return `'rast'` 0x72617374), `PIMIsValid` (activates, checks screens, deactivates), `RPIMGetRasterizer` (returns a static `DX7TnLRasterizer`, "Direct3D Hardware TnL"). The other 251 mangled exports are unused class-export side effects (no exe/LLE references).
@@ -160,7 +160,9 @@ Not started; proposal from the P2.0 mapping (2026-10-09), pending user go-ahead 
 Clean C++ clone built with clang `--target=i686-pc-windows-msvc` (MSVC vtable layout, mangling and overload slot order confirmed by a compile-only probe; link via `lld-link` not yet proven; fallback: hand-written C vtables under mingw). Front-end written against a `Dx7Device` seam: prove it trace-identical on real D3D7 under Wine, then swap in a WebGL2 backend. Oracle: our own tracing `ddraw` proxy in front of the existing 00xJS shim chain (pointers → ids, floats as hex bits, buffer contents hashed).
 
 ### Proposed tasks (renumbered after P2.0)
-- P2.1 Toolchain spike: clang MSVC-target DLL with the 4 exports and a null rasterizer; engine loads it, `PIMIsValid` returns false cleanly.
+- [ ] P2.1 Toolchain spike: clang MSVC-target DLL with the 4 exports and a null rasterizer; engine loads it, `PIMIsValid` returns false cleanly. — route: delegated writer A (2+ non-trivial files).
+- [ ] P2.3a Tracing `ddraw` proxy, first slice (in parallel with P2.1): proxy DLL, normalized trace format, original renderer gives identical traces twice at startup → main menu. — route: delegated writer B (separate directory and makefile).
+- [ ] P2.4a Game automation research: how to reach deterministic scenarios without user clicks (exe command-line switches, config/registry, scenario autoload, input injection into the Wine window). — route: delegated mapper C (read-only).
 - P2.2 ABI headers generated from the vtable inventories; test that our vtable shapes match.
 - P2.3 Tracing `ddraw` proxy + golden recorder; original gives identical traces twice.
 - P2.4 Deterministic scenarios (activation, 2D menu, GE micro-harness, paused skirmish with fixed camera).
@@ -173,4 +175,4 @@ Clean C++ clone built with clang `--target=i686-pc-windows-msvc` (MSVC vtable la
 Estimate (not measured): ~3–4 weeks to a verified drop-in clone. Risks: silent corruption from wrong engine layouts, scenario determinism (FPS counters, time-based animation), x87 vs SSE 1-ULP differences in culling, unproven link path.
 
 ## Next step
-Phase 1 is closed. Open items: client join and in-match traffic need a second machine (or an isolated network namespace); review advisories R2-001/R2-002/R3-001/R3-002; multi-threaded harness scenario. Phase 2 (renderer) awaits the user's go-ahead; plan above.
+Phase 2 running: P2.1 (writer A), P2.3a (writer B), P2.4a (mapper C) in parallel. Phase 1 open items: client join and in-match traffic need a second machine (or an isolated network namespace); review advisories R2-001/R2-002/R3-001/R3-002; multi-threaded harness scenario.
