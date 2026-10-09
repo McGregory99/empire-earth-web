@@ -13,6 +13,7 @@
 #   make check-abi-rasterizer   exports, ordinals and imports of that DLL
 #   make test-rasterizer        harness against the original DX7HRTnLDisplay.dll and ours, under Wine
 #   make game-check-rasterizer  automated in-game check (takes the game-run lock, restores the game dir)
+#   make test-game-run          the shared game-run library (tools/game_run) and both drivers, against a fake world
 #
 # Everything outside the repository (original game binaries, Wine prefix, test
 # beds) is configured by the variables below and never written to the repo.  The
@@ -65,7 +66,7 @@ PLUGIN_SOURCES := $(wildcard src/plugins/tcp_protocol/*.c)
 PLUGIN_HEADERS := $(wildcard src/plugins/tcp_protocol/*.h) src/engine_abi/low_level_engine.h
 
 .PHONY: all test golden determinism test-stub check-abi wine-prefix clean testbed-ours testbed-original testbed-stub \
-    rasterizer check-abi-rasterizer test-rasterizer game-check-rasterizer testbed-rasterizer
+    rasterizer check-abi-rasterizer test-rasterizer game-check-rasterizer testbed-rasterizer test-game-run
 
 all: $(PLUGIN) $(STUB) $(HARNESS)
 
@@ -238,6 +239,10 @@ test-rasterizer: check-abi-rasterizer testbed-rasterizer
 
 game-check-rasterizer: $(RAST_DLL)
 	bash $(RAST_GAME_CHECK) "$(RAST_DLL)" "$(RAST_DLL_NAME)"
+
+# Library and drivers against a fake world: fake ps, wine, launcher and game, a game directory with spaces.
+test-game-run:
+	@for t in core snapshot wrapper trace-driver; do bash tests/game_run/test-$$t.sh || exit 1; done
 
 # Create the Wine prefix the tests run in and make crashes terminate instead of
 # waiting for an interactive debugger.  Safe to repeat.

@@ -47,6 +47,7 @@ gr_test_hook() {
   if [ -n "${GR_TEST_CONFIG:-}" ] && [ -f "$GR_TEST_CONFIG" ]; then
     # shellcheck source=/dev/null
     . "$GR_TEST_CONFIG"
+    gr_log "TEST CONFIG ACTIVE: paths come from $GR_TEST_CONFIG, not from the real installation"
   fi
   return 0
 }

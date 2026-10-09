@@ -9,6 +9,7 @@
 # recover.sh has restored it.
 
 GR_STATE_OPEN=0
+GR_SNAPSHOT_OK=0
 
 # <dir> <out>: "sha256  ./path" of every regular file, sorted bytewise.  0 only if every step worked.
 gr_manifest() {
@@ -104,6 +105,7 @@ gr_snapshot_take() {
     rm -rf "$s/snapshot"
     return 1
   fi
+  GR_SNAPSHOT_OK=1
   gr_log "snapshot of $GR_GAME verified ($(wc -l <"$s/manifest.before" | tr -d ' ') files)"
   return 0
 }
@@ -207,13 +209,22 @@ gr_print_recovery() {
 # The teardown every driver uses (as, or from, its cleanup function): stop the launcher, stop the game, undo, restore,
 # release the lock.  Returns 0 only if everything is back.  If the game cannot be stopped, or the restore fails, the lock
 # and the snapshot are kept, the recovery commands are printed and the result is non-zero.
+GR_TEARDOWN_FAILED=0
+
 gr_teardown() {
   local rc=0
+  # A teardown that failed has printed what to do; the EXIT trap must not stop the game and try again (minutes of waiting).
+  [ "$GR_TEARDOWN_FAILED" -eq 1 ] && return 1
   gr_kill_launcher
+  if [ "$GR_STATE_OPEN" -eq 1 ] && [ "$GR_SNAPSHOT_OK" -eq 0 ]; then
+    # interrupted (or refused) before a verified snapshot existed: the game directory was never touched
+    gr_state_finish
+  fi
   if [ "$GR_STATE_OPEN" -eq 1 ]; then
     if ! gr_stop_game; then
       gr_log "FAIL: the game could not be stopped"
       gr_print_recovery
+      GR_TEARDOWN_FAILED=1
       return 1
     fi
     gr_run_undo || {
@@ -223,6 +234,7 @@ gr_teardown() {
     gr_restore || rc=1
     if [ "$rc" -ne 0 ]; then
       gr_print_recovery
+      GR_TEARDOWN_FAILED=1
       return 1
     fi
     gr_state_finish

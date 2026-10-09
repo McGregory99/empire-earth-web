@@ -36,7 +36,7 @@ HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test test-unit test-restore test-normalize check-tables gen-tables game-trace game-gate game-check clean
+.PHONY: all test test-unit test-game-run test-normalize check-tables gen-tables game-trace game-gate game-check clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -58,13 +58,14 @@ $(BUILD)/fakeplugin.dll: $(TESTDIR)/fakeplugin.c $(TESTDIR)/scenario.h | $(BUILD
 $(BUILD)/harness.exe: $(TESTDIR)/harness.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -s -o $@ $< -Wl,--enable-stdcall-fixup -static-libgcc -lddraw -ldxguid -luser32
 
-test: test-restore test-normalize test-unit
+test: test-game-run test-normalize test-unit
 
 test-normalize:
 	$(TESTDIR)/test-normalize.sh .
 
-test-restore:
-	$(TESTDIR)/test-restore.sh .
+# The shared game-run library and the drivers that use it, against a fake world (never the real game).
+test-game-run:
+	@for t in core snapshot wrapper trace-driver; do bash $(TESTDIR)/../game_run/test-$$t.sh || exit 1; done
 
 # Test bed: our proxy as ddraw.dll, Wine's builtin ddraw copied under the name the proxy forwards to.
 test-unit: $(BUILD)/ddraw.dll $(BUILD)/fakeplugin.dll $(BUILD)/harness.exe

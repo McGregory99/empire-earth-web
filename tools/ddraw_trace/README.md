@@ -7,7 +7,7 @@ plugin <-> ddraw boundary, call by call. This proxy records that boundary as a n
 
 ```
 make -C tools/ddraw_trace              # build/ddraw.dll
-make -C tools/ddraw_trace test         # unit tests (Wine, test prefix) and restore tests
+make -C tools/ddraw_trace test         # unit tests (Wine, test prefix), game-run library tests, normalizer tests
 make -C tools/ddraw_trace check-tables # src/methods.inc and src/names.inc match the SDK headers
 make -C tools/ddraw_trace game-trace   # one capture in the real game (takes the game-run lock)
 make -C tools/ddraw_trace game-gate    # two captures and their diff: the determinism gate
@@ -42,17 +42,31 @@ simply replaced.
 
 ### Insertion
 
-`game-trace.sh` runs the unmodified launcher with `EMPIRE_EARTH_WINE` pointing at a one-file wrapper, an override the
-launcher documents (`find_wine`). The wrapper forwards every call to the real Wine and, only for the call that
-starts the game (`wine start /unix <exe>`), runs `scripts/swap-in.sh` first:
+`game-trace.sh` runs the unmodified launcher with `EMPIRE_EARTH_WINE` pointing at a generated wrapper, an override the
+launcher documents (`find_wine`). The wrapper forwards every call to the real Wine and, only for the call that starts the
+game (`wine start /unix <exe>`), runs `scripts/swap-in.sh` first:
 
-1. `mv ddraw.dll ddraw_next.dll` (the launcher's file, written a moment ago, keeps working under another name),
-2. `cp proxy ddraw.dll`, and write `ddraw_trace.cfg` (next module, trace path, present cap).
+1. copy the launcher's `ddraw.dll` to `ddraw_next.dll.tmp` and rename it to `ddraw_next.dll` (it keeps working under another name),
+2. copy the proxy to `ddraw.dll.tmp` and rename it over `ddraw.dll` (so the directory is never without a `ddraw.dll`),
+   and write `ddraw_trace.cfg` (next module, trace path, present cap).
 
-At that point `apply-launch-patches.sh` has finished, so nothing overwrites the proxy. A retry after an early
-death (the launcher retries up to 6 times) swaps again; `swap-in.sh` is idempotent.
+At that point `apply-launch-patches.sh` has finished, so nothing overwrites the proxy. A retry after an early death (the
+launcher retries up to 6 times) swaps again; `swap-in.sh` is idempotent.
+
+The wrapper directory mirrors the Wine root (`tools/game_run/wrapper.sh`): the launcher finds Wine's own `version.dll` at
+`<dirname wine>/../lib/wine/i386-windows/version.dll`, puts `<dirname wine>` first on `PATH` and starts
+`<dirname wine>/wineserver`. A bare `bin/` made the launcher skip the engine's `version.dll` shim silently, so the first
+captures ran a different game than the one the user plays. Now `bin/` links every tool of Wine's `bin/`, the other
+top-level entries (`lib`, `share`) are linked too, and the run fails if `launcher.log` says "version.dll shim not
+installed" (the sha256 of `version.dll` and `version_eeorig.dll` is logged). The wrapper refuses to swap in or start the
+game (exit 97) unless the driver that made it is still alive (pid and start time) and still holds the lock: a launcher
+orphaned by a killed driver can neither put the proxy in place nor start the game.
 
 ### Why this is safe
+
+The protocol is the shared library `tools/game_run/lib.sh`, used by this driver and by
+`tests/dx7_rasterizer/game_check.sh`; `tests/game_run/` tests it against a fake world (fake `ps`, Wine, launcher and game,
+a game directory with spaces in its path).
 
 * No file of the 00xJS tree or of the launcher is modified; no launcher script is edited. The wrapper lives in
   `tools/ddraw_trace/build/`.
@@ -62,17 +76,35 @@ death (the launcher retries up to 6 times) swaps again; `swap-in.sh` is idempote
 * The game scans every `*.dll` of its folder for plugins at start-up, so an extra DLL is probed. `ddraw_next.dll` is
   the same code that was already probed under the name `ddraw.dll`; our proxy has no start-up side effects (it does
   nothing in `DllMain` but remember its handle).
-* Before anything is touched the script takes the game-run lock (`mkdir ~/Games/EmpireEarth-re/locks/game-run`,
-  waits if another agent holds it, released by a trap), checks that no game process exists, records a sha256
-  manifest of the whole game directory and a copy-on-write snapshot (`cp -c`).
-* After the capture the prefix is stopped with its own `wineserver -k` (nothing else is killed) and the script waits
-  for the game to disappear. Then `restore_game_dir` removes our files, puts the launcher's `ddraw.dll` back,
-  copies back every file whose hash differs from the manifest and deletes added ones, and fails loudly if the
-  manifest still differs. Files the launcher or the game rewrite on every run (`ddraw.dll` is rebuilt, `ee-ddraw.log`,
-  `ee-version.log`) are reported and restored too. `tests/ddraw_trace/test-restore.sh` tests this on a scratch copy.
+* The lock is `~/Games/EmpireEarth-re/locks/game-run`, a fixed path (not derived from `RE_DIR`), with an owner token
+  (pid and start time) inside. A live owner is waited for; a lock is reclaimed, loudly, only when its owner is provably dead
+  (pid gone, or the pid now belongs to a process that started at another time); a lock without a token (another agent's)
+  is never reclaimed; only our own lock is released.
+* Detection is the launcher's own anchored test (`game_pids`): the command line must start with a Windows path to
+  `Empire Earth.exe` or `EE-AOC.exe`, with real memory resident. An agent's `pgrep -f` loop does not match; Art of
+  Conquest (which the launcher kills by name) does. A run also refuses to start while any other program of the GOG install
+  runs.
+* A run refuses to start over leftovers: `ddraw_next.dll`, `ddraw_trace.cfg`, or the state directory
+  `~/Games/EmpireEarth-re/game-run-state` of a run that did not finish. `config.json`'s `base_exe` must be under the
+  game directory that is restored. Ambient `EMPIRE_EARTH_*`, `EE_*`, `WINE*` and `DXVK_*` variables are unset.
+* The snapshot (`cp -c`, else a plain copy after removing any partial one) is verified against the sha256 manifest of
+  the directory before the game starts; a mismatch aborts the run.
+* The launcher runs as a background job in its own process group; the driver `wait`s on it with the interruptible
+  builtin. Traps cover EXIT INT TERM HUP QUIT, cleanup ignores further signals and the interrupted status (130, 143, ...)
+  survives.
+* Teardown: kill the launcher's group; stop the prefix with its own `wineserver -k` (nothing else is killed) and wait
+  for the game to disappear; restore. Restore copies back every file the manifest lists that changed or vanished
+  (verifying each hash), deletes only files absent from the manifest, never deletes a file the manifest lists, and fails
+  unless the final manifest and directory list equal the recorded ones. Files the launcher or the game rewrite on every
+  run (`ddraw.dll` is rebuilt, `ee-ddraw.log`, `ee-version.log`) are reported and restored too.
+* If the game cannot be stopped, or the restore fails, the lock and the snapshot are KEPT, the exact recovery commands
+  are printed and the run exits non-zero. `tools/game_run/recover.sh` then runs the undo steps, restores from the
+  snapshot, verifies the manifest, removes the state and the dead run's lock. The same script finishes the job after a
+  `kill -9` of the driver.
 * Not restored, because it is outside the game directory: the Wine prefix registry (the launcher re-imports the same
-  values every launch; Wine flushes the registry when the server stops) and the launcher logs in
-  `~/Library/Application Support/EmpireEarthMac/logs/`.
+  values every launch; Wine flushes the registry when the server stops), the launcher logs in
+  `~/Library/Application Support/EmpireEarthMac/logs/`, and the Art of Conquest directory, which the launcher also rewrites
+  (`ddraw.dll`, `version.dll`, ...) on every launch.
 
 ## Which calls are traced
 
