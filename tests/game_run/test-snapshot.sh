@@ -233,6 +233,22 @@ check "teardown: ... lock and snapshot are kept" test -d "$GAME_RUN_LOCK" -a -d 
 check_eq "teardown: ... the live file was not deleted" "changed" "$(cat "$W_GAME/Data/a.bin")"
 rm -rf "$GAME_RUN_LOCK" "$STATE"
 
+# a run that is interrupted (or refused) after the state directory exists but before a verified snapshot: the game directory was
+# never touched, so the teardown discards the state and releases the lock (it must not demand a restore it cannot do)
+reset_game
+cat >"$W/drv-early.sh" <<'DRV'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"
+GR_TOOL=drv
+cleanup() { gr_teardown; }
+gr_install_traps cleanup
+gr_lock_acquire 1 || exit 2
+gr_state_begin || exit 2
+exit 143
+DRV
+bash "$W/drv-early.sh" >"$W/early.out" 2>&1
+check_eq "interrupted before a verified snapshot: the status is the interruption's" "143" "$?"
+check "... the lock is released and the state discarded (nothing was touched)" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
+
 # SIGTERM at any point of a run still restores and releases
 reset_game
 cat >"$W/drv-term.sh" <<'DRV'

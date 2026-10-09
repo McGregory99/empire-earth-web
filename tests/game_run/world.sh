@@ -118,7 +118,7 @@ WS
 #!/bin/bash
 game="$FAKE_GAME"
 log="$FAKE_SUPPORT/logs/launcher.log"
-echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset}" >>"$FAKE_WORLD/launch.log"
+echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset} EE_GRAPHICS=${EE_GRAPHICS:-unset} EE_BIG_ARMIES=${EE_BIG_ARMIES:-unset} SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-unset}" >>"$FAKE_WORLD/launch.log"
 wine_path="${EMPIRE_EARTH_WINE:?}"
 orig="$(cd "$(dirname "$wine_path")/.." 2>/dev/null && pwd -P)/lib/wine/i386-windows/version.dll"
 printf 'launcher ddraw %s' "$$" >"$game/ddraw.dll"
@@ -129,7 +129,12 @@ else
   echo "[t] WARNING: version.dll shim not installed in $game (Wine's copy: $orig)" >>"$log"
 fi
 [ -e "$FAKE_WORLD/launcher-fail-before-game" ] && exit 3
+if [ -e "$FAKE_WORLD/launcher-late-start" ]; then
+  # an orphan: it asks for the game long after the driver may have died
+  sleep "$(cat "$FAKE_WORLD/launcher-late-start")"
+fi
 "$wine_path" start /unix "$game/Empire Earth.exe"
+echo "wine start exit status $?" >>"$FAKE_WORLD/launch.log"
 [ -e "$FAKE_WORLD/launcher-hang" ] && { sleep 300 & echo $! >"$FAKE_WORLD/launcher-child.pid"; wait; }
 exit 0
 LAUNCH
@@ -150,6 +155,10 @@ GR_MIN_RSS_KB=0
 GR_STOP_WAIT=2
 GR_LOCK_WAIT=2
 GR_LOCK_POLL=0.2
+OUT="$W/out"
+PRESENTS=3
+CAPTURE_WAIT=6
+LAUNCH_LIMIT=60
 export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup"
 CONF
   : >"$W_SUP/logs/launcher.log"
