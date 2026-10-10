@@ -32,6 +32,7 @@ _ENTRY = re.compile(r"^\s*(\d+) \| (.*?)\s*$")
 _NOISE = re.compile(r"\b(?:class|struct|union|const)\b|\s+")
 
 DESTRUCTOR = "~"
+MAX_SLOT_ERRORS = 8  # per class; a class that is wrong everywhere gets a summary, not a hundred lines
 
 # A complete class's layout in the dump: the slot count it declares and what sits in each slot.
 Layout = collections.namedtuple("Layout", "count slots")
@@ -128,14 +129,18 @@ def _labels(own):
 def _compare(who, layout, want, errors, what):
     if layout.count != len(want):
         errors.append(f"{who}: the layout has {layout.count} slots, {what} {len(want)}")
+    slot_errors = []
     for slot in sorted(want):
         have = layout.slots.get(slot)
         if have is None:
-            errors.append(f"{who} slot {slot}: {what} {want[slot].text}, the layout has nothing")
+            slot_errors.append(f"{who} slot {slot}: {what} {want[slot].text}, the layout has nothing")
         elif have.key != want[slot].key:
-            errors.append(f"{who} slot {slot}: {what} {want[slot].text}, the layout has {have.text}")
+            slot_errors.append(f"{who} slot {slot}: {what} {want[slot].text}, the layout has {have.text}")
     for slot in sorted(s for s in layout.slots if s not in want):
-        errors.append(f"{who} slot {slot}: the layout has {layout.slots[slot].text}, beyond the {len(want)} expected slots")
+        slot_errors.append(f"{who} slot {slot}: the layout has {layout.slots[slot].text}, beyond the {len(want)} expected slots")
+    errors += slot_errors[:MAX_SLOT_ERRORS]
+    if len(slot_errors) > MAX_SLOT_ERRORS:
+        errors.append(f"{who}: {len(slot_errors) - MAX_SLOT_ERRORS} more slots differ")
 
 
 def check(interfaces_h, slots_h, dump, implements):

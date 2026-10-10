@@ -7,6 +7,7 @@ The headers under test are the generator's output for the synthetic Gadget famil
 test_gen_abi_headers.py; the layout dumps are written out by hand in clang's format.
 """
 import os
+import re
 import sys
 import unittest
 
@@ -82,6 +83,12 @@ class CheckShapes(unittest.TestCase):
         wrong = GADGET_DUMP.replace("   3 | void Gadget::Draw(Canvas &, float) [pure]\n   4 | void Gadget::Draw(Canvas &) [pure]",
                                     "   3 | void Gadget::Draw(Canvas &) [pure]\n   4 | void Gadget::Draw(Canvas &, float) [pure]")
         self.assertTrue(any("slot 2" in e and "Draw" in e for e in check(wrong)))
+
+    def test_a_class_that_is_wrong_everywhere_is_summarised(self):
+        renamed = re.sub(r"(Gadget|GadgetAbi)::(?=[A-Za-z])", r"\1::x", GADGET_DUMP)
+        errors = [e for e in check(renamed) if e.startswith("GadgetAbi slot") or "GadgetAbi" in e and "more" in e]
+        self.assertLessEqual(len(errors), shapes.MAX_SLOT_ERRORS + 1)
+        self.assertTrue(any("more slots differ" in e for e in errors), errors)
 
     def test_a_missing_or_extra_slot_is_reported(self):
         shorter = GADGET_DUMP.replace("   8 | std::vector<U2DPoint<long>, std::allocator<U2DPoint<long>>> &Gadget::Points(Outer::Inner *) [pure]\n",
