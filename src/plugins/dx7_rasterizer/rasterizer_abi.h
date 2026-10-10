@@ -29,6 +29,17 @@
 #ifndef EEWEB_RASTERIZER_ABI_H
 #define EEWEB_RASTERIZER_ABI_H
 
+#include "ge_slots.h" /* generated: the slot indices of the original's vtables */
+
+/* The counters of the real-shape null rasterizer sit right behind its vptr (the vtable has no room
+ * for a test hook): counter k is the long at this byte offset + 4 * k. */
+#define EEWEB_COUNTERS_OFFSET 4
+#define EEWEB_NOT_SUPPORTED 0x45570002L  /* result of the null operations that return a status */
+#define EEWEB_DRAW_BITMAP_BASE 0x1000L   /* Draw(GEBitmap *, mode)            returns this + mode */
+#define EEWEB_DRAW_LINE_BASE 0x2000L     /* Draw(GELine *, first, second)     returns this + first + second */
+#define EEWEB_RTTI_ABI ".?AVDX7RasterizerAbi@@"
+#define EEWEB_RTTI_GE ".?AVGERasterizer@@"
+
 enum {
     EEWEB_VSLOT_ACTIVATE = 0,
     EEWEB_VSLOT_GET_SCREEN_COUNT = 1,

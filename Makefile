@@ -264,7 +264,10 @@ check-abi-shapes: $(ABI_HEADERS)
 	$(ABI_GEN) --check
 	mkdir -p $(ABI_BUILD)
 	$(ABI_DUMP) tests/abi_shapes/probe.cpp > $(ABI_BUILD)/probe-layouts.txt
-	python3 -I tests/abi_shapes/check_shapes.py --header-dir src/engine_abi --dump $(ABI_BUILD)/probe-layouts.txt
+	$(ABI_DUMP) $(RAST_SRC)/null_rasterizer.cpp > $(ABI_BUILD)/null-layouts.txt
+	python3 -I tests/abi_shapes/check_shapes.py --header-dir src/engine_abi \
+	    --dump $(ABI_BUILD)/probe-layouts.txt --dump $(ABI_BUILD)/null-layouts.txt \
+	    --implements EEWebNullRasterizer=DX7RasterizerAbi
 
 game-check-rasterizer: $(RAST_DLL)
 	bash $(RAST_GAME_CHECK) "$(RAST_DLL)" "$(RAST_DLL_NAME)"

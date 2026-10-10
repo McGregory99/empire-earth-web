@@ -14,9 +14,11 @@
  *         rasterizer_harness.exe probe-isvalid <dll>      (internal: child process)
  *
  * "original" runs the checks that hold for Stainless Steel's DX7HRTnLDisplay.dll
- * (the oracle for types and conventions).  "ours" runs the checks for our
- * EEWebRasterizer.dll, a null rasterizer.  The exit status is the number of
- * failed checks.
+ * (the oracle for types and conventions, and for the shape of the rasterizer
+ * object: its RTTI chain and its 82 vtable slots).  "ours" runs the same checks
+ * for our EEWebRasterizer.dll, a null rasterizer with that shape, and drives its
+ * object through the positional slots.  The exit status is the number of failed
+ * checks.
  */
 #include "low_level_engine.h" /* UString and the engine's own constructors; includes <windows.h> */
 #include "rasterizer_abi.h"   /* the null rasterizer's vtable contract */
@@ -60,8 +62,10 @@ static int g_failures;
 
 #define THISCALL __attribute__((thiscall))
 typedef long(THISCALL *MethodNoArg)(void *self);
-typedef long(THISCALL *MethodLong)(void *self, long a);
-typedef long(THISCALL *MethodFloatLong)(void *self, float f, long a);
+typedef long(THISCALL *MethodPtrLong)(void *self, void *p, unsigned long a);
+typedef long(THISCALL *MethodPtrLongLong)(void *self, void *p, unsigned long a, unsigned long b);
+typedef long(THISCALL *MethodLong)(void *self, unsigned long a);
+typedef unsigned char(THISCALL *MethodPtrBool)(void *self, void *p);
 typedef void *(THISCALL *DeletingDtor)(void *self, unsigned flags);
 
 /* What each variant is expected to export (ordinals as the linker assigned them). */
@@ -84,7 +88,7 @@ static const struct Expect kOriginal = {"original", 0, {252, 253, 254, 255}, -1,
                                         ".?AVDX7TnLRasterizer@@",
                                         {".?AVDX7TnLRasterizer@@", ".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL}};
 static const struct Expect kOurs = {"ours", 1, {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
-                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_BASE, NULL, NULL}};
+                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_ABI, EEWEB_RTTI_GE, NULL}};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
 static void *proc_address(HMODULE h, const char *name_or_ordinal)
@@ -210,18 +214,41 @@ static void *slot(void *const *vtable, int index)
     return vtable[index];
 }
 
-static long counter(void *obj, long which)
+/* The counters of our object sit behind its vptr (rasterizer_abi.h). */
+static long counter(const void *obj, int which)
 {
-    MethodLong get_counter;
-    void *fn = slot(*(void *const **)obj, EEWEB_VSLOT_GET_COUNTER);
-    memcpy(&get_counter, &fn, sizeof get_counter);
-    return get_counter(obj, which);
+    return ((const volatile long *)((const char *)obj + EEWEB_COUNTERS_OFFSET))[which];
 }
 
 /*
- * What RPIMGetRasterizer returns.  Both variants: a vtable inside the DLL and MSVC RTTI.  Ours is
- * driven through its vtable exactly like the engine would (thiscall through positional slots),
- * which pins the layout rules listed in rasterizer_abi.h.
+ * Number of slots of a vtable: the consecutive entries that point into executable code of `module`.
+ * The entry behind the last slot is the next vtable's RTTI locator, which lies in a data section.
+ */
+static unsigned vtable_slot_count(HMODULE module, void *const *vtable)
+{
+    const unsigned char *base = (const unsigned char *)module;
+    const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(base + ((const IMAGE_DOS_HEADER *)base)->e_lfanew);
+    const IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(nt);
+    for (unsigned n = 0; n < 1024; n++) {
+        const unsigned char *entry = (const unsigned char *)vtable[n];
+        int in_code = 0;
+        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+            const unsigned char *start = base + sections[i].VirtualAddress;
+            in_code |= (sections[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) && entry >= start &&
+                       entry < start + sections[i].Misc.VirtualSize;
+        }
+        if (!in_code) {
+            return n;
+        }
+    }
+    return 1024;
+}
+
+/*
+ * What RPIMGetRasterizer returns.  Both variants: a vtable inside the DLL, MSVC RTTI and the same
+ * number of slots.  Ours is driven through its vtable exactly like the engine would (thiscall through
+ * positional slots, numbered by the generated ge_slots.h), which pins the layout rules of the Microsoft
+ * ABI on the real class: the destructor slot, the reversed overload set, the slots behind GERasterizer's.
  */
 static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get_rasterizer_raw, void *is_valid_raw)
 {
@@ -240,32 +267,52 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
         return;
     }
 
-    /* Ours: every slot, called as the engine would. */
+    /* The shape both objects must have: the original's DX7TnLRasterizer has 82 slots (GERasterizer's 78 and
+     * the 4 of DX7Rasterizer).  The slot checks below call into the table, so they need the right size. */
+    unsigned slots = vtable_slot_count(h, vtable);
+    CHECK(slots == EEWEB_SLOTS_DX7RasterizerAbi, "%s: the vtable has %u slots (DX7RasterizerAbi has %d)", e->label, slots,
+          (int)EEWEB_SLOTS_DX7RasterizerAbi);
+    if (!e->ours || slots != EEWEB_SLOTS_DX7RasterizerAbi) {
+        return;
+    }
+
+    /* Ours: the slots with an observable behaviour, called as the engine would (thiscall through the
+     * positional slot, indices from the generated ge_slots.h). */
     long activations_before = counter(obj, EEWEB_COUNTER_ACTIVATIONS);
+    long deactivations_before = counter(obj, EEWEB_COUNTER_DEACTIVATIONS);
     MethodNoArg m0;
     MethodLong m1;
-    MethodFloatLong m2;
+    MethodPtrLong m2;
+    MethodPtrLongLong m3;
+    MethodPtrBool m4;
     void *fn;
-    fn = slot(vtable, EEWEB_VSLOT_ACTIVATE);
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_ActivateRasterizer);
     memcpy(&m0, &fn, sizeof m0);
-    CHECK(m0(obj) == EEWEB_ACTIVATE_FAILED, "%s: slot %d is Activate()", e->label, EEWEB_VSLOT_ACTIVATE);
-    fn = slot(vtable, EEWEB_VSLOT_GET_SCREEN_COUNT);
+    CHECK(m0(obj) == EEWEB_ACTIVATE_FAILED, "%s: slot %d is ActivateRasterizer(), which fails", e->label,
+          EEWEB_SLOT_GERasterizer_ActivateRasterizer);
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_Deactivate);
     memcpy(&m0, &fn, sizeof m0);
-    CHECK(m0(obj) == 0, "%s: slot %d is GetScreenCount()", e->label, EEWEB_VSLOT_GET_SCREEN_COUNT);
-    fn = slot(vtable, EEWEB_VSLOT_DRAW_SCALED);
-    memcpy(&m2, &fn, sizeof m2);
-    CHECK(m2(obj, 2.5f, 5) == EEWEB_DRAW_SCALED_BASE + 5 + 2, "%s: slot %d is Draw(float, long), the overload declared second",
-          e->label, EEWEB_VSLOT_DRAW_SCALED);
-    fn = slot(vtable, EEWEB_VSLOT_DRAW_PLAIN);
+    CHECK(m0(obj) == 0, "%s: slot %d is Deactivate()", e->label, EEWEB_SLOT_GERasterizer_Deactivate);
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_ShowScene);
     memcpy(&m1, &fn, sizeof m1);
-    CHECK(m1(obj, 5) == EEWEB_DRAW_PLAIN_BASE + 5, "%s: slot %d is Draw(long), the overload declared first", e->label,
-          EEWEB_VSLOT_DRAW_PLAIN);
-    fn = slot(vtable, EEWEB_VSLOT_DESCRIBE);
-    memcpy(&m0, &fn, sizeof m0);
-    CHECK(m0(obj) == EEWEB_DESCRIBE_RESULT, "%s: slot %d is Describe(), inherited from the base class", e->label,
-          EEWEB_VSLOT_DESCRIBE);
-    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == activations_before + 1,
-          "%s: the Activate() call above was counted", e->label);
+    CHECK(m1(obj, 0) == EEWEB_NOT_SUPPORTED, "%s: slot %d is ShowScene(), a null operation", e->label,
+          EEWEB_SLOT_GERasterizer_ShowScene);
+    /* The two Draw overloads that close the overload set: MSVC lays an overload set out in reverse declaration order. */
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_Draw_9);
+    memcpy(&m2, &fn, sizeof m2);
+    CHECK(m2(obj, NULL, 5) == EEWEB_DRAW_BITMAP_BASE + 5, "%s: slot %d is Draw(GEBitmap *, ulong), the last overload",
+          e->label, EEWEB_SLOT_GERasterizer_Draw_9);
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_Draw_8);
+    memcpy(&m3, &fn, sizeof m3);
+    CHECK(m3(obj, NULL, 5, 7) == EEWEB_DRAW_LINE_BASE + 5 + 7, "%s: slot %d is Draw(GELine *, ulong, ulong)", e->label,
+          EEWEB_SLOT_GERasterizer_Draw_8);
+    fn = slot(vtable, EEWEB_SLOT_DX7RasterizerAbi_GetIsScreenValid);
+    memcpy(&m4, &fn, sizeof m4);
+    CHECK(m4(obj, NULL) == 0, "%s: slot %d is GetIsScreenValid(), the first slot behind GERasterizer's 78", e->label,
+          EEWEB_SLOT_DX7RasterizerAbi_GetIsScreenValid);
+    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == activations_before + 1, "%s: the activation above was counted", e->label);
+    CHECK(counter(obj, EEWEB_COUNTER_DEACTIVATIONS) == deactivations_before + 1, "%s: the deactivation above was counted",
+          e->label);
 
     /* PIMIsValid runs the DLL's internal exercise of the class: Activate / GetScreenCount /
      * Deactivate on the shared object, and new + dynamic_cast + virtual delete on a temporary. */
@@ -287,23 +334,19 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
           "%s: PIMIsValid ran the internal class self-check once", e->label);
     CHECK(after[EEWEB_COUNTER_SELF_CHECK_FAILURES] == 0,
           "%s: the self-check (new, virtual calls, dynamic_cast, virtual delete) found no fault", e->label);
-    CHECK(after[EEWEB_COUNTER_DESTROYED] == before[EEWEB_COUNTER_DESTROYED] + 1,
-          "%s: the temporary object's deleting destructor ran exactly once", e->label);
+    CHECK(after[EEWEB_COUNTER_DESTROYED] == before[EEWEB_COUNTER_DESTROYED],
+          "%s: the shared object itself was not destroyed by it", e->label);
 
-    /* Last, because it destroys the shared object: the deleting-destructor slot with flags 0
-     * (destroy, do not free) must run the derived destructor and then the base one.  (The
-     * vptr is not checked: optimizers drop the stores that reset it in a dying object.) */
+    /* Last, because it destroys the shared object: the deleting-destructor slot with flags 0 (destroy, do
+     * not free) must run our destructor.  (The vptr is not checked: optimizers drop the stores that reset
+     * it in a dying object.) */
     DeletingDtor destroy;
-    fn = slot(vtable, EEWEB_VSLOT_DELETING_DESTRUCTOR);
+    fn = slot(vtable, EEWEB_SLOT_GERasterizer_Destructor);
     memcpy(&destroy, &fn, sizeof destroy);
-    long derived_before = counter(obj, EEWEB_COUNTER_DESTROYED);
-    long base_before = counter(obj, EEWEB_COUNTER_BASE_DESTROYED);
+    long destroyed_before = counter(obj, EEWEB_COUNTER_DESTROYED);
     destroy(obj, 0);
-    CHECK(counter(obj, EEWEB_COUNTER_DESTROYED) == derived_before + 1,
-          "%s: slot %d (deleting destructor) ran the derived destructor once", e->label,
-          EEWEB_VSLOT_DELETING_DESTRUCTOR);
-    CHECK(counter(obj, EEWEB_COUNTER_BASE_DESTROYED) == base_before + 1, "%s: ... and then the base destructor once",
-          e->label);
+    CHECK(counter(obj, EEWEB_COUNTER_DESTROYED) == destroyed_before + 1,
+          "%s: slot %d (deleting destructor) ran our destructor once", e->label, EEWEB_SLOT_GERasterizer_Destructor);
 }
 
 /* Returns the module, still loaded once, or NULL. */
@@ -463,8 +506,8 @@ static void reload_cycles(const struct Expect *e, HMODULE first, const char *pat
                 CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1 && counter(obj, EEWEB_COUNTER_DEACTIVATIONS) == 1 &&
                           counter(obj, EEWEB_COUNTER_SELF_CHECKS) == 1 &&
                           counter(obj, EEWEB_COUNTER_SELF_CHECK_FAILURES) == 0 &&
-                          counter(obj, EEWEB_COUNTER_DESTROYED) == 1,
-                      "%s: %s: one PIMIsValid call counted once (activate, deactivate, self-check, one temporary destroyed)",
+                          counter(obj, EEWEB_COUNTER_DESTROYED) == 0,
+                      "%s: %s: one PIMIsValid call counted once (activate, deactivate, self-check; the object survives)",
                       e->label, when);
             }
         }
