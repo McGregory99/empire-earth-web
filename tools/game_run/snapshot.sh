@@ -4,15 +4,28 @@
 # The snapshot is a copy kept to restore from; it is verified against the manifest before anything is touched, so a
 # partial copy aborts the run instead of becoming the restore source.  Restore copies back every file that changed or
 # disappeared (verifying each against the manifest), deletes only files that are absent from manifest.before, and never
-# deletes a file that the manifest lists, whatever the snapshot holds.  Everything lives in GAME_RUN_STATE, at a fixed
+# deletes a file that the manifest lists, whatever the snapshot holds.  A manifest is written to a temporary file and renamed,
+# so one that exists is complete; and the snapshot is trusted only once the marker snapshot.verified exists, the last thing
+# gr_snapshot_take writes.  Without the marker gr_restore touches nothing: drivers change the game directory only after
+# gr_snapshot_take succeeded, so a run cut off before that never touched it.  Everything lives in GAME_RUN_STATE, at a fixed
 # path: a run that dies leaves it behind and the next run, of any tool, refuses to start (gr_check_leftovers) until
 # recover.sh has restored it.
 
 GR_STATE_OPEN=0
 GR_SNAPSHOT_OK=0
 
-# <dir> <out>: "sha256  ./path" of every regular file, sorted bytewise.  0 only if every step worked.
+# <dir> <out>: "sha256  ./path" of every regular file, sorted bytewise.  0 only if every step worked.  <out> is renamed into
+# place only when complete; on failure it does not exist (an interrupted run never leaves a partial manifest to be trusted).
 gr_manifest() {
+  local tmp="$2.tmp.$$"
+  if gr_manifest_write "$1" "$tmp" && mv -f "$tmp" "$2"; then
+    return 0
+  fi
+  rm -f "$tmp" "$2"
+  return 1
+}
+
+gr_manifest_write() {
   local dir="$1" out="$2" files
   [ -d "$dir" ] || return 1
   files="$(cd "$dir" && find . -type f | wc -l | tr -d ' ')" || return 1
@@ -87,6 +100,7 @@ gr_state_begin() {
 # does not match the manifest: the caller must not start the game then.
 gr_snapshot_take() {
   local s="$GAME_RUN_STATE"
+  rm -f "$s/snapshot.verified" # a marker left by an earlier take must not vouch for this one
   gr_manifest "$GR_GAME" "$s/manifest.before" && gr_dirlist "$GR_GAME" "$s/dirs.before" || {
     gr_log "FAIL: cannot take the manifest of $GR_GAME"
     return 1
@@ -105,15 +119,27 @@ gr_snapshot_take() {
     rm -rf "$s/snapshot"
     return 1
   fi
+  # the marker is the last thing written, atomically: gr_restore trusts nothing in the state directory without it
+  printf 'verified %s\n' "$(date '+%F %T')" >"$s/snapshot.verified.tmp" && mv -f "$s/snapshot.verified.tmp" "$s/snapshot.verified" || {
+    rm -rf "$s/snapshot.verified.tmp" "$s/snapshot"
+    gr_log "FAIL: cannot record the verified-snapshot marker; aborting before anything is touched"
+    return 1
+  }
   GR_SNAPSHOT_OK=1
   gr_log "snapshot of $GR_GAME verified ($(wc -l <"$s/manifest.before" | tr -d ' ') files)"
   return 0
 }
 
 # Put the game directory back exactly as the manifest says.  0 only when the final manifest and directory list equal the
-# recorded ones.  3: the game is running, nothing was touched.  Otherwise 1, after doing everything that could be done.
+# recorded ones, or when there is nothing to restore (no verified snapshot: the game directory was never touched, so the
+# callers finish the state and release the lock as for any run that ended before it changed anything).  3: the game is
+# running, nothing was touched.  Otherwise 1, after doing everything that could be done.
 gr_restore() {
   local s="$GAME_RUN_STATE" snap="$GAME_RUN_STATE/snapshot" fail=0 line want got path src
+  if [ ! -f "$s/snapshot.verified" ]; then
+    gr_log "no verified snapshot in $s: the run ended before the snapshot was complete, so the game directory was never touched; nothing to restore"
+    return 0
+  fi
   [ -s "$s/manifest.before" ] && [ -f "$s/dirs.before" ] || {
     gr_log "FAIL: no manifest to restore from in $s"
     return 1
@@ -218,6 +244,7 @@ gr_teardown() {
   gr_kill_launcher
   if [ "$GR_STATE_OPEN" -eq 1 ] && [ "$GR_SNAPSHOT_OK" -eq 0 ]; then
     # interrupted (or refused) before a verified snapshot existed: the game directory was never touched
+    gr_log "no verified snapshot: the run ended before the snapshot was complete, so the game directory was never touched; nothing to restore"
     gr_state_finish
   fi
   if [ "$GR_STATE_OPEN" -eq 1 ]; then
