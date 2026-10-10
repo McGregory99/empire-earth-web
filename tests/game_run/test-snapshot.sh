@@ -41,6 +41,7 @@ check_eq "take: a snapshot identical to the game directory is made and verified"
 check "take: the manifest and directory list are recorded" test -s "$STATE/manifest.before" -a -s "$STATE/dirs.before"
 gr_manifest "$STATE/snapshot" "$W/snap.m"
 check "take: the snapshot has exactly the recorded manifest" cmp -s "$STATE/manifest.before" "$W/snap.m"
+check "take: the verified-snapshot marker is recorded once the snapshot matched the manifest" test -s "$STATE/snapshot.verified"
 
 # a second begin finds the leftover
 ( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; gr_state_begin >"$W/begin2.out" 2>&1; echo $? >"$W/rc" )
@@ -70,6 +71,7 @@ printf 'junk of a previous partial snapshot' >"$STATE/snapshot/junk"
 check_eq "take: an incomplete snapshot is detected (non-zero status)" "1" "$?"
 check "... and the message says the snapshot differs" grep -qi "differs" "$W/take.out"
 check_not "... nothing partial is left behind to be trusted later" test -e "$STATE/snapshot"
+check_not "... and no verified-snapshot marker" test -e "$STATE/snapshot.verified"
 # the fallback copy starts from nothing: a junk file of an earlier partial snapshot must not survive
 reset_game
 cat >"$W/shadow/cp" <<'CP'
@@ -272,5 +274,50 @@ kill -TERM "$drv"
 wait "$drv"
 check_eq "SIGTERM mid-run: status 143" "143" "$?"
 check "SIGTERM mid-run: the directory is restored and the lock released" test "$(cat "$W_GAME/ddraw.dll")" = "launcher ddraw v1" -a ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
+
+# ---- 5. a hashing run that is cut off must never lead to a deletion ----------------------------------------------------------
+# fake shasum: hashes the first file it is given, then dies (xargs fails: the run was cut off midway)
+mkdir -p "$W/cutoff"
+cat >"$W/cutoff/shasum" <<'SHA'
+#!/bin/bash
+/usr/bin/shasum -a 256 "$3"
+exit 1
+SHA
+chmod +x "$W/cutoff/shasum"
+reset_game
+( PATH="$W/cutoff:$PATH"; gr_manifest "$W_GAME" "$W/cut.m" ) 2>/dev/null
+check_eq "manifest: a hashing run cut off midway fails" "1" "$?"
+check_eq "... and leaves nothing behind, no partial manifest and no temporary file" "" "$(ls "$W" | grep '^cut\.m')"
+reset_game
+gr_manifest "$W_GAME" "$W/untouched.m"
+PATH="$W/cutoff:$PATH" bash "$W/drv-run.sh" >"$W/run4.out" 2>&1
+check_eq "teardown: a snapshot cut off while hashing ends the run with the driver's status" "2" "$?"
+game_manifest "$W/after.m"
+check "teardown: ... the game directory is untouched" cmp -s "$W/untouched.m" "$W/after.m"
+check "teardown: ... the state is finished and the lock released, as for a run interrupted before anything was touched" test ! -e "$STATE" -a ! -e "$GAME_RUN_LOCK"
+check "teardown: ... and the log says nothing was touched" grep -q "never touched" "$W/run4.out"
+
+# a partial manifest.before and dirs.before without the marker (the snapshot was never verified): every file and directory
+# the partial lists lack must stay, whether gr_restore is called directly or by recover.sh
+reset_game
+gr_state_begin
+gr_manifest "$W_GAME" "$W/full.m"
+head -2 "$W/full.m" >"$STATE/manifest.before"
+printf '.\n' >"$STATE/dirs.before"
+printf 'extra' >"$W_GAME/Data/c.bin"
+game_manifest "$W/b.m"
+gr_dirlist "$W_GAME" "$W/b.d"
+gr_restore >"$W/restore4.out" 2>&1
+check_eq "restore without the verified-snapshot marker returns 0: there is nothing to restore" "0" "$?"
+game_manifest "$W/b2.m"
+gr_dirlist "$W_GAME" "$W/b2.d"
+check "... it deletes and copies no file" cmp -s "$W/b.m" "$W/b2.m"
+check "... and removes no directory" cmp -s "$W/b.d" "$W/b2.d"
+check "... and says that the game directory was never touched" grep -q "never touched" "$W/restore4.out"
+GR_TEST_CONFIG="$W/config.sh" bash "$TOOL_DIR/recover.sh" >"$W/recover3.out" 2>&1
+check_eq "recover.sh on such a state succeeds" "0" "$?"
+game_manifest "$W/b3.m"
+check "recover: ... deletes nothing" cmp -s "$W/b.m" "$W/b3.m"
+check "recover: ... and removes the state" test ! -e "$STATE"
 
 summary
