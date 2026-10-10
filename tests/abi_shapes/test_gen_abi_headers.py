@@ -267,6 +267,11 @@ class EmitHeaders(unittest.TestCase):
             "EEWEB_SLOT_Gadget_slot5": "5", "EEWEB_SLOT_Gadget_slot6": "6", "EEWEB_SLOT_Gadget_Points": "7",
             "EEWEB_SLOTS_GadgetAbi": "10", "EEWEB_SLOT_GadgetAbi_Extra": "8", "EEWEB_SLOT_GadgetAbi_slot9": "9"})
 
+    def test_overloaded_constants_carry_their_signature_in_a_comment(self):
+        self.assertIn("EEWEB_SLOT_Gadget_Draw_1 = 2,  /* void Draw(Canvas &, float) */", self.c)
+        self.assertIn("EEWEB_SLOT_Gadget_Draw_2 = 3,  /* void Draw(Canvas &) */", self.c)
+        self.assertIn("EEWEB_SLOT_Gadget_Open = 1,\n", self.c)
+
     def test_generation_is_deterministic(self):
         self.assertEqual(generate_gadget(), self.files)
 
