@@ -206,13 +206,15 @@ check "teardown: ... including the recovery script" grep -q "recover.sh" "$W/run
 # recovery: the game is stopped by hand, recover.sh restores, removes the state and (the owner being dead) the lock
 rm -f "$W/refuse-stop"
 : >"$W/ps.out"
-GR_TEST_CONFIG="$W/config.sh" bash "$TOOL_DIR/recover.sh" >"$W/recover.out" 2>&1
+# a stray GR_TEST_CONFIG in the environment must not send recover.sh to another state directory
+printf 'GAME_RUN_STATE="%s/stray-state"\n' "$W" >"$W/stray.sh"
+GR_TEST_CONFIG="$W/stray.sh" bash "$TOOL_DIR/recover.sh" >"$W/recover.out" 2>&1
 check_eq "recover.sh succeeds once the game is gone" "0" "$?"
 check "recover: the game directory is restored" test "$(cat "$W_GAME/ddraw.dll")" = "launcher ddraw v1" -a ! -e "$W_GAME/Users/new.dat"
 check "recover: the state is removed" test ! -e "$STATE"
 check "recover: the lock of the dead run is reclaimed and released" test ! -e "$GAME_RUN_LOCK"
 check "recover: it said it reclaimed a stale lock" grep -q "RECLAIMING STALE LOCK" "$W/recover.out"
-GR_TEST_CONFIG="$W/config.sh" bash "$TOOL_DIR/recover.sh" >"$W/recover2.out" 2>&1
+bash "$TOOL_DIR/recover.sh" >"$W/recover2.out" 2>&1
 check_eq "recover.sh with nothing to recover is a no-op (0)" "0" "$?"
 
 # a restore that fails (damaged snapshot) keeps the lock and the state as well
@@ -343,7 +345,7 @@ gr_dirlist "$W_GAME" "$W/b2.d"
 check "... it deletes and copies no file" cmp -s "$W/b.m" "$W/b2.m"
 check "... and removes no directory" cmp -s "$W/b.d" "$W/b2.d"
 check "... and says that the game directory was never touched" grep -q "never touched" "$W/restore4.out"
-GR_TEST_CONFIG="$W/config.sh" bash "$TOOL_DIR/recover.sh" >"$W/recover3.out" 2>&1
+bash "$TOOL_DIR/recover.sh" >"$W/recover3.out" 2>&1
 check_eq "recover.sh on such a state succeeds" "0" "$?"
 game_manifest "$W/b3.m"
 check "recover: ... deletes nothing" cmp -s "$W/b.m" "$W/b3.m"

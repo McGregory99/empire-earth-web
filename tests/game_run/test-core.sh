@@ -17,11 +17,23 @@ check_eq "the lock path is fixed, not derived from RE_DIR" "lock=$HOME/Games/Emp
 check_eq "no ambient EE_*, EMPIRE_EARTH_*, WINE* or DXVK_* variable survives" "" "$(echo "$out" | grep -E '^(EE_|EMPIRE_EARTH_|WINE|DXVK_)')"
 check "unrelated variables are left alone" test "$(echo "$out" | grep -c '^keep=1$')" -eq 1
 
-# the test hook fails closed: a missing test config must not fall back to the real installation
-out="$(GR_TEST_CONFIG="$W/does-not-exist.sh" bash -c '. "$1/lib.sh"; gr_test_hook; echo "went on"' _ "$TOOL_DIR" 2>&1)"
+# a test opts in by naming its config file (the drivers' --test-config); nothing is read from the environment
+cat >"$W/stray.sh" <<STRAY
+GAME_RUN_LOCK="$W/stray-lock"
+GAME_RUN_STATE="$W/stray-state"
+GR_LOCK_WAIT=99
+STRAY
+out="$(GR_TEST_CONFIG="$W/stray.sh" GR_TOOL=evil GR_KEEP_LOCK=1 bash -c '. "$1/lib.sh"; gr_test_hook; echo "$GAME_RUN_LOCK|$GR_LOCK_WAIT|$GR_TOOL|$GR_KEEP_LOCK"' _ "$TOOL_DIR" 2>&1)"
+check_eq "an ambient GR_TEST_CONFIG, GR_TOOL or GR_KEEP_LOCK changes nothing" "$HOME/Games/EmpireEarth-re/locks/game-run|3600|game-run|0" "$out"
+out="$(bash -c '. "$1/lib.sh"; gr_test_hook "$2"; echo "$GR_LOCK_WAIT"' _ "$TOOL_DIR" "$W/config.sh" 2>/dev/null)"
+check_eq "a config file named to gr_test_hook is loaded" "2" "$out"
+# the hook fails closed: a missing test config must not fall back to the real installation
+out="$(bash -c '. "$1/lib.sh"; gr_test_hook "$2"; echo "went on"' _ "$TOOL_DIR" "$W/does-not-exist.sh" 2>&1)"
 rc=$?
-check_eq "a GR_TEST_CONFIG that does not exist stops the run (exit 2)" "2" "$rc"
+check_eq "a test config that does not exist stops the run (exit 2)" "2" "$rc"
 check "... and says so, without going on" test "$(echo "$out" | grep -c 'does not exist')" -eq 1 -a "$(echo "$out" | grep -c 'went on')" -eq 0
+check_eq "no script of the library or a driver expands GR_TEST_CONFIG" "0" \
+  "$(grep -lE '\$\{?GR_TEST_CONFIG' "$TOOL_DIR"/*.sh "$HERE/../dx7_rasterizer/game_check.sh" "$HERE/../../tools/ddraw_trace/scripts/game-trace.sh" | wc -l | tr -d ' ')"
 # the fixed default paths follow HOME, so a world under a fake HOME is isolated even without a test config
 out="$(env HOME="$W/home" bash -c '. "$1/lib.sh"; echo "$GAME_RUN_LOCK|$GAME_RUN_STATE|$GR_GAME|$GR_LAUNCHER_DIR|$GR_WINE_ROOT"' _ "$TOOL_DIR")"
 check "with a fake HOME every default path of the library is inside it" test "$(echo "$out" | tr '|' '\n' | grep -c "^$W/home/")" -eq 5

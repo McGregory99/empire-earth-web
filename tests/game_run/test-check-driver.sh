@@ -75,6 +75,14 @@ check_eq "hostile ambient variables change nothing (exit 0)" "0" "$?"
 check "the launcher saw no ambient EE_GRAPHICS or support dir" grep -q "EE_GRAPHICS=unset .* SUPPORT=unset" "$W/launch.log"
 check "RE_DIR did not move the lock" test ! -e /elsewhere
 
+# an ambient GR_TEST_CONFIG is not an opt-in: a driver run without --test-config reads no config file
+fresh
+rm -rf "$W/stray-out" "$W/ambient-out"
+printf 'OUT="%s/stray-out"\n' "$W" >"$W/stray.sh"
+GAME_CHECK_OUT="$W/ambient-out" GR_TEST_CONFIG="$W/stray.sh" bash "$DRIVER" "$W/$DLL" "$DLL" >"$W/run2b.out" 2>&1
+check_eq "a run with only a stray ambient GR_TEST_CONFIG still succeeds in the fake world (exit 0)" "0" "$?"
+check "... and did not load the stray config (its OUT was not used)" test ! -e "$W/stray-out" -a -d "$W/ambient-out"
+
 # ---- 3. refusals -------------------------------------------------------------------------------------------------------------------
 fresh
 printf x >"$W_GAME/$DLL"
