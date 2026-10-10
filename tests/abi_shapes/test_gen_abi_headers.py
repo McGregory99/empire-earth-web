@@ -45,7 +45,7 @@ class ParseVtables(unittest.TestCase):
         self.assertEqual(sorted(tables), ["Impl", "Other"])
         self.assertEqual([s.index for s in tables["Impl"]], [0, 1])
         self.assertEqual(tables["Impl"][0].alternatives, ())
-        self.assertEqual(tables["Impl"][1].address, 0x10002010)
+        self.assertEqual(tables["Impl"][1].alternatives[0].name, "Open")
 
     def test_only_the_wanted_classes_are_parsed(self):
         text = vtable_text("Other", [(1, "long Tpl<class X>::Odd(void)")]) + vtable_text("Impl", [(2, "void Impl::Run(void)")])

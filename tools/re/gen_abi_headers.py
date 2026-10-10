@@ -46,9 +46,9 @@ class Method:
 
 @dataclasses.dataclass(frozen=True)
 class VSlot:
-    """One vtable entry of the inventory; no alternatives = the code is not exported."""
+    """One vtable entry of the inventory; no alternatives = the code is not exported.  (The code
+    address the inventory also lists is deliberately dropped: nothing generated may carry one.)"""
     index: int
-    address: int
     alternatives: tuple
 
 
@@ -84,7 +84,7 @@ class ResolvedInterface:
 # ---- parsing -------------------------------------------------------------------------------
 
 _BLOCK = re.compile(r"^== const (?P<cls>.+?)::`vftable'(?P<rest>.*?)@0x(?P<addr>[0-9a-fA-F]+) slots=(?P<n>\d+)")
-_SLOT = re.compile(r"^\s*\[\s*(?P<i>\d+)\]\s+\+0x[0-9a-fA-F]+\s+0x(?P<a>[0-9a-fA-F]+)\s+(?P<text>.*?)\s*$")
+_SLOT = re.compile(r"^\s*\[\s*(?P<i>\d+)\]\s+\+0x[0-9a-fA-F]+\s+0x[0-9a-fA-F]+\s+(?P<text>.*?)\s*$")
 _DESTRUCTOR = re.compile(r"^(public|protected|private): virtual __thiscall (\w+)::~(\w+)\(void\)\s*$")
 _IDENT = re.compile(r"[A-Za-z_]\w*")
 
@@ -176,7 +176,7 @@ def parse_vtables(text, wanted=None):
         if slot and current is not None:
             text = slot.group("text")
             alternatives = () if text == "(not exported)" else tuple(parse_method(a) for a in text.split(" | "))
-            current[1].append(VSlot(int(slot.group("i")), int(slot.group("a"), 16), alternatives))
+            current[1].append(VSlot(int(slot.group("i")), alternatives))
     return tables
 
 
