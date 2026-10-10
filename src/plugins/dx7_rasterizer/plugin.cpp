@@ -30,9 +30,9 @@ UString& Name()
 // static object too: the engine never deletes what RPIMGetRasterizer hands out.
 alignas(4) char g_rasterizerStorage[sizeof(EEWebNullRasterizer)];
 
-EEWebRasterizerBase& Rasterizer()
+EEWebNullRasterizer& Rasterizer()
 {
-    return *reinterpret_cast<EEWebRasterizerBase*>(g_rasterizerStorage);
+    return *reinterpret_cast<EEWebNullRasterizer*>(g_rasterizerStorage);
 }
 
 } // namespace
@@ -54,7 +54,7 @@ ulong PIMGetType(void)
 // Each call also runs the class self-check so the build keeps proving its C++ ABI.
 bool PIMIsValid(void)
 {
-    EEWebRasterizerBase& rasterizer = Rasterizer();
+    EEWebNullRasterizer& rasterizer = Rasterizer();
     RunClassSelfCheck(rasterizer);
     bool valid = false;
     if (rasterizer.Activate() == 0 && rasterizer.GetScreenCount() != 0) {
@@ -64,10 +64,11 @@ bool PIMIsValid(void)
     return valid;
 }
 
-// Only called by the engine when PIMIsValid() is true, so never for this build.
+// Only called by the engine when PIMIsValid() is true, so never for this build.  The engine sees a GERasterizer.
 void* RPIMGetRasterizer(void)
 {
-    return &Rasterizer();
+    GERasterizer* rasterizer = &Rasterizer();
+    return rasterizer;
 }
 
 // DLL entry point.  The loader has already initialized Low-Level Engine.dll (our import), so its

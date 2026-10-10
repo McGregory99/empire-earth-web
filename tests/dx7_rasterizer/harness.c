@@ -263,9 +263,6 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     void *const *vtable = *(void *const **)obj;
     CHECK(in_module(h, vtable), "%s: the object's vtable lies inside the plugin", e->label);
     check_rtti(e, h, vtable);
-    if (!e->ours) {
-        return;
-    }
 
     /* The shape both objects must have: the original's DX7TnLRasterizer has 82 slots (GERasterizer's 78 and
      * the 4 of DX7Rasterizer).  The slot checks below call into the table, so they need the right size. */

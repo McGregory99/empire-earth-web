@@ -4,118 +4,88 @@
 
 namespace {
 
-long g_destroyed;     // destructor runs of any EEWebNullRasterizer in this DLL
-long g_baseDestroyed; // destructor runs of any EEWebRasterizerBase in this DLL
+long g_destroyed; // destructor runs of any EEWebNullRasterizer in this DLL (read by the self-check only)
 
-EEWebRasterizerBase* MakeNullRasterizer()
+DX7RasterizerAbi* MakeNullRasterizer()
 {
     return new EEWebNullRasterizer;
 }
 
 // Called through a volatile pointer so the optimizer sees an unknown dynamic type.
-EEWebRasterizerBase* (*volatile g_factory)() = &MakeNullRasterizer;
+DX7RasterizerAbi* (*volatile g_factory)() = &MakeNullRasterizer;
 
 } // namespace
 
-EEWebRasterizerBase::EEWebRasterizerBase()
-    : m_activations(0), m_deactivations(0), m_selfChecks(0), m_selfCheckFailures(0)
-{
-}
-
-EEWebRasterizerBase::~EEWebRasterizerBase()
-{
-    ++g_baseDestroyed;
-}
-
-long EEWebRasterizerBase::Draw(long mode)
-{
-    return EEWEB_DRAW_PLAIN_BASE + mode;
-}
-
-long EEWebRasterizerBase::Draw(float scale, long mode)
-{
-    return EEWEB_DRAW_SCALED_BASE + mode + static_cast<long>(scale);
-}
-
-long EEWebRasterizerBase::Describe()
-{
-    return EEWEB_DESCRIBE_RESULT;
-}
-
-long EEWebRasterizerBase::Deactivate()
-{
-    ++m_deactivations;
-    return 0;
-}
-
-long EEWebRasterizerBase::GetCounter(long which) const
-{
-    switch (which) {
-    case EEWEB_COUNTER_ACTIVATIONS:
-        return m_activations;
-    case EEWEB_COUNTER_DEACTIVATIONS:
-        return m_deactivations;
-    case EEWEB_COUNTER_SELF_CHECKS:
-        return m_selfChecks;
-    case EEWEB_COUNTER_SELF_CHECK_FAILURES:
-        return m_selfCheckFailures;
-    case EEWEB_COUNTER_DESTROYED:
-        return g_destroyed;
-    case EEWEB_COUNTER_BASE_DESTROYED:
-        return g_baseDestroyed;
-    }
-    return -1;
-}
-
-void EEWebRasterizerBase::NoteSelfCheck(bool passed)
-{
-    ++m_selfChecks;
-    if (!passed) {
-        ++m_selfCheckFailures;
-    }
-}
-
 EEWebNullRasterizer::EEWebNullRasterizer()
 {
+    // The harness reads the counters at this offset, behind the vptr.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winvalid-offsetof"
+    static_assert(__builtin_offsetof(EEWebNullRasterizer, m_counters) == EEWEB_COUNTERS_OFFSET,
+                  "the counters must sit right behind the vptr");
+#pragma clang diagnostic pop
+    for (int k = 0; k < EEWEB_COUNTER_COUNT; ++k) {
+        m_counters[k] = 0;
+    }
 }
 
 EEWebNullRasterizer::~EEWebNullRasterizer()
 {
     ++g_destroyed;
+    ++m_counters[EEWEB_COUNTER_DESTROYED];
 }
 
 long EEWebNullRasterizer::Activate()
 {
-    ++m_activations;
-    return EEWEB_ACTIVATE_FAILED; // nothing to render with: activation always fails
+    return ActivateRasterizer();
 }
 
-long EEWebNullRasterizer::GetScreenCount() const
+unsigned long EEWebNullRasterizer::GetScreenCount() const
 {
     return 0;
 }
 
-long EEWebNullRasterizer::Draw(long mode)
+void EEWebNullRasterizer::NoteSelfCheck(bool passed)
 {
-    return EEWEB_DRAW_PLAIN_BASE + mode;
+    ++m_counters[EEWEB_COUNTER_SELF_CHECKS];
+    if (!passed) {
+        ++m_counters[EEWEB_COUNTER_SELF_CHECK_FAILURES];
+    }
 }
 
-long EEWebNullRasterizer::Draw(float scale, long mode)
+long EEWebNullRasterizer::ActivateRasterizer()
 {
-    return EEWEB_DRAW_SCALED_BASE + mode + static_cast<long>(scale);
+    ++m_counters[EEWEB_COUNTER_ACTIVATIONS];
+    return EEWEB_ACTIVATE_FAILED; // nothing to render with: activation always fails
 }
 
-void RunClassSelfCheck(EEWebRasterizerBase& shared)
+long EEWebNullRasterizer::Deactivate()
 {
-    EEWebRasterizerBase* temp = g_factory();
+    ++m_counters[EEWEB_COUNTER_DEACTIVATIONS];
+    return 0;
+}
+
+long EEWebNullRasterizer::Draw(GEBitmap*, unsigned long mode)
+{
+    return EEWEB_DRAW_BITMAP_BASE + static_cast<long>(mode);
+}
+
+long EEWebNullRasterizer::Draw(GELine*, unsigned long first, unsigned long second)
+{
+    return EEWEB_DRAW_LINE_BASE + static_cast<long>(first + second);
+}
+
+void RunClassSelfCheck(EEWebNullRasterizer& shared)
+{
+    DX7RasterizerAbi* made = g_factory();
+    EEWebNullRasterizer* temp = dynamic_cast<EEWebNullRasterizer*>(made);
     bool ok = temp != 0;
     if (temp) {
         ok = ok && temp->GetScreenCount() == 0;
-        ok = ok && temp->Draw(3L) == EEWEB_DRAW_PLAIN_BASE + 3;
-        ok = ok && temp->Draw(2.5f, 3L) == EEWEB_DRAW_SCALED_BASE + 3 + 2;
-        ok = ok && temp->Describe() == EEWEB_DESCRIBE_RESULT;
-        ok = ok && dynamic_cast<EEWebNullRasterizer*>(temp) != 0;
-        ok = ok && dynamic_cast<EEWebNullRasterizer*>(&shared) != 0;
+        ok = ok && made->Draw(static_cast<GEBitmap*>(0), 3UL) == EEWEB_DRAW_BITMAP_BASE + 3;
+        ok = ok && made->Draw(static_cast<GELine*>(0), 2UL, 3UL) == EEWEB_DRAW_LINE_BASE + 5;
+        ok = ok && !made->GetIsScreenValid(0);
+        ok = ok && dynamic_cast<EEWebNullRasterizer*>(static_cast<DX7RasterizerAbi*>(&shared)) != 0;
         const long destroyedBefore = g_destroyed;
         delete temp; // virtual call through the deleting-destructor slot, then operator delete
         ok = ok && g_destroyed == destroyedBefore + 1;

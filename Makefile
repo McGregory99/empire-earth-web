@@ -225,9 +225,10 @@ check-abi-rasterizer: $(RAST_DLL)
 	diff -u tests/dx7_rasterizer/expected_exports.txt $(RAST_BUILD)/exports-ours.txt && echo "PASS: exports and ordinals are as defined"
 	python3 -I tests/dx7_rasterizer/check_imports.py "$(RAST_DLL)" --require $(RAST_REQUIRED_IMPORTS)
 
-# msvcrt.dll imports that prove the C++ constructs were really compiled and linked: pure virtual
-# slots, dynamic_cast, operator new and delete.  Quoted because of the `?` and `@` characters.
-RAST_REQUIRED_IMPORTS := '_purecall' '__RTDynamicCast' '??2@YAPAXI@Z' '??3@YAXPAX@Z'
+# msvcrt.dll imports that prove the C++ constructs were really compiled and linked: dynamic_cast,
+# operator new and delete.  (No `_purecall`: our object fills every slot, so the vtables of the abstract
+# interface classes, with their pure slots, are never emitted.)  Quoted because of the `?` and `@` characters.
+RAST_REQUIRED_IMPORTS := '__RTDynamicCast' '??2@YAPAXI@Z' '??3@YAXPAX@Z'
 
 # Test beds: the engine DLLs sit next to the plugin (altered search path), like in the game dir.
 testbed-rasterizer: $(RAST_DLL) $(RAST_HARNESS)
