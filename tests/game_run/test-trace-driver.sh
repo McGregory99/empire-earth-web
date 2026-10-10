@@ -21,7 +21,7 @@ STATE="$GAME_RUN_STATE"
 printf 'PROXY' >"$W/proxy.dll"
 
 fresh() {
-  rm -rf "$STATE" "$GAME_RUN_LOCK" "$W/out" "$W/refuse-stop" "$W/launcher-hang" "$W/launcher-late-start" "$W/launcher-fail-before-game" \
+  rm -rf "$STATE" "$GAME_RUN_LOCK" "$W/out" "$W/refuse-stop" "$W/launcher-hang" "$W/launcher-late-start" "$W/launcher-go" "$W/launcher-fail-before-game" \
     "$W/launch.log" "$W/launcher-child.pid" "$W/wine.log" "$W_GAME/ddraw_next.dll" "$W_GAME/ddraw_trace.cfg"
   printf 'launcher ddraw v1' >"$W_GAME/ddraw.dll"
   printf 'run log 0' >"$W_GAME/ee-ddraw.log"
@@ -139,15 +139,16 @@ check "... restored" same_game
 
 # ---- 7. an orphaned launcher after a killed driver ---------------------------------------------------------------------------------------------
 fresh
-echo 4 >"$W/launcher-late-start"      # the launcher asks for the game 4 s after it started
+: >"$W/launcher-late-start"      # the launcher waits for launcher-go before it asks for the game
 start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/proxy.dll"
 drv=$!
-wait_for 100 test -s "$W/launch.log"
-sleep 0.5
+wait_for 100 test -s "$W/launch.log"   # the launcher is running (and held at its gate)
 kill -KILL "$drv"
 wait "$drv" 2>/dev/null
 check "the killed driver left its lock behind" test -d "$GAME_RUN_LOCK"
-sleep 5
+: >"$W/launcher-go"                    # now the orphan asks for the game
+wait_for 100 grep -q "wine start exit status" "$W/launch.log"
+check "the orphaned launcher got an answer to its request to start the game" grep -q "wine start exit status" "$W/launch.log"
 check_eq "the orphaned launcher could not start the game (wrapper refused)" "" "$(gr_game_pids)"
 check "... the wrapper refused with status 97" grep -q "wine start exit status 97" "$W/launch.log"
 check_eq "... and nothing was swapped in (ddraw.dll is still the launcher's)" "no" "$(grep -q PROXY "$W_GAME/ddraw.dll" && echo yes || echo no)"
@@ -159,9 +160,8 @@ check "... after reclaiming the dead run's lock loudly" grep -q "RECLAIMING STAL
 check "... and it says to run recover.sh" grep -q "recover.sh" "$W/run7.out"
 bash "$TOOL_DIR/recover.sh" >"$W/recover7.out" 2>&1
 check_eq "recover.sh restores after the kill" "0" "$?"
-gr_manifest "$W_GAME" "$W/manifest.now"
 # the launcher of the killed run rewrote ddraw.dll and the log before it was killed: those are exactly what recover undoes
-check "... the game directory equals the manifest taken before that run" test "$(cat "$W_GAME/ddraw.dll")" = "launcher ddraw v1"
+check "... the game directory equals the manifest taken before that run (every file, not only ddraw.dll)" same_game
 run_driver >"$W/run7b.out" 2>&1
 check_eq "and a run after the recovery works (0)" "0" "$?"
 

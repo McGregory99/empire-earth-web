@@ -161,8 +161,9 @@ if [ -f "$FAKE_WORLD/launch-log-template" ]; then
 fi
 [ -e "$FAKE_WORLD/launcher-fail-before-game" ] && exit 3
 if [ -e "$FAKE_WORLD/launcher-late-start" ]; then
-  # an orphan: it asks for the game long after the driver may have died
-  sleep "$(cat "$FAKE_WORLD/launcher-late-start")"
+  # an orphan: it asks for the game only when the test says so (launcher-go), long after the driver may have died
+  i=0
+  while [ ! -e "$FAKE_WORLD/launcher-go" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
 fi
 "$wine_path" start /unix "$game/Empire Earth.exe"
 echo "wine start exit status $?" >>"$FAKE_WORLD/launch.log"
