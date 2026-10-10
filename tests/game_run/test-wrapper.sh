@@ -125,6 +125,15 @@ check "swap-in: our proxy is ddraw.dll" cmp -s "$W_GAME/ddraw.dll" "$W/proxy.dll
 check_eq "swap-in: the launcher's file is kept as ddraw_next.dll" "launcher ddraw v1" "$(cat "$W_GAME/ddraw_next.dll")"
 check "swap-in: the config names the trace and the cap" grep -q '^DDT_MAX_PRESENTS=77$' "$W_GAME/ddraw_trace.cfg"
 check_not "swap-in: no temporary file is left" ls "$W_GAME"/*.tmp
+# idempotent: the launcher retries a launch that dies early, and the wrapper's hook runs again
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
+check "swap-in twice: our proxy is still ddraw.dll" cmp -s "$W_GAME/ddraw.dll" "$W/proxy.dll"
+check_eq "swap-in twice: the launcher's file is still kept as ddraw_next.dll (not replaced by our proxy)" "launcher ddraw v1" "$(cat "$W_GAME/ddraw_next.dll")"
+# the launcher rewrote its ddraw.dll between two attempts: the newest launcher file is the one to chain to
+printf 'launcher ddraw v2' >"$W_GAME/ddraw.dll"
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
+check_eq "swap-in after a launcher rewrite: the newest launcher file is kept as ddraw_next.dll" "launcher ddraw v2" "$(cat "$W_GAME/ddraw_next.dll")"
+check "... and our proxy is ddraw.dll again" cmp -s "$W_GAME/ddraw.dll" "$W/proxy.dll"
 # the order of operations: never move the live ddraw.dll away (a window in which it is missing)
 reset
 mkdir -p "$W/shadow2"
