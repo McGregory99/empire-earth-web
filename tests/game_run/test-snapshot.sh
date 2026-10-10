@@ -320,4 +320,64 @@ game_manifest "$W/b3.m"
 check "recover: ... deletes nothing" cmp -s "$W/b.m" "$W/b3.m"
 check "recover: ... and removes the state" test ! -e "$STATE"
 
+# ---- 6. the state of one run does not leak into the next ------------------------------------------------------------------
+# game-trace.sh --gate runs the whole protocol twice in one process.
+mkdir -p "$W/shadow-lossy"
+cat >"$W/shadow-lossy/cp" <<'CP'
+#!/bin/bash
+# fake cp: -c (clone) fails; a plain recursive copy of the game loses one file but claims success
+case " $* " in
+  *" -cR "* | *" -c "*) exit 1 ;;
+esac
+/bin/cp "$@"
+status=$?
+last="${@: -1}"
+[ -d "$last/Data" ] && rm -f "$last/Data/b file.bin"
+exit $status
+CP
+chmod +x "$W/shadow-lossy/cp"
+reset_game
+gr_state_begin
+gr_snapshot_take
+check_eq "a verified snapshot is recorded" "1" "$GR_SNAPSHOT_OK"
+gr_state_finish
+check_eq "finishing the run forgets it" "0" "$GR_SNAPSHOT_OK"
+reset_game
+GR_SNAPSHOT_OK=1 # what an earlier run of this process left behind
+gr_state_begin
+check_eq "beginning a run forgets it" "0" "$GR_SNAPSHOT_OK"
+GR_SNAPSHOT_OK=1
+( PATH="$W/shadow-lossy:$PATH"; gr_snapshot_take >/dev/null 2>&1; echo "$GR_SNAPSHOT_OK" >"$W/ok" )
+check_eq "a snapshot that fails does not leave an earlier run's verdict standing" "0" "$(cat "$W/ok")"
+rm -rf "$STATE"
+
+cat >"$W/drv-two.sh" <<'DRV'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"
+GR_TOOL=drv
+cleanup() { gr_teardown; }
+gr_install_traps cleanup
+one_run() {
+  gr_lock_acquire 1 || return 2
+  gr_state_begin || return 2
+  gr_snapshot_take || { gr_teardown; return 3; }
+  printf 'launcher ddraw v2' >"$GR_GAME/ddraw.dll"
+  echo '  4242 50000 C:\GOG Games\Fake\Empire Earth.exe' >>"$FAKE_PS_FILE"
+  gr_teardown
+}
+one_run || exit $?
+: >"$W/wine.log"
+PATH="$W/shadow-lossy:$PATH" one_run
+echo $? >"$W/second.rc"
+exit 0
+DRV
+reset_game
+bash "$W/drv-two.sh" >"$W/two.out" 2>&1
+check_eq "two runs in one process: the first completes and the game directory is back" "launcher ddraw v1" "$(cat "$W_GAME/ddraw.dll")"
+check_eq "... the second, whose snapshot is incomplete, is refused (3)" "3" "$(cat "$W/second.rc" 2>/dev/null)"
+check_eq "... and its teardown does not stop the game it never touched (no wineserver -k)" "0" "$(grep -c 'wineserver -k' "$W/wine.log")"
+check "... the lock is released and the state discarded" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
+
+# the log line that says the game directory was never touched has one source
+check_eq "the 'never touched' message is written once, by one helper" "1" "$(grep -c 'gr_log.*was never touched' "$TOOL_DIR/snapshot.sh")"
+
 summary
