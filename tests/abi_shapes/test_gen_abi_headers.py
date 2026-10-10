@@ -43,6 +43,10 @@ class ParseVtables(unittest.TestCase):
         self.assertEqual(tables["Impl"][0].alternatives, ())
         self.assertEqual(tables["Impl"][1].address, 0x10002010)
 
+    def test_only_the_wanted_classes_are_parsed(self):
+        text = vtable_text("Other", [(1, "long Tpl<class X>::Odd(void)")]) + vtable_text("Impl", [(2, "void Impl::Run(void)")])
+        self.assertEqual(sorted(gen.parse_vtables(text, ["Impl"])), ["Impl"])
+
     def test_signature_parts(self):
         method = one_signature("long Impl::Open(class Handle *, unsigned long) const")
         self.assertEqual((method.access, method.ret, method.name, method.params, method.const),

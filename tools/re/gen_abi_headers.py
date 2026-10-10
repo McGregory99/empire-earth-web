@@ -152,8 +152,9 @@ def parse_method(text):
     return Method(access, ret, name, tuple(params), tail == "const")
 
 
-def parse_vtables(text):
-    """class name -> tuple of VSlot, from an inventory's vtable blocks."""
+def parse_vtables(text, wanted=None):
+    """class name -> tuple of VSlot, from an inventory's vtable blocks.  With `wanted`, other
+    classes are skipped unparsed (the engine inventory holds hundreds, many of them templates)."""
     tables, current, declared = {}, None, 0
     for line in text.splitlines() + ["== end"]:
         if line.startswith("== "):
@@ -164,7 +165,8 @@ def parse_vtables(text):
                 tables[name] = tuple(slots)
             block = _BLOCK.match(line)
             # Secondary vtables (`{for ...}`) are not interfaces of ours.
-            current = (block.group("cls"), []) if block and not block.group("rest").strip() else None
+            interesting = block and not block.group("rest").strip() and (wanted is None or block.group("cls") in wanted)
+            current = (block.group("cls"), []) if interesting else None
             declared = int(block.group("n")) if block else 0
             continue
         slot = _SLOT.match(line)
