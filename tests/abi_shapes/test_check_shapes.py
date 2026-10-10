@@ -93,7 +93,7 @@ class CheckShapes(unittest.TestCase):
         self.assertTrue(any("GadgetAbi" in e and "no vtable layout" in e for e in check(BASE_BLOCK)))
 
     def test_an_implementation_that_moves_a_slot_is_reported(self):
-        misplaced = IMPLEMENTATION_DUMP.replace("   9 | void Null::Extra(float) ", "   9 | void Null::Other(float) ")
+        misplaced = IMPLEMENTATION_DUMP.replace("9 | void Null::Extra(float)\n", "9 | void Null::Other(float)\n")
         errors = check(GADGET_DUMP + "\n" + misplaced, [("Null", "GadgetAbi")])
         self.assertTrue(any("Null" in e and "slot 8" in e for e in errors), errors)
 
