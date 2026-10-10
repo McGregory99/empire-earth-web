@@ -71,16 +71,17 @@ struct Expect {
     int is_valid;        /* expected low byte of PIMIsValid, or -1 = do not assert */
     const char *name;    /* text of the UString that PIMGetName returns */
     const char *rtti;    /* RTTI name of the class RPIMGetRasterizer's object belongs to */
-    const char *bases[2]; /* expected RTTI class chain (most derived first), NULL = only report it */
+    const char *bases[4]; /* expected RTTI class chain (most derived first), NULL-terminated */
 };
 
 static const char *const kExportNames[4] = {"PIMGetName", "PIMGetType", "PIMIsValid",
                                             "RPIMGetRasterizer"};
 
-static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1,
-                                        "Direct3D Hardware TnL", ".?AVDX7TnLRasterizer@@", {NULL, NULL}};
+static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1, "Direct3D Hardware TnL",
+                                        ".?AVDX7TnLRasterizer@@",
+                                        {".?AVDX7TnLRasterizer@@", ".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL}};
 static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
-                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_BASE}};
+                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_BASE, NULL, NULL}};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
 static void *proc_address(HMODULE h, const char *name_or_ordinal)
@@ -190,18 +191,15 @@ static void check_rtti(const struct Expect *e, HMODULE h, void *const *vtable)
     const struct RttiHierarchy *chain = col->hierarchy;
     CHECK(chain->count >= 1 && chain->count < 16, "%s: class hierarchy lists %u class(es)", e->label,
           (unsigned)chain->count);
+    uint32_t expected = 0;
+    while (expected < 4 && e->bases[expected]) {
+        expected++;
+    }
     for (uint32_t i = 0; i < chain->count && i < 16; i++) {
         const char *name = chain->bases[i]->type->name;
-        if (e->bases[0]) {
-            CHECK(i < 2 && strcmp(name, e->bases[i]) == 0, "%s: hierarchy[%u] is %s", e->label, (unsigned)i,
-                  name);
-        } else {
-            INFO("%s: hierarchy[%u] is %s", e->label, (unsigned)i, name);
-        }
+        CHECK(i < expected && strcmp(name, e->bases[i]) == 0, "%s: hierarchy[%u] is %s", e->label, (unsigned)i, name);
     }
-    if (e->bases[0]) {
-        CHECK(chain->count == 2, "%s: hierarchy has exactly the class and its base", e->label);
-    }
+    CHECK(chain->count == expected, "%s: hierarchy lists exactly the %u expected class(es)", e->label, (unsigned)expected);
 }
 
 static void *slot(void *const *vtable, int index)
