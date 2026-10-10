@@ -18,7 +18,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "re"))
 import gen_abi_headers as gen  # noqa: E402
 
-PURE = 0x10081668  # the address the engine's _purecall thunk has in the engine inventory
+PURE = 0x10009999  # one shared address for every pure slot of the synthetic engine inventory
 
 
 def vtable_text(cls, rows, addr=0x10010000):
