@@ -100,6 +100,12 @@ if [ "${1:-}" = reg ]; then
   value_file="$FAKE_WORLD/snoop.value"
   case "${2:-}" in
     query)
+      # a test can stop a driver in its read-back window (after the restore: the state directory is gone) and release it
+      if [ -e "$FAKE_WORLD/readback-hang" ] && [ ! -e "${FAKE_STATE:-/nonexistent}" ]; then
+        : >"$FAKE_WORLD/readback.ready"
+        i=0
+        while [ ! -e "$FAKE_WORLD/readback-go" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+      fi
       [ -f "$value_file" ] || exit 1
       printf '\r\nHKEY_CURRENT_USER\\Software\\Wine\\Debug\r\n    SnoopInclude    REG_SZ    %s\r\n\r\n' "$(cat "$value_file")"
       ;;
@@ -184,7 +190,7 @@ OUT="$W/out"
 PRESENTS=3
 CAPTURE_WAIT=6
 LAUNCH_LIMIT=60
-export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup" FAKE_WINE="$wine/bin/wine"
+export FAKE_GAME="$W_GAME" FAKE_SUPPORT="$sup" FAKE_WINE="$wine/bin/wine" FAKE_STATE="$W_HOME/Games/EmpireEarth-re/game-run-state"
 CONF
   : >"$W_SUP/logs/launcher.log"
   export PATH="$W/bin:$PATH"

@@ -278,6 +278,47 @@ check_eq "a failing run keeps its own status" "3" "$?"
 bash "$W/drv-ok.sh"
 check_eq "a clean run exits 0" "0" "$?"
 
+# a signal before the launcher's child has made its process group (setpgrp is its first act, after the fork): the group does not
+# exist yet, so the child itself has to be stopped, before it starts anything
+mkdir -p "$W/slow-perl"
+cat >"$W/slow-perl/perl" <<'SP'
+#!/bin/bash
+# a perl that is slow to start: its caller's child has not made its process group yet
+echo $$ >"$W/slowperl.pid"
+i=0
+while [ ! -e "$W/slowperl.go" ] && [ "$i" -lt 60 ]; do sleep 0.1; i=$((i + 1)); done
+exec /usr/bin/perl "$@"
+SP
+chmod +x "$W/slow-perl/perl"
+cat >"$W/stub-slow.sh" <<'STUB'
+#!/bin/bash
+echo $$ >"$W/stub.pid"
+sleep 20 &
+echo $! >"$W/stub-child.pid"
+wait
+STUB
+chmod +x "$W/stub-slow.sh"
+cat >"$W/drv-slow.sh" <<'DRV'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"
+cleanup() { gr_kill_launcher; return 0; }
+gr_install_traps cleanup
+PATH="$W/slow-perl:$PATH" gr_run_launcher 3 "$W/launcher.out" "$W/stub-slow.sh"
+DRV
+rm -f "$W/slowperl.pid" "$W/slowperl.go" "$W/stub.pid" "$W/stub-child.pid"
+start_job bash "$W/drv-slow.sh"
+drv=$!
+wait_for 100 test -s "$W/slowperl.pid"
+kill -TERM "$drv"
+wait_for 40 dead "$drv"
+check "a signal before the launcher's child made its group: the driver's cleanup does not wait for the launcher to start" dead "$drv"
+wait "$drv" 2>/dev/null
+wait_for 20 dead "$(cat "$W/slowperl.pid")"
+check "... the child is stopped" dead "$(cat "$W/slowperl.pid")"
+: >"$W/slowperl.go"
+sleep 0.5
+check "... and never started the launcher" test ! -e "$W/stub.pid"
+kill "$(cat "$W/stub.pid" 2>/dev/null)" "$(cat "$W/stub-child.pid" 2>/dev/null)" 2>/dev/null
+
 # the launcher job: its status, its own process group, stragglers
 cat >"$W/stub-quick.sh" <<'STUB'
 #!/bin/bash

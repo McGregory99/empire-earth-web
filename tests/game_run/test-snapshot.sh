@@ -275,6 +275,35 @@ wait "$drv"
 check_eq "SIGTERM mid-run: status 143" "143" "$?"
 check "SIGTERM mid-run: the directory is restored and the lock released" test "$(cat "$W_GAME/ddraw.dll")" = "launcher ddraw v1" -a ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
 
+# a driver that keeps the lock to read back what it restored (GR_KEEP_LOCK=1) and is signalled meanwhile: nothing is left to read
+# back once the process exits, so the exit path releases the lock
+reset_game
+cat >"$W/drv-keep.sh" <<'DRV'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"
+GR_TOOL=drv
+cleanup() { gr_teardown; }
+gr_install_traps cleanup
+gr_lock_acquire 1 || exit 2
+gr_state_begin || exit 2
+gr_snapshot_take || exit 2
+GR_KEEP_LOCK=1
+gr_teardown || exit 1
+sleep 60 &
+echo $! >"$W/keep.sleep"
+: >"$W/keep.ready"
+wait $!
+DRV
+rm -f "$W/keep.ready"
+start_job bash "$W/drv-keep.sh"
+drv=$!
+wait_for 100 test -e "$W/keep.ready"
+check "the lock is kept during the read-back window" test -d "$GAME_RUN_LOCK"
+kill -TERM "$drv"
+wait "$drv"
+check_eq "SIGTERM in the read-back window: status 143" "143" "$?"
+check "... the lock is released on the exit path" test ! -e "$GAME_RUN_LOCK"
+kill "$(cat "$W/keep.sleep" 2>/dev/null)" 2>/dev/null
+
 # ---- 5. a hashing run that is cut off must never lead to a deletion ----------------------------------------------------------
 # fake shasum: hashes the first file it is given, then dies (xargs fails: the run was cut off midway)
 mkdir -p "$W/cutoff"

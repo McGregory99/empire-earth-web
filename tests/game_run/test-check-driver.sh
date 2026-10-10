@@ -37,7 +37,8 @@ export FAKE_DLL=EEWebRasterizer
 
 fresh() {
   rm -rf "$STATE" "$GAME_RUN_LOCK" "$W/out" "$W/refuse-stop" "$W/launcher-hang" "$W/launcher-fail-before-game" \
-    "$W/launch.log" "$W/launcher-child.pid" "$W/wine.log" "$W/snoop.value" "$W_GAME/$DLL" "$W_SUP/logs"/launch-*.log
+    "$W/launch.log" "$W/launcher-child.pid" "$W/wine.log" "$W/snoop.value" "$W_GAME/$DLL" "$W_SUP/logs"/launch-*.log \
+    "$W/readback-hang" "$W/readback.ready" "$W/readback-go"
   printf 'launcher ddraw v1' >"$W_GAME/ddraw.dll"
   printf 'run log 0' >"$W_GAME/ee-ddraw.log"
   : >"$W/ps.out"
@@ -136,6 +137,20 @@ check "... the launcher group is gone" dead "$(cat "$W/launcher-child.pid")"
 check "... the game directory is restored (the DLL is gone)" same_game
 check "... the registry is restored" test ! -e "$W/snoop.value"
 check "... lock and state are gone" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
+
+# a signal while the driver reads back what it restored (it keeps the lock for that): the lock must not leak
+fresh
+touch "$W/readback-hang"
+start_job bash "$DRIVER" "$W/$DLL" "$DLL"
+drv=$!
+wait_for 100 test -e "$W/readback.ready"
+kill -TERM "$drv"
+: >"$W/readback-go"
+wait "$drv" 2>/dev/null
+check_eq "SIGTERM during the read-back: status 143" "143" "$?"
+check "... the game directory is restored" same_game
+check "... the lock is released (the window of GR_KEEP_LOCK does not leak it)" test ! -e "$GAME_RUN_LOCK"
+check "... and the state is gone" test ! -e "$STATE"
 
 # ---- 6. no shim -----------------------------------------------------------------------------------------------------------------------------
 fresh
