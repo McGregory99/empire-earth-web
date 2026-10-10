@@ -77,16 +77,21 @@ a game directory with spaces in its path).
   the same code that was already probed under the name `ddraw.dll`; our proxy has no start-up side effects (it does
   nothing in `DllMain` but remember its handle).
 * The lock is `~/Games/EmpireEarth-re/locks/game-run`, a fixed path (not derived from `RE_DIR`), with an owner token
-  (pid and start time) inside. A live owner is waited for; a lock is reclaimed, loudly, only when its owner is provably dead
-  (pid gone, or the pid now belongs to a process that started at another time); a lock without a token (another agent's)
-  is never reclaimed; only our own lock is released.
+  (pid and start time) inside. The lock appears with its token already in it (a private directory renamed into place), so
+  a run killed at any point leaves either nothing or a complete lock. A live owner is waited for; a lock is reclaimed,
+  loudly, only when its owner is provably dead (pid gone, or the pid now belongs to a process that started at another
+  time). Reclaiming takes the lock over in place: the dead token is renamed to a claim name of our own (one claimant
+  wins), compared with what was judged, and our token is linked in; if what was moved is not the dead owner's token it is
+  put back. A lock without a token (another agent's) is never reclaimed; only our own lock is released.
 * Detection is the launcher's own anchored test (`game_pids`): the command line must start with a Windows path to
   `Empire Earth.exe` or `EE-AOC.exe`, with real memory resident. An agent's `pgrep -f` loop does not match; Art of
   Conquest (which the launcher kills by name) does. A run also refuses to start while any other program of the GOG install
   runs.
 * A run refuses to start over leftovers: `ddraw_next.dll`, `ddraw_trace.cfg`, or the state directory
   `~/Games/EmpireEarth-re/game-run-state` of a run that did not finish. `config.json`'s `base_exe` must be under the
-  game directory that is restored. Ambient `EMPIRE_EARTH_*`, `EE_*`, `WINE*` and `DXVK_*` variables are unset.
+  game directory that is restored. Ambient `EMPIRE_EARTH_*`, `EE_*`, `WINE*` and `DXVK_*` variables are unset, and nothing
+  else is read from the environment: the tests name their fake world with `--test-config <file>`, which `recover.sh` does
+  not have.
 * The snapshot (`cp -c`, else a plain copy after removing any partial one) is verified against the sha256 manifest of
   the directory before the game starts; a mismatch aborts the run.
 * The launcher runs as a background job in its own process group; the driver `wait`s on it with the interruptible
