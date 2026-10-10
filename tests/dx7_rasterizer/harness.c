@@ -67,6 +67,9 @@ typedef void *(THISCALL *DeletingDtor)(void *self, unsigned flags);
 /* What each variant is expected to export (ordinals as the linker assigned them). */
 struct Expect {
     const char *label;
+    int ours;            /* 1 = our DLL: its object is driven in-process through the vtable slots and PIMIsValid is
+                          * called here; 0 = the original, which is only observed (PIMIsValid runs in a child
+                          * process, see probe_isvalid: it needs a display and may take the harness down) */
     unsigned ordinal[4]; /* PIMGetName, PIMGetType, PIMIsValid, RPIMGetRasterizer */
     int is_valid;        /* expected low byte of PIMIsValid, or -1 = do not assert */
     const char *name;    /* text of the UString that PIMGetName returns */
@@ -77,10 +80,10 @@ struct Expect {
 static const char *const kExportNames[4] = {"PIMGetName", "PIMGetType", "PIMIsValid",
                                             "RPIMGetRasterizer"};
 
-static const struct Expect kOriginal = {"original", {252, 253, 254, 255}, -1, "Direct3D Hardware TnL",
+static const struct Expect kOriginal = {"original", 0, {252, 253, 254, 255}, -1, "Direct3D Hardware TnL",
                                         ".?AVDX7TnLRasterizer@@",
                                         {".?AVDX7TnLRasterizer@@", ".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL}};
-static const struct Expect kOurs = {"ours", {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
+static const struct Expect kOurs = {"ours", 1, {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
                                     EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_BASE, NULL, NULL}};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
@@ -233,7 +236,7 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     void *const *vtable = *(void *const **)obj;
     CHECK(in_module(h, vtable), "%s: the object's vtable lies inside the plugin", e->label);
     check_rtti(e, h, vtable);
-    if (e->bases[0] == NULL) {
+    if (!e->ours) {
         return;
     }
 
@@ -441,7 +444,7 @@ static void reload_cycles(const struct Expect *e, HMODULE first, const char *pat
         }
         void *get_raster_raw = proc_address(h, "RPIMGetRasterizer");
         void *is_valid_raw = proc_address(h, "PIMIsValid");
-        if (e->bases[0] != NULL && get_raster_raw && is_valid_raw) {
+        if (e->ours && get_raster_raw && is_valid_raw) {
             PimGetRasterizer get_rasterizer;
             PimIsValid is_valid;
             memcpy(&get_rasterizer, &get_raster_raw, sizeof get_rasterizer);
