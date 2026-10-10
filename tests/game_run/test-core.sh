@@ -121,6 +121,91 @@ rmdir "$LOCK"
 check "release leaves a lock that is no longer ours" test -d "$LOCK"
 rm -rf "$LOCK"
 
+# Several processes can wait for the same dead owner's lock.  The interleavings below are forced with gr_lock_hook (the
+# library's test seam): a process stops at a named point and goes on when the test creates a file, so nothing relies on timing.
+dead_pid() { bash -c 'echo $$'; }
+LOCKS_DIR="$(dirname "$LOCK")"
+make_stale_lock() {
+  rm -rf "$LOCK" "$LOCKS_DIR"/game-run.*
+  mkdir -p "$LOCK"
+  printf 'pid=%s\nlstart=x\ntool=dead\n' "$(dead_pid)" >"$LOCK/owner"
+}
+# R2 judges the dead owner and stops there; R1 takes the lock over meanwhile; then R2 goes on
+cat >"$W/proc-r2.sh" <<'R2'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"; GR_TOOL=r2
+gr_lock_hook() {
+  [ "$1" = judged-dead ] || return 0
+  : >"$W/r2.judged"
+  local i=0
+  while [ ! -e "$W/r2.go" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+}
+gr_lock_acquire 2 >"$W/r2.out" 2>&1
+echo $? >"$W/r2.rc"
+echo "$GR_HAVE_LOCK" >"$W/r2.have"
+R2
+cat >"$W/proc-r1.sh" <<'R1'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"; GR_TOOL=r1
+gr_lock_acquire 5 >"$W/r1.out" 2>&1
+echo $? >"$W/r1.rc"
+cp "$GAME_RUN_LOCK/owner" "$W/r1.token"
+: >"$W/r1.held"
+exec sleep 60
+R1
+rm -f "$W"/r1.* "$W"/r2.*
+make_stale_lock
+start_job bash "$W/proc-r2.sh"
+r2=$!
+wait_for 100 test -e "$W/r2.judged"
+start_job bash "$W/proc-r1.sh"
+r1=$!
+wait_for 100 test -e "$W/r1.held"
+: >"$W/r2.go"
+wait_for 100 test -e "$W/r2.rc"
+check_eq "two waiters judged the same dead owner: the first one took the lock over" "0" "$(cat "$W/r1.rc" 2>/dev/null)"
+check_eq "... the second, who judged it before and acted after, did not (it gave up: 2)" "2" "$(cat "$W/r2.rc" 2>/dev/null)"
+check_eq "... and does not believe it holds the lock" "0" "$(cat "$W/r2.have" 2>/dev/null)"
+check "... the live lock still carries the first one's token, untouched" cmp -s "$W/r1.token" "$LOCK/owner"
+check_eq "... and nothing but the token is in the lock directory" "owner" "$(ls -A "$LOCK" | tr '\n' ' ' | sed 's/ $//')"
+check "... the second one's output says the owner is alive" grep -q "held by a live run" "$W/r2.out"
+kill -KILL "$r1" 2>/dev/null
+wait "$r1" "$r2" 2>/dev/null
+rm -rf "$LOCK"
+
+# a process killed at the last instant before its claim is visible must not leave a lock that nobody reclaims
+cat >"$W/proc-r3.sh" <<'R3'
+. "$TOOL_DIR/lib.sh"; . "$W/config.sh"; GR_TOOL=r3
+gr_lock_hook() {
+  [ "$1" = pre-token ] || return 0
+  : >"$W/r3.at"
+  local i=0
+  while [ ! -e "$W/r3.go" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+}
+gr_lock_acquire 2 >"$W/r3.out" 2>&1
+R3
+rm -rf "$LOCK" "$LOCKS_DIR"/game-run.* "$W"/r3.*
+start_job bash "$W/proc-r3.sh"
+r3=$!
+wait_for 100 test -e "$W/r3.at"
+kill -KILL "$r3" 2>/dev/null
+wait "$r3" 2>/dev/null
+check "a process killed before its token is visible leaves no lock behind" test ! -e "$LOCK"
+( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; gr_lock_acquire 1 >"$W/after-kill.out" 2>&1; echo $? >"$W/rc"; gr_lock_release >/dev/null 2>&1 )
+check_eq "... so the next run takes the lock at once (not 'held by no owner token')" "0" "$(cat "$W/rc")"
+check_eq "... and the dead process's private staging directory is swept" "0" "$(ls -d "$LOCKS_DIR"/game-run.new.* 2>/dev/null | wc -l | tr -d ' ')"
+
+# a reclaim that was cut off after it moved the dead token aside leaves the claim file: the lock is still reclaimable
+rm -rf "$LOCK" "$LOCKS_DIR"/game-run.*
+mkdir -p "$LOCK"
+printf 'pid=%s\nlstart=x\ntool=dead\n' "$(dead_pid)" >"$LOCK/owner.claim.999.1"
+( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; gr_lock_acquire 2 >"$W/heal.out" 2>&1; echo $? >"$W/rc"; gr_lock_release >/dev/null 2>&1 )
+check_eq "a lock whose dead token was moved aside by a cut-off reclaim is reclaimed" "0" "$(cat "$W/rc")"
+rm -rf "$LOCK"
+mkdir -p "$LOCK"
+printf 'pid=%s\nlstart=%s\ntool=live\n' "$$" "$(gr_proc_lstart $$)" >"$LOCK/owner.claim.999.1"
+( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; gr_lock_acquire 1 >"$W/nobody.out" 2>&1; echo $? >"$W/rc" )
+check_eq "... but a claim file with a live owner's token is respected" "2" "$(cat "$W/rc")"
+rm -rf "$LOCK"
+
 # ---- 4. signal-safe teardown, launcher as a background job --------------------------------------------------------------
 cat >"$W/stub-launcher.sh" <<'STUB'
 #!/bin/bash

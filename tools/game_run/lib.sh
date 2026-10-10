@@ -116,6 +116,10 @@ gr_stop_game() {
 GR_HAVE_LOCK=0
 GR_OWNER_PID=$$
 
+# Test seam, inert here: a test redefines it after sourcing to stop a process at a named point of the lock protocol
+# (judged-dead, pre-token), so that an interleaving of two processes can be forced without sleeps.
+gr_lock_hook() { :; }
+
 gr_proc_lstart() { LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
 
 gr_lock_write_owner() {
@@ -160,6 +164,7 @@ gr_lock_acquire() {
   mkdir -p "$(dirname "$GAME_RUN_LOCK")"
   while :; do
     if mkdir "$GAME_RUN_LOCK" 2>/dev/null; then
+      gr_lock_hook pre-token
       gr_lock_write_owner
       GR_HAVE_LOCK=1
       GR_OWNER_PID=$$
@@ -168,6 +173,7 @@ gr_lock_acquire() {
     fi
     state="$(gr_lock_owner_state)"
     if [ "$state" = dead ]; then
+      gr_lock_hook judged-dead
       gr_log "RECLAIMING STALE LOCK $GAME_RUN_LOCK: its owner is dead ($(gr_lock_describe_owner)); the run that held it did not clean up, so the game directory may need a recovery (see GAME_RUN_STATE)"
       stale="$GAME_RUN_LOCK.stale.$$.$(date +%s)"
       if mv "$GAME_RUN_LOCK" "$stale" 2>/dev/null; then
