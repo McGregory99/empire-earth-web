@@ -323,6 +323,9 @@ gr_lock_release() {
 # ---- signal-safe teardown ---------------------------------------------------------------------------------------------
 
 GR_CLEANUP_FN=""
+# A driver that still has to read back what the teardown restored sets this to 1 so that gr_teardown keeps the lock a little
+# longer.  The exit path never keeps it (gr_on_exit): once the process is leaving, nothing is left to read back.
+GR_KEEP_LOCK=0
 
 # Install the traps.  <cleanup function> undoes the run and returns non-zero when something is left behind.  A signal
 # makes the shell exit with 128+n; the EXIT trap then runs the cleanup with signals ignored, so a second Ctrl-C (or a
@@ -340,6 +343,7 @@ gr_on_exit() {
   local rc=$? crc=0
   trap '' INT TERM HUP QUIT
   trap - EXIT
+  GR_KEEP_LOCK=0
   if [ -n "$GR_CLEANUP_FN" ]; then
     "$GR_CLEANUP_FN" || crc=$?
   fi
@@ -371,9 +375,12 @@ gr_run_launcher() {
 
 # Kill what is left of the launcher: its process group (the launcher, its watchers, a `wine start` client).  The game
 # itself is not in the group; it belongs to the prefix's wineserver and is stopped with gr_stop_game.
+# The child makes the group as its first act, a moment after the fork: until then there is no group to signal, only the child,
+# which must be stopped before it starts anything.  So the child is signalled first, then the group (which may exist by now).
 gr_kill_launcher() {
   local pgid="$GR_LAUNCHER_PGID" i
   [ -n "$pgid" ] || return 0
+  [ -n "$GR_LAUNCHER_PID" ] && kill -TERM "$GR_LAUNCHER_PID" 2>/dev/null
   if kill -0 -- "-$pgid" 2>/dev/null; then
     kill -TERM -- "-$pgid" 2>/dev/null
     for i in 1 2 3 4 5 6 7 8 9 10; do

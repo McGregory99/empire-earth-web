@@ -277,6 +277,6 @@ gr_teardown() {
     gr_state_finish
   fi
   # a driver that still has to read back what it restored may keep the lock a little longer (GR_KEEP_LOCK=1)
-  [ "${GR_KEEP_LOCK:-0}" -eq 1 ] || gr_lock_release
+  [ "$GR_KEEP_LOCK" -eq 1 ] || gr_lock_release
   return 0
 }
