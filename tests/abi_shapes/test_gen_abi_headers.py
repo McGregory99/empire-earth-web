@@ -167,6 +167,14 @@ class ResolveInterface(unittest.TestCase):
         self.assertEqual((resolved.first_slot, resolved.slot_count, [s.index for s in resolved.slots]), (2, 3, [2]))
         self.assertEqual(resolved.slots[0].method.name, "C")
 
+    def test_an_extension_may_not_overload_a_method_of_its_parent(self):
+        parent = interface(SPEC, [(PURE, "(not exported)")],
+                           {"DXGadget": [(1, "void DXGadget::A(int)")], "DXGadget2": [(2, "void DXGadget2::A(int)")]})
+        ext = gen.InterfaceSpec("GadgetAbi", None, "Gadget", ("DXGadget",))
+        tables = gen.parse_vtables(vtable_text("DXGadget", [(1, "void DXGadget::A(int)"), (2, "void DXGadget::A(float)")]))
+        with self.assertRaisesRegex(gen.GenError, "GadgetAbi.*A.*overloads"):
+            gen.resolve_interface(ext, {}, tables, {}, parent)
+
 
 if __name__ == "__main__":
     unittest.main()
