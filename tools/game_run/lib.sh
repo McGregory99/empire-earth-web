@@ -112,9 +112,20 @@ gr_stop_game() {
 }
 
 # ---- the game-run lock ------------------------------------------------------------------------------------------------
+#
+# The lock is a directory at one fixed path holding the owner token (owner: pid, process start time, tool, time).  Two rules
+# keep it sound when several runs start, die and reclaim at the same moment:
+#   - a lock appears with its token already inside: the token is written in a private directory next to the lock and the whole
+#     directory is renamed into place (rename(2) fails if the lock exists and is not empty, and a lock with a token never is),
+#     so a run killed at any point leaves either nothing or a complete lock, never one that no one can judge;
+#   - a dead owner's lock is taken over in place, never removed: the dead token is renamed to a name of our own (exactly one
+#     claimant can do that), compared with what was judged, and our token is linked in (a hard link never replaces a token).
+#     The directory stays, with something in it, from the judgement to the end, so nothing can slip in between.
+# A lock without any token (a foreign agent's bare `mkdir`) is never judged: it is waited for until the time runs out.
 
 GR_HAVE_LOCK=0
 GR_OWNER_PID=$$
+GR_LOCK_SEQ=0
 
 # Test seam, inert here: a test redefines it after sourcing to stop a process at a named point of the lock protocol
 # (judged-dead, pre-token), so that an interleaving of two processes can be forced without sleeps.
@@ -122,23 +133,20 @@ gr_lock_hook() { :; }
 
 gr_proc_lstart() { LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
 
-gr_lock_write_owner() {
-  {
-    echo "pid=$$"
-    echo "lstart=$(gr_proc_lstart $$)"
-    echo "tool=$GR_TOOL"
-    echo "time=$(date '+%F %T')"
-  } >"$GAME_RUN_LOCK/owner"
+# This process's owner token, on stdout.
+gr_lock_token() {
+  echo "pid=$$"
+  echo "lstart=$(gr_proc_lstart $$)"
+  echo "tool=$GR_TOOL"
+  echo "time=$(date '+%F %T')"
 }
 
-# alive | dead | unknown, for the lock that is on disk now.  "dead" only when the owner is provably gone: its pid is
-# not in the process table, or the pid now belongs to a process that started at another time.  A lock without a token
-# (made by an agent that does not write one) is never judged.
-gr_lock_owner_state() {
-  local f="$GAME_RUN_LOCK/owner" pid lstart now
-  [ -f "$f" ] || { echo unknown; return 0; }
-  pid="$(sed -n 's/^pid=//p' "$f" | head -1)"
-  lstart="$(sed -n 's/^lstart=//p' "$f" | head -1)"
+# <token text>: alive | dead | unknown.  "dead" only when the owner is provably gone: its pid is not in the process table, or
+# the pid now belongs to a process that started at another time.  Text without a pid is never judged.
+gr_token_state() {
+  local pid lstart now
+  pid="$(printf '%s\n' "$1" | sed -n 's/^pid=//p' | head -1)"
+  lstart="$(printf '%s\n' "$1" | sed -n 's/^lstart=//p' | head -1)"
   case "$pid" in '' | *[!0-9]*) echo unknown; return 0 ;; esac
   if ! kill -0 "$pid" 2>/dev/null; then
     # kill -0 also fails for a live process of another user: ask the process table
@@ -149,37 +157,132 @@ gr_lock_owner_state() {
   if [ -n "$lstart" ] && [ -n "$now" ] && [ "$now" != "$lstart" ]; then echo dead; else echo alive; fi
 }
 
-gr_lock_describe_owner() {
+# The file that holds the owner's token: owner, or, while a reclaim is under way (or was cut off), the claim file it moved it to.
+gr_lock_token_file() {
+  local f
   if [ -f "$GAME_RUN_LOCK/owner" ]; then
-    tr '\n' ' ' <"$GAME_RUN_LOCK/owner"
+    echo "$GAME_RUN_LOCK/owner"
+    return 0
+  fi
+  for f in "$GAME_RUN_LOCK"/owner.claim.*; do
+    if [ -f "$f" ]; then
+      echo "$f"
+      return 0
+    fi
+  done
+  return 1
+}
+
+gr_lock_describe_owner() {
+  local f
+  if f="$(gr_lock_token_file)"; then
+    tr '\n' ' ' <"$f"
   else
     printf 'no owner token (made by an agent that does not write one)'
   fi
 }
 
-# Take the lock: wait while a live owner holds it, reclaim it only when the owner is provably dead.
-# Returns 0 (held), 2 (still held by someone else after the wait).
+# Build our lock privately: <dir> holding our token.  0 only if the token was written completely.
+gr_lock_stage() {
+  rm -rf "$1"
+  mkdir "$1" 2>/dev/null || return 1
+  gr_lock_token >"$1/owner" 2>/dev/null && [ -s "$1/owner" ] || {
+    rm -rf "$1"
+    return 1
+  }
+}
+
+# Private staging directories of processes that died before they could publish or remove them.
+gr_lock_sweep() {
+  local d
+  for d in "$GAME_RUN_LOCK".new.*; do
+    [ -f "$d/owner" ] || continue
+    [ "$(gr_token_state "$(cat "$d/owner" 2>/dev/null)")" = dead ] && rm -rf "$d"
+  done
+  return 0
+}
+
+# Create the lock with our token in it.  0: it is ours.  1: there is a lock already.  2: it cannot be made.
+gr_lock_create() {
+  local stage="$GAME_RUN_LOCK.new.$$.$GR_LOCK_SEQ"
+  [ -e "$GAME_RUN_LOCK" ] && return 1
+  gr_lock_stage "$stage" || return 2
+  gr_lock_hook pre-token
+  # rename(2) fails over a lock with a token (never empty) but would replace an EMPTY directory, such as a foreign agent's bare
+  # `mkdir` lock.  The test above and the rename are not one step, so such a lock made in these few microseconds is lost;
+  # accepted, since no tool of this repository makes one, and the alternative (mkdir, then the token) is the tokenless window.
+  if [ ! -e "$GAME_RUN_LOCK" ] && perl -e 'rename($ARGV[0], $ARGV[1]) or exit 1' "$stage" "$GAME_RUN_LOCK" 2>/dev/null; then
+    return 0
+  fi
+  rm -rf "$stage"
+  [ -e "$GAME_RUN_LOCK" ] && return 1
+  return 2
+}
+
+# Take over the lock of an owner that was judged dead: <token file> and <its text>, as they were when it was judged.  The lock
+# may have changed hands since (reclaimed by another waiter, released, taken by a live run), so nothing is done on the strength
+# of the judgement: what we move is compared with it, and anything else is put back.  0: the lock is ours.
+gr_lock_reclaim() {
+  local tok="$1" judged="$2" claim stage moved
+  claim="$GAME_RUN_LOCK/owner.claim.$$.$GR_LOCK_SEQ"
+  stage="$GAME_RUN_LOCK.new.$$.$GR_LOCK_SEQ"
+  mv "$tok" "$claim" 2>/dev/null || return 1 # another claimant was first, or the lock is gone
+  [ -f "$claim" ] || return 1                # ... or took the claim file we were healing from
+  moved="$(cat "$claim" 2>/dev/null)"
+  if [ "$moved" != "$judged" ] || [ "$(gr_token_state "$moved")" != dead ]; then
+    gr_log "the game-run lock changed hands while it was being reclaimed (it now holds: $(printf '%s' "$moved" | tr '\n' ' ')); putting its token back"
+    if ln "$claim" "$tok" 2>/dev/null; then
+      rm -f "$claim"
+    else
+      gr_log "WARNING: could not put the token back; it is kept as $claim"
+    fi
+    return 1
+  fi
+  gr_log "RECLAIMING STALE LOCK $GAME_RUN_LOCK: its owner is dead ($(printf '%s' "$judged" | tr '\n' ' ')); the run that held it did not clean up, so the game directory may need a recovery (see GAME_RUN_STATE)"
+  if gr_lock_stage "$stage" && ln "$stage/owner" "$GAME_RUN_LOCK/owner" 2>/dev/null; then
+    rm -rf "$stage"
+    rm -f "$claim"
+    return 0
+  fi
+  rm -rf "$stage"
+  # somebody linked their token first: the claim file is only a copy of the dead one; otherwise it stays, and keeps the lock reclaimable
+  [ -f "$GAME_RUN_LOCK/owner" ] && rm -f "$claim"
+  return 1
+}
+
+# Take the lock: wait while a live owner holds it, take it over only when the owner is provably dead.
+# Returns 0 (held), 1 (cannot be made), 2 (still held by someone else after the wait).
 gr_lock_acquire() {
-  local wait="${1:-$GR_LOCK_WAIT}" began=$SECONDS state stale announced=0
-  mkdir -p "$(dirname "$GAME_RUN_LOCK")"
+  local wait="${1:-$GR_LOCK_WAIT}" began=$SECONDS tok text state rc announced=0
+  mkdir -p "$(dirname "$GAME_RUN_LOCK")" || return 1
+  gr_lock_sweep
   while :; do
-    if mkdir "$GAME_RUN_LOCK" 2>/dev/null; then
-      gr_lock_hook pre-token
-      gr_lock_write_owner
+    GR_LOCK_SEQ=$((GR_LOCK_SEQ + 1))
+    gr_lock_create
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
       GR_HAVE_LOCK=1
       GR_OWNER_PID=$$
       gr_log "took the game-run lock $GAME_RUN_LOCK"
       return 0
     fi
-    state="$(gr_lock_owner_state)"
+    if [ "$rc" -eq 2 ]; then
+      gr_log "FAIL: cannot create the game-run lock $GAME_RUN_LOCK"
+      return 1
+    fi
+    state=unknown
+    if tok="$(gr_lock_token_file)"; then
+      text="$(cat "$tok" 2>/dev/null)"
+      state="$(gr_token_state "$text")"
+    fi
     if [ "$state" = dead ]; then
       gr_lock_hook judged-dead
-      gr_log "RECLAIMING STALE LOCK $GAME_RUN_LOCK: its owner is dead ($(gr_lock_describe_owner)); the run that held it did not clean up, so the game directory may need a recovery (see GAME_RUN_STATE)"
-      stale="$GAME_RUN_LOCK.stale.$$.$(date +%s)"
-      if mv "$GAME_RUN_LOCK" "$stale" 2>/dev/null; then
-        rm -rf "$stale"
+      if gr_lock_reclaim "$tok" "$text"; then
+        GR_HAVE_LOCK=1
+        GR_OWNER_PID=$$
+        gr_log "took the game-run lock $GAME_RUN_LOCK over from the dead run"
+        return 0
       fi
-      continue
     fi
     if [ $((SECONDS - began)) -ge "$wait" ]; then
       gr_log "the game-run lock $GAME_RUN_LOCK is held by a live run ($(gr_lock_describe_owner)); gave up after ${wait}s"
