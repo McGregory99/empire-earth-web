@@ -8,8 +8,8 @@ world_make
 trap 'world_clean' EXIT
 export W TOOL_DIR
 DRIVER="$(cd "$HERE/../dx7_rasterizer" && pwd)/game_check.sh"
-if ! grep -q 'gr_test_hook' "$DRIVER"; then
-  echo "refusing to run: $DRIVER does not load GR_TEST_CONFIG, so it would touch the real game"
+if ! grep -q 'gr_test_hook "\$TEST_CONFIG"' "$DRIVER"; then
+  echo "refusing to run: $DRIVER does not load --test-config, so it would touch the real game"
   exit 2
 fi
 . "$TOOL_DIR/lib.sh"
@@ -18,7 +18,6 @@ world_assert_isolated
 STATE="$GAME_RUN_STATE"
 DLL=EEWebRasterizer.dll
 printf 'OUR DLL' >"$W/$DLL"
-export GR_TEST_CONFIG="$W/config.sh"
 
 # what the wine +loaddll/+snoop log of a good run says (the checks of game_check.sh parse it)
 cat >"$W/launch-log-template" <<'LOG'
@@ -47,7 +46,7 @@ fresh() {
 }
 same_game() { gr_manifest "$W_GAME" "$W/manifest.now" && cmp -s "$W/manifest.expected" "$W/manifest.now"; }
 dead() { ! kill -0 "$1" 2>/dev/null; }
-run_driver() { bash "$DRIVER" "$W/$DLL" "$DLL"; }
+run_driver() { bash "$DRIVER" --test-config "$W/config.sh" "$W/$DLL" "$DLL"; }
 
 # ---- 1. a good run ----------------------------------------------------------------------------------------------------------
 fresh
@@ -134,7 +133,7 @@ check "... lock and state are gone" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
 # ---- 5. signals ---------------------------------------------------------------------------------------------------------------------------
 fresh
 touch "$W/launcher-hang"
-start_job bash "$DRIVER" "$W/$DLL" "$DLL"
+start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/$DLL" "$DLL"
 drv=$!
 wait_for 100 test -s "$W/launcher-child.pid"
 kill -TERM "$drv"
@@ -149,7 +148,7 @@ check "... lock and state are gone" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
 # a signal while the driver reads back what it restored (it keeps the lock for that): the lock must not leak
 fresh
 touch "$W/readback-hang"
-start_job bash "$DRIVER" "$W/$DLL" "$DLL"
+start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/$DLL" "$DLL"
 drv=$!
 wait_for 100 test -e "$W/readback.ready"
 kill -TERM "$drv"

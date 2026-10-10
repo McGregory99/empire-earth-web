@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Capture a normalized ddraw trace of the ORIGINAL renderer plugin from startup to the main menu, in the real game.
 #
-#   game-trace.sh <path-to-proxy-ddraw.dll> [--gate]
+#   game-trace.sh [--test-config <file>] <path-to-proxy-ddraw.dll> [--gate]
 #
 # One run: take the game-run lock, refuse if anything of an earlier run is left over or if the game (or Art of Conquest) is
 # running, snapshot the game directory (verified against its sha256 manifest), launch through the unmodified 00xJS launcher
@@ -14,7 +14,13 @@
 set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-PROXY="$(cd "$(dirname "${1:?usage: game-trace.sh <proxy ddraw.dll> [--gate]}")" && pwd)/$(basename "$1")"
+# --test-config <file>: the fake world of tests/game_run (the only way anything but the real installation is used)
+TEST_CONFIG=""
+if [ "${1:-}" = --test-config ]; then
+  TEST_CONFIG="${2:?usage: game-trace.sh [--test-config <file>] <proxy ddraw.dll> [--gate]}"
+  shift 2
+fi
+PROXY="$(cd "$(dirname "${1:?usage: game-trace.sh [--test-config <file>] <proxy ddraw.dll> [--gate]}")" && pwd)/$(basename "$1")"
 MODE="${2:-single}"
 
 # shellcheck source=../../game_run/lib.sh
@@ -25,7 +31,7 @@ OUT="$HERE/build/game-trace"
 PRESENTS="${DDT_PRESENTS:-60}" # the menu changes by wall clock after ~110 frames (README, "Determinism")
 CAPTURE_WAIT="${DDT_CAPTURE_WAIT:-420}"
 LAUNCH_LIMIT=900
-gr_test_hook
+gr_test_hook "$TEST_CONFIG"
 gr_sanitize_env
 
 mkdir -p "$OUT"

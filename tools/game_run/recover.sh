@@ -7,8 +7,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib.sh
-. "$HERE/lib.sh"
-gr_test_hook
+. "$HERE/lib.sh" # the defaults only: no test config, no environment (the tests run it with HOME in a fake world)
 GR_TOOL=recover
 gr_sanitize_env
 

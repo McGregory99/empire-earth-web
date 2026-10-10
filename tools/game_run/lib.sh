@@ -1,5 +1,5 @@
-# Shared library of the scripts that run the real game on this Mac (tests/dx7_rasterizer/game_check.sh and
-# tools/ddraw_trace/scripts/game-trace.sh).  bash 3.2 compatible (the macOS /bin/bash).
+# Shared library of the scripts that run the real game on this Mac: tests/dx7_rasterizer/game_check.sh and
+# tools/ddraw_trace/scripts/game-trace.sh.  bash 3.2 compatible (the macOS /bin/bash).
 #
 # The game copy, its Wine prefix and the 00xJS launcher are shared by every agent, so every run follows one protocol:
 #   - the game-run lock, a directory at one fixed path, with an owner token (pid and start time) inside;
@@ -7,12 +7,18 @@
 #   - on any exit path, including signals: stop what we started, put every file back, release the lock;
 #   - if that cannot be done, keep the lock and the snapshot, say how to recover and exit non-zero.
 #
-# This file holds the configuration, the lock, game detection, the signal-safe teardown and the launcher job.  The
-# snapshot and restore of the game directory are in snapshot.sh, the Wine wrapper in wrapper.sh (sourced below).
+# A driver sources this file, which sources the two others at its end:
+#   lib.sh       the configuration, game detection, the lock, the traps (gr_install_traps) and the launcher job;
+#   snapshot.sh  the state directory, the verified snapshot and the exact restore of the game directory, and the teardown that
+#                ties it all together (gr_teardown);
+#   wrapper.sh   the Wine wrapper that lets game-trace.sh put its DLL in place at the moment the game starts, and the
+#                launcher.log check for the version.dll shim (game_check.sh uses only the check).
+# recover.sh is a script of its own, not sourced: it finishes the restore of a run that died.
 #
-# Everything is a plain variable with a fixed default.  Nothing is read from the caller's environment: a test sets the
-# variables after sourcing (tests/game_run/world.sh), a driver may load such overrides from GR_TEST_CONFIG
-# (gr_test_hook), and an ambient EMPIRE_EARTH_*, EE_*, WINE* or RE_DIR changes nothing.
+# Everything is a plain variable with a fixed default.  Nothing is read from the caller's environment: an ambient
+# EMPIRE_EARTH_*, EE_*, WINE*, RE_DIR, GR_TOOL, GR_KEEP_LOCK or GR_TEST_CONFIG changes nothing.  A test replaces defaults only by
+# naming a file to gr_test_hook (the drivers' --test-config option, tests/game_run/world.sh writes the file); recover.sh has no
+# such option and always runs on the defaults, which follow $HOME.
 
 GR_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -31,7 +37,7 @@ GR_MIN_RSS_KB=1024  # the launcher's own threshold (lib.sh game_pids): smaller i
 GR_LOCK_WAIT=3600   # seconds to wait for another agent's run
 GR_LOCK_POLL=10
 GR_STOP_WAIT=60     # seconds to wait for the game to disappear after wineserver -k (twice)
-GR_TOOL="${GR_TOOL:-game-run}"
+GR_TOOL=game-run
 GR_LOG_FILE=""
 
 gr_log() {
@@ -42,17 +48,19 @@ gr_log() {
   return 0
 }
 
-# Tests (and only tests) override the fixed defaults above through a file named by GR_TEST_CONFIG.
+# <config file>: a test (and only a test) replaces the fixed defaults above by sourcing a file it names; the drivers call this
+# with their --test-config argument, so that a config is loaded only when somebody asked for it, never from the environment.
+# Without a file nothing happens.
 gr_test_hook() {
-  [ -n "${GR_TEST_CONFIG:-}" ] || return 0
-  if [ ! -f "$GR_TEST_CONFIG" ]; then
+  [ -n "${1:-}" ] || return 0
+  if [ ! -f "$1" ]; then
     # A test asked for a fake world that is not there (removed, mistyped): going on would run against the real installation.
-    gr_log "FAIL: GR_TEST_CONFIG=$GR_TEST_CONFIG does not exist; refusing to run against the real game"
+    gr_log "FAIL: test config $1 does not exist; refusing to run against the real game"
     exit 2
   fi
   # shellcheck source=/dev/null
-  . "$GR_TEST_CONFIG"
-  gr_log "TEST CONFIG ACTIVE: paths come from $GR_TEST_CONFIG, not from the real installation"
+  . "$1"
+  gr_log "TEST CONFIG ACTIVE: paths come from $1, not from the real installation"
   return 0
 }
 

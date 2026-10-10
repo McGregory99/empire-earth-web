@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Automated in-game check of the clang-built rasterizer plugin (task P2.1).  No user involvement.
 #
-#   game_check.sh <path to EEWebRasterizer.dll> <file name to install it under>
+#   game_check.sh [--test-config <file>] <path to EEWebRasterizer.dll> <file name to install it under>
 #
 # It drops the DLL next to the real game in the Wine game copy, starts the game through the
 # project's launcher until its first frame, and reads the Wine log (+loaddll, +snoop) to prove:
@@ -18,8 +18,14 @@
 # shared library tools/game_run/lib.sh, also used by the trace driver; tests/game_run/ tests it against a fake world.
 set -u -o pipefail
 
-DLL_SRC=${1:?usage: game_check.sh <dll> <file name>}
-DLL_NAME=${2:?usage: game_check.sh <dll> <file name>}
+# --test-config <file>: the fake world of tests/game_run (the only way anything but the real installation is used)
+TEST_CONFIG=""
+if [ "${1:-}" = --test-config ]; then
+  TEST_CONFIG="${2:?usage: game_check.sh [--test-config <file>] <dll> <file name>}"
+  shift 2
+fi
+DLL_SRC=${1:?usage: game_check.sh [--test-config <file>] <dll> <file name>}
+DLL_NAME=${2:?usage: game_check.sh [--test-config <file>] <dll> <file name>}
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../../tools/game_run/lib.sh
@@ -28,7 +34,7 @@ GR_TOOL=game-check
 
 OUT=${GAME_CHECK_OUT:-build/game-check-rasterizer}
 LAUNCH_LIMIT=900
-gr_test_hook
+gr_test_hook "$TEST_CONFIG"
 gr_sanitize_env
 
 SNOOP_KEY='HKCU\Software\Wine\Debug'

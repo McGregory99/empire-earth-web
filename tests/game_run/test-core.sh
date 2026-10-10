@@ -78,7 +78,7 @@ fi
 LOCK="$GAME_RUN_LOCK"
 GR_TOOL=test
 
-( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; gr_lock_acquire 1 >/dev/null 2>&1; echo $? >"$W/rc"; cat "$LOCK/owner" >"$W/owner.copy"; gr_lock_release >/dev/null 2>&1 )
+( . "$TOOL_DIR/lib.sh"; . "$W/config.sh"; GR_TOOL=test; gr_lock_acquire 1 >/dev/null 2>&1; echo $? >"$W/rc"; cat "$LOCK/owner" >"$W/owner.copy"; gr_lock_release >/dev/null 2>&1 )
 check_eq "a free lock is taken" "0" "$(cat "$W/rc")"
 check "the owner token holds pid, start time and tool" grep -q '^pid=[0-9]*$' "$W/owner.copy"
 check "... and the start time" grep -q '^lstart=.' "$W/owner.copy"

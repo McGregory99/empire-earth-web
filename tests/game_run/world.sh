@@ -171,7 +171,7 @@ exit 0
 LAUNCH
   chmod +x "$W_LAUNCHER/scripts/launch.sh"
 
-  # the overrides a driver applies after sourcing the library (GR_TEST_CONFIG)
+  # the overrides a driver applies after sourcing the library (its --test-config argument)
   cat >"$W/config.sh" <<CONF
 GAME_RUN_LOCK="$W_HOME/Games/EmpireEarth-re/locks/game-run"
 GAME_RUN_STATE="$W_HOME/Games/EmpireEarth-re/game-run-state"

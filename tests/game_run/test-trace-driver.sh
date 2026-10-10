@@ -8,10 +8,10 @@ world_make
 trap 'world_clean' EXIT
 export W TOOL_DIR
 DRIVER="$(cd "$HERE/../../tools/ddraw_trace/scripts" && pwd)/game-trace.sh"
-# These tests run the driver against a fake world through GR_TEST_CONFIG.  A driver that does not load that file would
+# These tests run the driver against a fake world through --test-config.  A driver that does not load that file would
 # run against the REAL game, lock and launcher: refuse before starting anything.
-if ! grep -q 'gr_test_hook' "$DRIVER"; then
-  echo "refusing to run: $DRIVER does not load GR_TEST_CONFIG, so it would touch the real game"
+if ! grep -q 'gr_test_hook "\$TEST_CONFIG"' "$DRIVER"; then
+  echo "refusing to run: $DRIVER does not load --test-config, so it would touch the real game"
   exit 2
 fi
 . "$TOOL_DIR/lib.sh"
@@ -19,7 +19,6 @@ fi
 world_assert_isolated
 STATE="$GAME_RUN_STATE"
 printf 'PROXY' >"$W/proxy.dll"
-export GR_TEST_CONFIG="$W/config.sh"
 
 fresh() {
   rm -rf "$STATE" "$GAME_RUN_LOCK" "$W/out" "$W/refuse-stop" "$W/launcher-hang" "$W/launcher-late-start" "$W/launcher-fail-before-game" \
@@ -32,7 +31,7 @@ fresh() {
 }
 same_game() { gr_manifest "$W_GAME" "$W/manifest.now" && cmp -s "$W/manifest.expected" "$W/manifest.now"; }
 dead() { ! kill -0 "$1" 2>/dev/null; }
-run_driver() { bash "$DRIVER" "$W/proxy.dll" "$@"; }
+run_driver() { bash "$DRIVER" --test-config "$W/config.sh" "$W/proxy.dll" "$@"; }
 
 # ---- 1. a complete run ----------------------------------------------------------------------------------------------------
 fresh
@@ -116,7 +115,7 @@ check "... lock and state are gone" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
 # ---- 6. signals -------------------------------------------------------------------------------------------------------------------------------
 fresh
 touch "$W/launcher-hang"
-start_job bash "$DRIVER" "$W/proxy.dll"
+start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/proxy.dll"
 drv=$!
 wait_for 100 test -s "$W/launcher-child.pid"
 kill -TERM "$drv"
@@ -130,7 +129,7 @@ check "... the lock and the state are gone" test ! -e "$GAME_RUN_LOCK" -a ! -e "
 
 fresh
 touch "$W/launcher-hang"
-start_job bash "$DRIVER" "$W/proxy.dll"
+start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/proxy.dll"
 drv=$!
 wait_for 100 test -s "$W/launcher-child.pid"
 kill -HUP "$drv"
@@ -141,7 +140,7 @@ check "... restored" same_game
 # ---- 7. an orphaned launcher after a killed driver ---------------------------------------------------------------------------------------------
 fresh
 echo 4 >"$W/launcher-late-start"      # the launcher asks for the game 4 s after it started
-start_job bash "$DRIVER" "$W/proxy.dll"
+start_job bash "$DRIVER" --test-config "$W/config.sh" "$W/proxy.dll"
 drv=$!
 wait_for 100 test -s "$W/launch.log"
 sleep 0.5
