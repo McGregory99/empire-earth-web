@@ -11,6 +11,8 @@
 # path: a run that dies leaves it behind and the next run, of any tool, refuses to start (gr_check_leftovers) until
 # recover.sh has restored it.
 
+# Per run, and reset at both ends of a run (gr_state_begin / gr_state_finish) and by every take: a process that runs the protocol
+# twice (game-trace.sh --gate) must not carry the first run's verdict into the second.
 GR_STATE_OPEN=0
 GR_SNAPSHOT_OK=0
 
@@ -78,8 +80,14 @@ gr_assert_config() {
   return 1
 }
 
+# What a run that ended before its snapshot was verified says: the game directory was never touched, so there is nothing to restore.
+gr_log_never_touched() {
+  gr_log "${1:+$1: }the run ended before the snapshot was complete, so the game directory was never touched; nothing to restore"
+}
+
 # Create the state directory.  Fails if one exists: that is the leftover of a run that did not finish.
 gr_state_begin() {
+  GR_SNAPSHOT_OK=0
   if [ -e "$GAME_RUN_STATE" ]; then
     gr_log "leftover: $GAME_RUN_STATE exists (a run did not finish restoring the game directory); not starting"
     return 1
@@ -100,6 +108,7 @@ gr_state_begin() {
 # does not match the manifest: the caller must not start the game then.
 gr_snapshot_take() {
   local s="$GAME_RUN_STATE"
+  GR_SNAPSHOT_OK=0
   rm -f "$s/snapshot.verified" # a marker left by an earlier take must not vouch for this one
   gr_manifest "$GR_GAME" "$s/manifest.before" && gr_dirlist "$GR_GAME" "$s/dirs.before" || {
     gr_log "FAIL: cannot take the manifest of $GR_GAME"
@@ -137,7 +146,7 @@ gr_snapshot_take() {
 gr_restore() {
   local s="$GAME_RUN_STATE" snap="$GAME_RUN_STATE/snapshot" fail=0 line want got path src
   if [ ! -f "$s/snapshot.verified" ]; then
-    gr_log "no verified snapshot in $s: the run ended before the snapshot was complete, so the game directory was never touched; nothing to restore"
+    gr_log_never_touched "no verified snapshot in $s"
     return 0
   fi
   [ -s "$s/manifest.before" ] && [ -f "$s/dirs.before" ] || {
@@ -223,6 +232,7 @@ gr_run_undo() {
 gr_state_finish() {
   rm -rf "$GAME_RUN_STATE"
   GR_STATE_OPEN=0
+  GR_SNAPSHOT_OK=0
 }
 
 gr_print_recovery() {
@@ -244,7 +254,7 @@ gr_teardown() {
   gr_kill_launcher
   if [ "$GR_STATE_OPEN" -eq 1 ] && [ "$GR_SNAPSHOT_OK" -eq 0 ]; then
     # interrupted (or refused) before a verified snapshot existed: the game directory was never touched
-    gr_log "no verified snapshot: the run ended before the snapshot was complete, so the game directory was never touched; nothing to restore"
+    gr_log_never_touched "no verified snapshot"
     gr_state_finish
   fi
   if [ "$GR_STATE_OPEN" -eq 1 ]; then
