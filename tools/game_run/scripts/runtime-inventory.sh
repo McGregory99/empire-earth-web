@@ -57,6 +57,7 @@ CLOSE_CC=i686-w64-mingw32-gcc
 CLOSE_EXE=""
 DESKTOP_NAME=EmpireEarth
 WINEDEBUG_SPEC='-all,+err,+fixme,+relay,+loaddll,+tid,+timestamp,+dsound,+dinput,+winmm,+mci,+ole'
+WINEDEBUG_TIMERS='-all,+err,+relay,+loaddll,+tid,+timestamp' # the timers profile: nothing but the call rates
 GR_LOCK_WAIT=1200 # another agent's run: wait up to 20 minutes, never break its lock
 gr_test_hook "$TEST_CONFIG"
 gr_sanitize_env
@@ -70,6 +71,7 @@ case "$PROFILE" in
   broad | timers) ;;
   *) echo "unknown profile '$PROFILE' (use broad or timers)" >&2; exit 2 ;;
 esac
+[ "$PROFILE" = timers ] && WINEDEBUG_SPEC="$WINEDEBUG_TIMERS"
 case "$TAG" in */* | "" | .*) echo "bad tag '$TAG'" >&2; exit 2 ;; esac
 if [ -e "$RUN_DIR" ]; then
   echo "$RUN_DIR already exists; choose another --tag" >&2
