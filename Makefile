@@ -275,7 +275,7 @@ $(LAYOUT_BUILD):
 	mkdir -p "$@"
 
 $(LAYOUT_ORACLE): $(LAYOUT_ORACLE_SRC) tests/layouts/oracle.h src/engine_abi/ge_layouts.h | $(LAYOUT_BUILD)
-	$(CC) $(CFLAGS) -I tests/layouts -o $@ $(LAYOUT_ORACLE_SRC)
+	$(CC) $(CFLAGS) -Wno-cast-function-type -I tests/layouts -o $@ $(LAYOUT_ORACLE_SRC)
 
 check-layouts: SHELL := /bin/bash
 check-layouts: $(LAYOUT_ORACLE)

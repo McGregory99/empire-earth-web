@@ -60,8 +60,9 @@ static void bounding_box_and_plane(void)
     GE3DPointLayout lo = {1.0f, 2.0f, 3.0f};
     GE3DPointLayout hi = {4.0f, 5.0f, 6.0f};
     memset(&b, 0, sizeof(b));
-    ((fn_v_p)oracle_export("?SetBottomLeftFront@GEBoundingBox@@QAEXABVGE3DPoint@@@Z"))(&b, &lo);
+    /* Both setters recompute the extents; set the far corner first so that neither call reorders the corners. */
     ((fn_v_p)oracle_export("?SetTopRightBack@GEBoundingBox@@QAEXABVGE3DPoint@@@Z"))(&b, &hi);
+    ((fn_v_p)oracle_export("?SetBottomLeftFront@GEBoundingBox@@QAEXABVGE3DPoint@@@Z"))(&b, &lo);
     CHECK(b.bottomLeftFront.x == 1.0f && b.bottomLeftFront.z == 3.0f, "GEBoundingBox::SetBottomLeftFront writes the corner at 0x0");
     CHECK(b.topRightBack.x == 4.0f && b.topRightBack.z == 6.0f, "GEBoundingBox::SetTopRightBack writes the corner at 0xc");
     b.width = 7.0f;
