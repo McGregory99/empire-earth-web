@@ -308,3 +308,39 @@ RegCreateKeyExA 7, RegOpenKeyExA 443 (225 of them `RegOpenKeyEx(HKCU, NULL)`), R
 
 ## Next step
 Phase 2: P2.0-P2.2, P2.3a, P2.4a, P2.R1, P2.R2 done and reviewed. Code reimplemented so far is still ~1% of the original (TCP plugin + null renderer); effort ~5% (mostly reusable verification infrastructure). Pending user decision (asked 2026-10-11; its Win32 sizing is now measured, see "Runtime Win32 inventory (emulation route)"): whether to evaluate the shortcut route (run the original x86 exe + LLE in the browser via emulation or static recompilation to WASM, replacing only the renderer with WebGL and the transport with WebRTC) before continuing with P2.4-P2.6. Either way P2.5 (engine class layouts) stays useful. Agent models by role (user, 2026-10-09): code sonnet, exploration haiku, decisions/verification/judges opus.
+
+## Emulation spike: Boxedwine
+Spike of 2026-10-15 (about 2 h, time-boxed) on whether Boxedwine can be the base of the "emulation route". Verdict: **not viable as a base for the browser port as shipped**; native run did not get past engine init, and the web build has no Direct3D/OpenGL. Evidence and artifacts stay outside the repo (`~/Games/tools/boxedwine/`, logs in `logs/`); the game was run from a copy of the innoextract tree, never from the live install or the Wine prefix.
+
+### What was tried
+- Boxedwine **26R1** (official release 26R1.0, 2026-04-22): `Boxedwine26R1Mac.zip` (universal x86_64+arm64; sha256 `47e46f24...ec5f`) and `Boxedwine26R1Web.zip` (sha256 `ebc634e9...2945`) from github.com/danoon2/Boxedwine/releases. Guest file systems from boxedwine.org: TinyCore15 + Wine 11.0 (`8cb66981...8820`) and Wine 6.0 (`ef1aa2e7...efe`).
+- The Mac app is App-Sandboxed, so it cannot read paths outside its container (`Could not load zip file`). Workaround: a local ad-hoc re-signed copy without the sandbox entitlement (JIT entitlements kept).
+- Container: Wine 11 root with the game copy mounted as `D:` (`-mount_drive`), the GOG `ddraw.dll` wrapper renamed away, registry `Rasterizer Name`=`Direct3D Hardware TnL` written inside Boxedwine's own registry. Same with the Wine 6.0 root. `-resolution 1024x768 -nosound`.
+
+### Native results (Apple Silicon, arm64 JIT)
+| step | result |
+|---|---|
+| Boxedwine + Wine prefix start | works: Wine 11 boots, window opens, about 3 s to Wine desktop, ~110 MB RSS idle |
+| game start | `Empire Earth.exe` loads, "Loading Game Window" splash is drawn (blue window + gold frame) |
+| intro / main menu / skirmish | **not reached** |
+| renderer (TnL and non-TnL plugin) | `DX7HRTnLDisplay.dll` and `DX7HRDisplay.dll` both load; Wine's wined3d then fails: `err:d3d:wined3d_adapter_init_gl_caps Received a NULL GL_RENDERER` / `Failed to initialize GL caps` (Wine 11 and Wine 6.0), and on Wine 11 `Failed to load libEGL.so.1`. Boxedwine's guest OpenGL (via host GL/OSMesa) gives wined3d no usable context |
+| crash | right after all plugins are loaded (`TCP Protocol.dll`) a null `std::vector` read in `Low-Level Engine.dll` RVA 0x6fe8 (`vec[idx]` on an empty global at preferred address 0x1010b10c) -> `Unhandled page fault on read access to 00000000`; the process then hangs in the Wine debugger path (needed `kill -9`). Most likely consequence of the display adapter list being empty after the D3D init failure; not proven |
+| FPS / CPU | not measurable (no rendering). Splash phase: 5-10 % CPU of one core, 115-815 MB RSS |
+
+An earlier crash at the same address was a spike mistake, not an emulator fault: the game uses `GetCurrentDirectoryA` and Boxedwine's `-w` does not set the Windows cwd, so it scanned `C:\*.dll` for plugins and found none. A `.bat` doing `cd /d D:\EE` fixed that; the D3D failure above is what remains. DirectInput (builtin DINPUT) and Miles/Bink DLLs loaded without error up to the crash; DirectSound, DirectMusic and Bink playback were not exercised.
+Alternatives tried (limit of two): Wine 6.0 file system (same result), non-TnL plugin (same).
+
+### Browser results
+- Not run in a browser. The official web build's own readme (`Boxedwine26R1Web.zip`/`readme.txt`) states: "OpenGL and Direct3D are not supported in the Web/Emscripten build because they can not currently be converted to WebGL"; only DirectDraw (2D) is included. Empire Earth's renderer is Direct3D 7 through wined3d, so it cannot draw anything in this build.
+- Size is not the blocker: the build ships a stripped Wine (`boxedwine.zip`) loaded into the Emscripten FS (multi-threaded variant needs COOP/COEP headers); 163 MB `data.ssa` + exe/DLLs is plausible but unverified.
+
+### Blockers (with evidence)
+1. No D3D/GL in the web build (vendor statement above). Would need a custom wined3d -> WebGL2 path, which is the same renderer work as our own P2.10, plus a guest GL/D3D bridge.
+2. Even natively, the D3D7 path does not initialize (wined3d GL caps failure, logs `logs/t5.out`, `logs/t6.out`), so the 2D/3D engine never gets past init.
+3. Emulation overhead and threads: the game runs 14 game threads, a 310 Hz Miles mixer and a render thread issuing about 100 GDI text calls per frame (section "Runtime Win32 inventory"); with Boxedwine's interpreter/JIT-in-WASM that is unmeasured and risky.
+4. Mac packaging: sandboxed app cannot read arbitrary paths (needs re-signing).
+
+### Recommendation
+- Do **not** adopt Boxedwine as the base for the browser route. It is useful only as a reference for how a Linux/Wine syscall layer and x86 CPU run in WASM; for our case it brings a whole Wine and a guest OS we do not need.
+- Between the options: (a) fork Boxedwine and add a D3D7-to-WebGL2 layer: about 6-10 weeks, high risk (unknown Wine/GL bridge, performance never measured, non-deterministic emulation hurts multiplayer); (b) own x86 emulator or static recompiler to WASM with our own Win32 shim for the ~430 imports measured in the inventory: about 3-5 months, more control and determinism but much more work; (c) continue the reimplementation route (P2.4-P2.10), whose estimate stays ~3-4 weeks to a verified drop-in clone with the WebGL2 backend. Given that every emulation variant still needs the WebGL renderer from P2.10, (c) remains the cheapest path to a browser game; only reopen emulation if the engine reimplementation proves intractable.
+- Not covered: sound/music paths, Bink movies, in-game performance, real browser load test.
