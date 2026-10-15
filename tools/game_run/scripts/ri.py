@@ -55,12 +55,24 @@ EXTRA_BROAD = [
     "kernel32.SetUnhandledExceptionFilter", "kernel32.RaiseException", "kernel32.SuspendThread", "kernel32.ResumeThread",
     "kernel32.SetThreadPriority", "kernel32.SetThreadAffinityMask", "kernel32.SetPriorityClass", "kernel32.SwitchToThread",
     "ole32.CoCreateInstance", "ole32.CoInitializeEx", "ole32.CoGetClassObject", "dsound.*", "dinput.*", "dinput8.*",
-]
+] + ["winmm." + n for n in (
+    "waveOutGetNumDevs", "waveOutGetDevCapsA", "waveOutGetDevCapsW", "waveOutOpen", "waveOutClose", "waveOutPrepareHeader",
+    "waveOutUnprepareHeader", "waveOutWrite", "waveOutPause", "waveOutRestart", "waveOutReset", "waveOutGetPosition",
+    "waveOutGetVolume", "waveOutSetVolume", "waveOutGetID", "waveOutMessage", "waveOutBreakLoop", "waveOutGetPitch",
+    "waveOutSetPitch", "waveOutGetPlaybackRate", "waveOutSetPlaybackRate", "waveInGetNumDevs", "waveInOpen", "waveInClose",
+    "waveInStart", "waveInStop", "waveInReset", "waveInAddBuffer", "waveInPrepareHeader", "waveInUnprepareHeader",
+    "midiOutGetNumDevs", "midiOutGetDevCapsA", "midiOutOpen", "midiOutClose", "midiOutShortMsg", "midiOutLongMsg",
+    "midiOutPrepareHeader", "midiOutUnprepareHeader", "midiOutReset", "midiOutMessage", "midiInGetNumDevs", "midiStreamOpen",
+    "mixerGetNumDevs", "mixerOpen", "mixerClose", "mixerGetID", "mixerGetDevCapsA", "mixerGetLineInfoA", "mixerGetLineControlsA",
+    "mixerGetControlDetailsA", "mixerSetControlDetails", "mixerMessage", "auxGetNumDevs", "auxGetDevCapsA", "auxGetVolume",
+    "auxSetVolume", "auxOutMessage", "mciSendCommandA", "mciSendCommandW", "mciSendStringA", "mciSendStringW", "timeSetEvent",
+    "timeKillEvent", "timeBeginPeriod", "timeEndPeriod", "PlaySoundA", "PlaySoundW", "sndPlaySoundA", "joyGetNumDevs",
+    "joyGetPosEx", "joyGetDevCapsA")]
 EXTRA_TIMERS = ["kernel32.CreateThread", "kernel32.ExitProcess"]
 # callers that are Wine's own plumbing or the graphics translation layers; calls from them are not the game's
 FROM_ADD = [
     "ntdll", "kernelbase", "win32u", "imm32", "shell32", "shlwapi", "ole32", "oleaut32", "combase", "coml2", "rpcrt4", "sechost",
-    "ws2_32", "wsock32", "dsound", "dinput", "dinput8", "mmdevapi", "ucrtbase", "winecoreaudio.drv", "ddraw_eeorig", "ddraw_",
+    "ws2_32", "wsock32", "mmdevapi", "ucrtbase", "winecoreaudio.drv", "ddraw_eeorig", "ddraw_",
     "d3d9", "dxgi", "d3d11", "d3d10core", "wined3d", "winevulkan", "vulkan-1",
 ]
 
@@ -289,6 +301,7 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
 LINE = re.compile(r"^(?:(?P<ts>\d+\.\d+):)?(?P<tid>[0-9a-f]{4,8}):(?P<rest>.*)$")
 CALL = re.compile(r"^Call (?P<dll>[\w\-]+(?:\.drv)?)\.(?P<fn>[^\s(]+)\((?P<args>.*)\) ret=(?P<ret>[0-9a-fA-F]+)$")
 RET = re.compile(r"^Ret  (?P<dll>[\w\-]+(?:\.drv)?)\.(?P<fn>[^\s(]+)\(\) retval=(?P<rv>[0-9a-fA-F]+) ret=(?P<ret>[0-9a-fA-F]+)$")
+WNDPROC = re.compile(r"^Call window proc (?P<proc>[0-9A-Fa-f]+) \(hwnd=[0-9A-Fa-f]+,msg=(?P<msg>\w+),")
 START = re.compile(r"^Starting thread proc (?P<proc>[0-9a-fA-F]+) \(arg=(?P<arg>[0-9a-fA-F]+)\)$")
 LOADED = re.compile(r'Loaded L"(?P<path>.+?)" at (?P<base>[0-9a-fA-F]+): (?P<kind>\w+)')
 UNLOADED = re.compile(r'Unloaded module L"(?P<path>.+?)" : (?P<kind>\w+)')
@@ -469,6 +482,7 @@ class Summarizer:
         self.hooks = Counter()
         self.fpu = Counter()
         self.exits = Counter()
+        self.messages = Counter()
         self.channels = defaultdict(Counter)
         self.windows_other = Counter()
         self.phases = {}
@@ -543,6 +557,11 @@ class Summarizer:
             c = CALL.match(rest)
             if c:
                 self.on_call(tid, ts, c)
+            elif tid in self.game_tids and rest.startswith("Call window proc "):
+                w = WNDPROC.match(rest)
+                if w:
+                    mn, mk = self.mod_name(int(w.group("proc"), 16))
+                    self.messages[(mn, mk, w.group("msg"))] += 1
         elif rest.startswith("Ret  "):
             r = RET.match(rest)
             if r:
@@ -974,12 +993,20 @@ def finish(s):
         tid = tgt["tid"] if isinstance(tgt, dict) else tgt
         if tid in s.threads:
             s.threads[tid]["priorities"].append(prio)
+    distinct = OrderedDict()
+    for m in s.mods:
+        e = distinct.setdefault(m.name.lower(), {"name": m.name, "kind": m.kind, "loads": 0, "bases": [], "size": m.size})
+        e["loads"] += 1
+        if "0x%x" % m.base not in e["bases"]:
+            e["bases"].append("0x%x" % m.base)
+    d_modules_distinct = list(distinct.values())
     th = []
     for tid, t in s.threads.items():
         t = dict(t)
         t["calls"] = sum(s.thread_top[tid].values())
         t["top_calls"] = s.thread_top[tid].most_common(6)
         th.append(t)
+    d["modules_distinct"] = d_modules_distinct
     d["threads"] = th
     ops = Counter()
     for fn, mod, ctid, tgt in s.thread_ops:
@@ -1040,6 +1067,7 @@ def finish(s):
                      "width": k[6], "height": k[7], "caller_module": k[8], "count": n} for k, n in s.windows.items()],
         "hooks": [{"id": k[0], "proc_module": k[1], "caller_module": k[2], "count": n} for k, n in s.hooks.items()],
     }
+    d["messages"] = [{"module": k[0], "kind": k[1], "msg": k[2], "count": n} for k, n in s.messages.most_common()]
     d["fpu"] = [{"args": list(k[0]), "caller_module": k[1], "count": n} for k, n in s.fpu.items()]
     d["channels"] = {c: [[m, n] for m, n in cnt.most_common(60)] for c, cnt in s.channels.items()}
     # per DLL: every traced function with its totals
@@ -1128,14 +1156,16 @@ def render(d):
     o.append(md_table(["op", "key", "value", "ok (error)", "data", "caller", "count"],
                       [[x["op"], x["key"], x["value"] or "", "yes" if x["ok"] else "no (%d)" % x["error"], x["data"] or "", x["caller_module"], x["count"]] for x in d["registry"]]))
     o.append("\n## 5. Modules\n")
-    o.append(md_table(["module", "kind", "base", "size", "loaded at tick", "unloaded"],
-                      [[x["name"], x["kind"], x["base"], x["size"] or "?", x["t"], "yes" if x["unloaded"] else ""] for x in d["modules"]]))
+    o.append(md_table(["module", "kind", "loads", "bases", "size"],
+                      [[x["name"], x["kind"], x["loads"], ", ".join(x["bases"][:3]), x["size"] or "?"] for x in d["modules_distinct"]]))
     o.append("\nLoadLibrary calls:\n\n" + md_table(["path", "fn", "caller", "ok", "count"], [[x["path"], x["fn"], x["caller_module"], x["ok"], x["count"]] for x in d["dynamic"]["loadlibrary"]]))
     o.append("\nGetProcAddress by module:\n\n" + md_table(["module", "found", "missing"], [[k, ", ".join(v["found"]), ", ".join(v["missing"])] for k, v in sorted(d["dynamic"]["getprocaddress"].items())]))
     o.append("\nCOM CLSIDs (+ole channel):\n\n" + md_table(["clsid", "name", "count"], [[x["clsid"], x["name"] or "", x["count"]] for x in d["com"]]))
     o.append("\n## 6. Windows, input, audio\n")
     o.append(md_table(["class", "title", "style", "ex style", "x,y", "size", "caller", "count"],
                       [[x["class"], x["title"], x["style"], x["ex_style"], "%d,%d" % (x["x"], x["y"]), "%dx%d" % (x["width"], x["height"]), x["caller_module"], x["count"]] for x in d["windows"]["created"]]))
+    o.append("\nWindow messages delivered to window procedures, by the module that owns the procedure:\n\n" +
+             md_table(["module", "kind", "message", "count"], [[x["module"], x["kind"], x["msg"], x["count"]] for x in d["messages"][:40]]))
     o.append("\nHooks: " + json.dumps(d["windows"]["hooks"]) + "\n")
     o.append("\nDirectInput: " + json.dumps(d["input"]) + "\n")
     o.append("\nMCI commands: " + json.dumps(d["mci"]) + "\n")
