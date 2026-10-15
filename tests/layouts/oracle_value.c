@@ -19,7 +19,7 @@ static void point2(void)
 {
     GE2DPointLayout p = {0.0f, 0.0f};
     ((fn_v_ff)oracle_export("?SetXY@GE2DPoint@@QAEXMM@Z"))(&p, 3.0f, 5.0f);
-    CHECK(p.x == 3.0f && p.y == 5.0f, "GE2DPoint::SetXY writes x@0x0 and y@0x4");
+    CHECK(FEQ(p.x, 3.0f) && FEQ(p.y, 5.0f), "GE2DPoint::SetXY writes x@0x0 and y@0x4");
     CHECK_F(((fn_f_v)oracle_export("?GetY@GE2DPoint@@QBEMXZ"))(&p), 5.0f, "GE2DPoint::GetY reads y");
 }
 
@@ -27,7 +27,7 @@ static void point3(void)
 {
     GE3DPointLayout p = {0.0f, 0.0f, 0.0f};
     ((fn_v_fff)oracle_export("?SetXYZ@GE3DPoint@@QAEXMMM@Z"))(&p, 1.0f, 2.0f, 3.0f);
-    CHECK(p.x == 1.0f && p.y == 2.0f && p.z == 3.0f, "GE3DPoint::SetXYZ writes x,y,z at 0x0,0x4,0x8");
+    CHECK(FEQ(p.x, 1.0f) && FEQ(p.y, 2.0f) && FEQ(p.z, 3.0f), "GE3DPoint::SetXYZ writes x,y,z at 0x0,0x4,0x8");
     CHECK_F(((fn_f_v)oracle_export("?GetZ@GE3DPoint@@QBEMXZ"))(&p), 3.0f, "GE3DPoint::GetZ reads z");
 
     GEVectorLayout v = {3.0f, 4.0f, 12.0f};
@@ -63,8 +63,8 @@ static void bounding_box_and_plane(void)
     /* Both setters recompute the extents; set the far corner first so that neither call reorders the corners. */
     ((fn_v_p)oracle_export("?SetTopRightBack@GEBoundingBox@@QAEXABVGE3DPoint@@@Z"))(&b, &hi);
     ((fn_v_p)oracle_export("?SetBottomLeftFront@GEBoundingBox@@QAEXABVGE3DPoint@@@Z"))(&b, &lo);
-    CHECK(b.bottomLeftFront.x == 1.0f && b.bottomLeftFront.z == 3.0f, "GEBoundingBox::SetBottomLeftFront writes the corner at 0x0");
-    CHECK(b.topRightBack.x == 4.0f && b.topRightBack.z == 6.0f, "GEBoundingBox::SetTopRightBack writes the corner at 0xc");
+    CHECK(FEQ(b.bottomLeftFront.x, 1.0f) && FEQ(b.bottomLeftFront.z, 3.0f), "GEBoundingBox::SetBottomLeftFront writes the corner at 0x0");
+    CHECK(FEQ(b.topRightBack.x, 4.0f) && FEQ(b.topRightBack.z, 6.0f), "GEBoundingBox::SetTopRightBack writes the corner at 0xc");
     b.width = 7.0f;
     b.height = 8.0f;
     b.depth = 9.0f;
@@ -91,13 +91,13 @@ static void transformation(void)
     /* Row-major 4x4: element (row, col) is m[row * 4 + col]; the translation is the last column. */
     CHECK_F(((fn_f_uu)oracle_export("?GetElement@GETransformation@@QBEMKK@Z"))(&t, 1, 2), t.m[6], "GETransformation::GetElement(row, col) reads m[row * 4 + col]");
     ((fn_v_p)oracle_export("?GetPosition@GETransformation@@QBEXAAVGE3DPoint@@@Z"))(&t, &position);
-    CHECK(position.x == t.m[3] && position.y == t.m[7] && position.z == t.m[11], "GETransformation::GetPosition reads m[3], m[7], m[11] (offsets 0xc, 0x1c, 0x2c)");
+    CHECK(FEQ(position.x, t.m[3]) && FEQ(position.y, t.m[7]) && FEQ(position.z, t.m[11]), "GETransformation::GetPosition reads m[3], m[7], m[11] (offsets 0xc, 0x1c, 0x2c)");
     ((fn_v_pp)oracle_export("?Apply@GETransformation@@QBEXABVGE3DPoint@@AAV2@@Z"))(&t, &in, &out);
-    CHECK(out.x == 1.0f * t.m[0] + 2.0f * t.m[1] + 3.0f * t.m[2] + t.m[3], "GETransformation::Apply: x' = row 0 . (x,y,z,1)");
-    CHECK(out.y == 1.0f * t.m[4] + 2.0f * t.m[5] + 3.0f * t.m[6] + t.m[7], "GETransformation::Apply: y' = row 1 . (x,y,z,1)");
-    CHECK(out.z == 1.0f * t.m[8] + 2.0f * t.m[9] + 3.0f * t.m[10] + t.m[11], "GETransformation::Apply: z' = row 2 . (x,y,z,1)");
+    CHECK_F(out.x, 1.0f * t.m[0] + 2.0f * t.m[1] + 3.0f * t.m[2] + t.m[3], "GETransformation::Apply: x' = row 0 . (x,y,z,1)");
+    CHECK_F(out.y, 1.0f * t.m[4] + 2.0f * t.m[5] + 3.0f * t.m[6] + t.m[7], "GETransformation::Apply: y' = row 1 . (x,y,z,1)");
+    CHECK_F(out.z, 1.0f * t.m[8] + 2.0f * t.m[9] + 3.0f * t.m[10] + t.m[11], "GETransformation::Apply: z' = row 2 . (x,y,z,1)");
     ((fn_v_v)oracle_export("?MakeIdentity@GETransformation@@QAEXXZ"))(&t);
-    CHECK(t.m[0] == 1.0f && t.m[5] == 1.0f && t.m[10] == 1.0f && t.m[15] == 1.0f && t.m[1] == 0.0f && t.m[3] == 0.0f,
+    CHECK(FEQ(t.m[0], 1.0f) && FEQ(t.m[5], 1.0f) && FEQ(t.m[10], 1.0f) && FEQ(t.m[15], 1.0f) && FEQ(t.m[1], 0.0f) && FEQ(t.m[3], 0.0f),
           "GETransformation::MakeIdentity writes all sixteen floats (0x0..0x3c)");
     CHECK(sizeof(t) == 0x40, "GETransformation is a 4x4 float matrix");
 }

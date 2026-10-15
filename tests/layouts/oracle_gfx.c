@@ -113,7 +113,8 @@ static void texture_copy_constructor(void)
     }
     oracle_guard_fill(&dst, sizeof(dst));
     ((fn_p_p)oracle_export("??0GETexture@@QAE@ABV0@@Z"))(&dst, &src);
-    CHECK(memcmp(dst.bytes + 4, src.bytes + 4, sizeof(GETextureLayout) - 4) == 0, "GETexture's copy constructor copies every byte of 0x4..0x6b");
+    CHECK(memcmp(dst.bytes + 4, src.bytes + 4, 5) == 0 && memcmp(dst.bytes + 0xc, src.bytes + 0xc, sizeof(GETextureLayout) - 0xc) == 0,
+          "GETexture's copy constructor copies 0x4..0x8 and 0xc..0x6b (the bytes 0x9..0xb are padding)");
     CHECK(oracle_guard_intact(&dst, sizeof(GETextureLayout), sizeof(dst)), "GETexture's copy constructor stops at 0x6c: the object is 0x6c bytes");
     CHECK(dst.t.vptr == oracle_vftable("GETexture"), "GETexture.vptr (0x0) is the engine's GETexture vftable");
 }
@@ -133,14 +134,14 @@ static void material(void)
     CHECK(oracle_guard_intact(&buf, sizeof(GEMaterialLayout), sizeof(buf)), "GEMaterial's constructor stays inside 0x48 bytes");
     CHECK(m->vptr == oracle_vftable("GEMaterial"), "GEMaterial.vptr (0x0) is the engine's GEMaterial vftable");
     CHECK(m->refCount == 1, "GEMaterial.refCount (0x4) starts at 1");
-    CHECK(m->color.r == 1.0f && m->color.g == 1.0f && m->color.b == 1.0f, "GEMaterial.color (0x18) starts white");
+    CHECK(FEQ(m->color.r, 1.0f) && FEQ(m->color.g, 1.0f) && FEQ(m->color.b, 1.0f), "GEMaterial.color (0x18) starts white");
     CHECK(m->textureCount == 3, "GEMaterial.textureCount (0x28) is the first constructor argument");
     CHECK(m->lodCount == 2, "GEMaterial.lodCount (0x40) is the second constructor argument");
-    CHECK(m->opacity == 1.0f, "GEMaterial.opacity (0x44) starts at 1.0");
+    CHECK(FEQ(m->opacity, 1.0f), "GEMaterial.opacity (0x44) starts at 1.0");
     CHECK(m->textures && m->polygonStart && m->polygonLength, "GEMaterial's constructor allocates the arrays at 0x24, 0x2c and 0x30");
 
     ((fn_v_p)oracle_export("?SetColor@GEMaterial@@QAEXABVGEColor@@@Z"))(m, &color);
-    CHECK(m->color.r == 0.1f && m->color.b == 0.3f, "GEMaterial::SetColor writes color (0x18)");
+    CHECK(FEQ(m->color.r, 0.1f) && FEQ(m->color.b, 0.3f), "GEMaterial::SetColor writes color (0x18)");
     ((fn_v_f)oracle_export("?SetOpacity@GEMaterial@@QAEXM@Z"))(m, 0.5f);
     CHECK_F(m->opacity, 0.5f, "GEMaterial::SetOpacity writes opacity (0x44)");
     ((fn_v_u)oracle_export("?SetTextureIndex@GEMaterial@@QAEXK@Z"))(m, 9);
@@ -166,6 +167,7 @@ static void material(void)
     ((fn_p_p)oracle_export("??0GEMaterial@@QAE@ABV0@@Z"))(&copy, m);
     CHECK(oracle_guard_intact(&copy, sizeof(GEMaterialLayout), sizeof(copy)), "GEMaterial's copy constructor stops at 0x48: the object is 0x48 bytes");
     CHECK(memcmp(copy.bytes + 0x18, buf.bytes + 0x18, 0x48 - 0x18) == 0, "GEMaterial's copy constructor copies every byte of 0x18..0x47");
+    m->textures[1] = 0; /* the destructor dereferences every texture it holds */
     ((fn_v_v)oracle_export("??1GEMaterial@@MAE@XZ"))(m);
 }
 
@@ -184,35 +186,35 @@ static void light(void)
     oracle_guard_fill(&buf, sizeof(buf));
     ((fn_v_v)oracle_export("??0GELight@@QAE@XZ"))(l);
     CHECK(oracle_guard_intact(&buf, sizeof(GELightLayout), sizeof(buf)), "GELight's constructor stays inside 0x74 bytes (it has no vptr)");
-    CHECK(l->color.r == 1.0f && l->computedColor.r == 1.0f && l->intensity == 1.0f && l->attenuation0 == 1.0f,
+    CHECK(FEQ(l->color.r, 1.0f) && FEQ(l->computedColor.r, 1.0f) && FEQ(l->intensity, 1.0f) && FEQ(l->attenuation0, 1.0f),
           "GELight starts white at intensity 1 with attenuation 1,0,0");
 
     ((fn_v_f)oracle_export("?SetIntensity@GELight@@QAEXM@Z"))(l, 0.5f);
     ((fn_v_p)oracle_export("?SetColor@GELight@@QAEXABVGEColor@@@Z"))(l, &color);
-    CHECK(l->intensity == 0.5f, "GELight::SetIntensity writes intensity (0x54)");
+    CHECK(FEQ(l->intensity, 0.5f), "GELight::SetIntensity writes intensity (0x54)");
     CHECK(l->color.r > l->color.b && l->color.b > 0.0f, "GELight::SetColor writes the normalized color (0x0)");
-    CHECK(l->computedColor.r == 0.5f && l->computedColor.g == 0.25f && l->computedColor.b == 0.125f,
+    CHECK(FEQ(l->computedColor.r, 0.5f) && FEQ(l->computedColor.g, 0.25f) && FEQ(l->computedColor.b, 0.125f),
           "GELight::SetColor writes computedColor = the given color * intensity (0xc)");
     CHECK(((fn_p_v)oracle_export("?GetColor@GELight@@QBEABVGEColor@@XZ"))(l) == (void *)&l->color, "GELight.color is at 0x0");
     CHECK(((fn_p_v)oracle_export("?GetComputedColor@GELight@@QBEABVGEColor@@XZ"))(l) == (void *)&l->computedColor, "GELight.computedColor is at 0xc");
 
     ((fn_v_p)oracle_export("?SetLocation@GELight@@QAEXABVGE3DPoint@@@Z"))(l, &location);
-    CHECK(l->location.x == 1.0f && l->location.z == 3.0f, "GELight::SetLocation writes location (0x18)");
+    CHECK(FEQ(l->location.x, 1.0f) && FEQ(l->location.z, 3.0f), "GELight::SetLocation writes location (0x18)");
     CHECK(((fn_p_v)oracle_export("?GetLocation@GELight@@QBEABVGE3DPoint@@XZ"))(l) == (void *)&l->location, "GELight.location is at 0x18");
     CHECK(((fn_p_v)oracle_export("?GetModelSpaceLocation@GELight@@QAEAAVGE3DPoint@@XZ"))(l) == (void *)&l->modelSpaceLocation, "GELight.modelSpaceLocation is at 0x24");
     ((fn_v_p)oracle_export("?SetDirection@GELight@@QAEXABVGEVector@@@Z"))(l, &direction);
-    CHECK(l->direction.z == 1.0f, "GELight::SetDirection writes direction (0x30)");
+    CHECK(l->direction.z < -0.999f && l->direction.z > -1.001f, "GELight::SetDirection writes the negated, normalized direction (0x30)");
     CHECK(((fn_p_v)oracle_export("?GetDirection@GELight@@QBEABVGEVector@@XZ"))(l) == (void *)&l->direction, "GELight.direction is at 0x30");
     CHECK(((fn_p_v)oracle_export("?GetModelSpaceDirection@GELight@@QAEAAVGEVector@@XZ"))(l) == (void *)&l->modelSpaceDirection, "GELight.modelSpaceDirection is at 0x3c");
 
     ((fn_v_f)oracle_export("?SetAttenuation1@GELight@@QAEXM@Z"))(l, 0.125f);
     ((fn_v_f)oracle_export("?SetAttenuation2@GELight@@QAEXM@Z"))(l, 0.0625f);
-    CHECK(l->attenuation1 == 0.125f && l->attenuation2 == 0.0625f, "GELight::SetAttenuation1/2 write attenuation1 (0x4c) and attenuation2 (0x50)");
+    CHECK(FEQ(l->attenuation1, 0.125f) && FEQ(l->attenuation2, 0.0625f), "GELight::SetAttenuation1/2 write attenuation1 (0x4c) and attenuation2 (0x50)");
     CHECK_F(((fn_f_v)oracle_export("?GetAttenuation0@GELight@@QBEMXZ"))(l), l->attenuation0, "GELight.attenuation0 is at 0x48");
     ((fn_v_f)oracle_export("?SetRange@GELight@@QAEXM@Z"))(l, 4.0f);
-    CHECK(l->range == 4.0f && l->rangeInverse == 0.25f && l->rangeSquared == 16.0f, "GELight::SetRange writes range (0x58), rangeInverse (0x5c), rangeSquared (0x60)");
+    CHECK(FEQ(l->range, 4.0f) && FEQ(l->rangeInverse, 0.25f) && FEQ(l->rangeSquared, 16.0f), "GELight::SetRange writes range (0x58), rangeInverse (0x5c), rangeSquared (0x60)");
     ((fn_v_f)oracle_export("?SetModelSpaceRange@GELight@@QAEXM@Z"))(l, 2.0f);
-    CHECK(l->modelSpaceRange == 2.0f && l->modelSpaceRangeInverse == 0.5f && l->modelSpaceRangeSquared == 4.0f,
+    CHECK(FEQ(l->modelSpaceRange, 2.0f) && FEQ(l->modelSpaceRangeInverse, 0.5f) && FEQ(l->modelSpaceRangeSquared, 4.0f),
           "GELight::SetModelSpaceRange writes 0x64, 0x68, 0x6c");
     ((fn_v_u)oracle_export("?SetStyle@GELight@@QAEXK@Z"))(l, 2);
     CHECK(l->style == 2, "GELight::SetStyle writes style (0x70)");

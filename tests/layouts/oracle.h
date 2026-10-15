@@ -16,6 +16,7 @@
 #include "ge_layouts.h"
 
 #include <stdint.h>
+#include <string.h>
 #include <windows.h>
 
 #define TC __attribute__((thiscall))
@@ -51,8 +52,24 @@ FARPROC oracle_export(const char *decorated_name);
 
 void oracle_check(int ok, const char *fmt, ...);
 
+/*
+ * Float comparison by bit pattern.  Comparing floats with == is unreliable here: the test runs the x87
+ * code of the toolchain under Wine on Rosetta 2, where `x == 0.1f` is false even for a float compared
+ * with itself.  Exact bit equality is what the layouts need anyway (an engine accessor must hand back
+ * the very float the layout stored).
+ */
+static inline int oracle_same_float(float a, float b)
+{
+    volatile float va = a, vb = b;
+    uint32_t x, y;
+    memcpy(&x, (const void *)&va, 4);
+    memcpy(&y, (const void *)&vb, 4);
+    return x == y;
+}
+#define FEQ(got, want) oracle_same_float((got), (want))
+
 #define CHECK(cond, ...) oracle_check((cond) ? 1 : 0, __VA_ARGS__)
-#define CHECK_F(got, want, ...) oracle_check((got) == (want), __VA_ARGS__)
+#define CHECK_F(got, want, ...) oracle_check(FEQ((got), (want)), __VA_ARGS__)
 
 /* One group of checks per source file, run in this order by oracle_main.c. */
 void oracle_value_types(void);

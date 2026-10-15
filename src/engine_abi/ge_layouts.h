@@ -47,6 +47,10 @@
 EEL_CHECK(pointers_are_32_bit, sizeof(void *) == 4);
 EEL_CHECK(float_is_32_bit, sizeof(float) == 4);
 
+struct GEScreenLayout;
+struct GESurfaceLayout;
+struct GETextureManagerLayout;
+
 /* @class GEColor size=0xc size-confidence=confirmed | three floats; GELight.color and GEMaterial.color sit 0xc apart from their neighbours */
 typedef struct GEColorLayout {
     float r; /* @0x0 confirmed | P Clear, DrawTerrainHighlight; L GEColor::GetRed */
@@ -141,4 +145,145 @@ EEL_AT(GEBoundingBoxLayout, width, 0x18);
 EEL_AT(GEBoundingBoxLayout, height, 0x1c);
 EEL_AT(GEBoundingBoxLayout, depth, 0x20);
 EEL_SIZE(GEBoundingBoxLayout, 0x24);
+
+/* @class GETStage size=0x20 size-confidence=confirmed | GETexture::GetStage returns this + 0xc; the copy constructor copies this block as eight dwords */
+typedef struct GETStageLayout {
+    struct GETextureLayout *texture; /* @0x0 confirmed | P SetTexture reads the stage texture; L GETexture::SetStageTexture, GetStageTexture */
+    uint32_t colorMode; /* @0x4 confirmed | P SetTexture: 0..3 maps to a D3D color op; L GETexture::SetStageColorMode */
+    uint32_t alphaMode; /* @0x8 confirmed | P SetTexture: 0..3 maps to a D3D alpha op; L GETexture::SetStageAlphaMode */
+    uint32_t addressingMode; /* @0xc confirmed | P SetTexture; L GETexture::SetStageTextureAddressingMode */
+    uint32_t minFilter; /* @0x10 confirmed | P SetTexture; L GETexture::SetStageMinFilterMode */
+    uint32_t magFilter; /* @0x14 confirmed | P SetTexture; L GETexture::SetStageMagFilterMode */
+    uint32_t mipFilter; /* @0x18 confirmed | P SetTexture; L GETexture::SetStageMipFilterMode */
+    float mipMapBias; /* @0x1c confirmed | P SetTexture; L GETexture::SetStageMipMapBias */
+} GETStageLayout;
+EEL_AT(GETStageLayout, texture, 0x0);
+EEL_AT(GETStageLayout, colorMode, 0x4);
+EEL_AT(GETStageLayout, alphaMode, 0x8);
+EEL_AT(GETStageLayout, addressingMode, 0xc);
+EEL_AT(GETStageLayout, minFilter, 0x10);
+EEL_AT(GETStageLayout, magFilter, 0x14);
+EEL_AT(GETStageLayout, mipFilter, 0x18);
+EEL_AT(GETStageLayout, mipMapBias, 0x1c);
+EEL_SIZE(GETStageLayout, 0x20);
+
+/* @class GETexture size=0x6c size-confidence=confirmed | operator new(0x6c) in GETextureManager::LoadTexture and MakeTexture; the copy constructor ends at 0x6b */
+typedef struct GETextureLayout {
+    void * vptr; /* @0x0 lle-only | L ctor sets the GETexture vftable (UReferenceCounter derived) */
+    uint32_t refCount; /* @0x4 confirmed | P SetTexture increments it; L GETexture::Dereference, ctor starts it at 1 */
+    uint8_t refFlag; /* @0x8 lle-only | L ctor clears it; UReferenceCounter flag byte */
+    uint8_t pad_0x9[0x3];
+    struct GETStageLayout stage; /* @0xc confirmed | P SetTexture reads the eight stage words; L GETexture::GetStage */
+    struct GETextureCoordinateLayout frameTopLeft; /* @0x2c confirmed | P Draw(GEBitmap) reads u,v; L GETexture::GetFrameTopLeftCorner */
+    struct GEScreenLayout *screen; /* @0x34 lle-only | L GETexture::GetScreen, Recreate */
+    struct GESurfaceLayout *surface; /* @0x38 confirmed | P SetTexture reaches the DirectDraw surface through it; L GETexture::GetSurface, GetWidth */
+    struct GETextureLayout *baseTexture; /* @0x3c confirmed | P SetTexture follows stage.texture -> baseTexture -> surface; L GETexture::GetData, GetFrameSurface, GetIsCompressed; ctor points it at the texture itself */
+    struct GETextureLayout **frames; /* @0x40 lle-only | L GETexture::GetFrameTexture */
+    struct GETextureManagerLayout *manager; /* @0x44 lle-only | L GETexture::Promote, Dereference */
+    void * userData; /* @0x48 lle-only | L GETexture::GetData, SetData (through baseTexture) */
+    float frameUVSize; /* @0x4c confirmed | P Draw(GEBitmap) scales the corners by it; L GETexture::GetFrameUVSize */
+    uint32_t frameFormat; /* @0x50 lle-only | L GETexture::GetFrameFormat; 0 means one texture per frame, else a single frame */
+    uint32_t frame; /* @0x54 lle-only | L GETexture::GetFrame, SetFrame */
+    uint32_t frameCount; /* @0x58 lle-only | L GETexture::GetFrameCount, GetAllocatedSize */
+    uint32_t framesPerRow; /* @0x5c guess | L GETexture::Load multiplies the frame width by it; meaning inferred */
+    uint32_t mipLevelCount; /* @0x60 lle-only | L GETexture::GetMipLevelCount */
+    uint32_t numMipLevelsToDrop; /* @0x64 lle-only | L GETexture::GetNumMipLevelsToDrop */
+    uint8_t isCompressed; /* @0x68 lle-only | L GETexture::GetIsCompressed (read through baseTexture) */
+    uint8_t isPromoted; /* @0x69 lle-only | L GETexture::GetIsPromoted, SetIsPromoted */
+    uint8_t hasChanged; /* @0x6a confirmed | P SetTexture tests it and clears it; L GETexture::HasChanged, SetHasChanged, ValidateChanges */
+    uint8_t createMIPMaps; /* @0x6b lle-only | L GETexture::GetCreateMIPMaps */
+} GETextureLayout;
+EEL_AT(GETextureLayout, vptr, 0x0);
+EEL_AT(GETextureLayout, refCount, 0x4);
+EEL_AT(GETextureLayout, refFlag, 0x8);
+EEL_AT(GETextureLayout, stage, 0xc);
+EEL_AT(GETextureLayout, frameTopLeft, 0x2c);
+EEL_AT(GETextureLayout, screen, 0x34);
+EEL_AT(GETextureLayout, surface, 0x38);
+EEL_AT(GETextureLayout, baseTexture, 0x3c);
+EEL_AT(GETextureLayout, frames, 0x40);
+EEL_AT(GETextureLayout, manager, 0x44);
+EEL_AT(GETextureLayout, userData, 0x48);
+EEL_AT(GETextureLayout, frameUVSize, 0x4c);
+EEL_AT(GETextureLayout, frameFormat, 0x50);
+EEL_AT(GETextureLayout, frame, 0x54);
+EEL_AT(GETextureLayout, frameCount, 0x58);
+EEL_AT(GETextureLayout, framesPerRow, 0x5c);
+EEL_AT(GETextureLayout, mipLevelCount, 0x60);
+EEL_AT(GETextureLayout, numMipLevelsToDrop, 0x64);
+EEL_AT(GETextureLayout, isCompressed, 0x68);
+EEL_AT(GETextureLayout, isPromoted, 0x69);
+EEL_AT(GETextureLayout, hasChanged, 0x6a);
+EEL_AT(GETextureLayout, createMIPMaps, 0x6b);
+EEL_SIZE(GETextureLayout, 0x6c);
+
+/* @class GEMaterial size=0x48 size-confidence=confirmed | operator new(0x48) in GEModel::AllocateInternalData, ConvertLegacyModel, ComputeLODReduction */
+typedef struct GEMaterialLayout {
+    void * vptr; /* @0x0 lle-only | L ctor sets the GEMaterial vftable (UReferenceCounter derived) */
+    uint32_t refCount; /* @0x4 lle-only | L ctor starts it at 1 */
+    uint8_t name[16]; /* @0x8 lle-only | a UString (16 bytes); L GEMaterial::GetName, SetName */
+    struct GEColorLayout color; /* @0x18 confirmed | P DrawModelHierarchy reads r,g,b into the material; L GEMaterial::GetColor, SetColor */
+    struct GETextureLayout **textures; /* @0x24 confirmed | P DrawModelHierarchy indexes it by screen; L GEMaterial::GetTexture, SetTexture */
+    uint32_t textureCount; /* @0x28 lle-only | L GEMaterial ctor (first argument), ~GEMaterial */
+    uint32_t *polygonStart; /* @0x2c confirmed | P DrawModelHierarchy indexes it by level of detail; L GEMaterial::GetPolygonStartingIndex */
+    uint32_t *polygonLength; /* @0x30 confirmed | P DrawModelHierarchy indexes it by level of detail; L GEMaterial::GetPolygonRangeLength */
+    uint32_t vertexStart; /* @0x34 confirmed | P CopyStdVertices and variants; L GEMaterial::GetVertexStartingIndex */
+    uint32_t vertexLength; /* @0x38 confirmed | P DrawModelHierarchy (vertex count to lock), CopyStdVertices; L GEMaterial::GetVertexRangeLength */
+    uint32_t textureIndex; /* @0x3c lle-only | L GEMaterial::GetTextureIndex, SetTextureIndex */
+    uint32_t lodCount; /* @0x40 lle-only | L GEMaterial::GetLODCount, ctor (second argument) */
+    float opacity; /* @0x44 confirmed | P DrawModelHierarchy multiplies the model opacity by it; L GEMaterial::GetOpacity, SetOpacity */
+} GEMaterialLayout;
+EEL_AT(GEMaterialLayout, vptr, 0x0);
+EEL_AT(GEMaterialLayout, refCount, 0x4);
+EEL_AT(GEMaterialLayout, name, 0x8);
+EEL_AT(GEMaterialLayout, color, 0x18);
+EEL_AT(GEMaterialLayout, textures, 0x24);
+EEL_AT(GEMaterialLayout, textureCount, 0x28);
+EEL_AT(GEMaterialLayout, polygonStart, 0x2c);
+EEL_AT(GEMaterialLayout, polygonLength, 0x30);
+EEL_AT(GEMaterialLayout, vertexStart, 0x34);
+EEL_AT(GEMaterialLayout, vertexLength, 0x38);
+EEL_AT(GEMaterialLayout, textureIndex, 0x3c);
+EEL_AT(GEMaterialLayout, lodCount, 0x40);
+EEL_AT(GEMaterialLayout, opacity, 0x44);
+EEL_SIZE(GEMaterialLayout, 0x48);
+
+/* @class GELight size=0x74 size-confidence=confirmed | copy constructor and operator= copy 0x0..0x73; the class has no vptr */
+typedef struct GELightLayout {
+    struct GEColorLayout color; /* @0x0 lle-only | L GELight::GetColor returns this, SetColor normalizes it */
+    struct GEColorLayout computedColor; /* @0xc confirmed | P UpdateLight reads it as the D3D light color; L GELight::GetComputedColor (given color * intensity) */
+    struct GE3DPointLayout location; /* @0x18 confirmed | P UpdateLight reads the position; L GELight::GetLocation, SetLocation */
+    struct GE3DPointLayout modelSpaceLocation; /* @0x24 lle-only | L GELight::GetModelSpaceLocation */
+    struct GEVectorLayout direction; /* @0x30 confirmed | P UpdateLight negates it into the D3D direction; L GELight::GetDirection; SetDirection stores the negated, normalized argument */
+    struct GEVectorLayout modelSpaceDirection; /* @0x3c lle-only | L GELight::GetModelSpaceDirection */
+    float attenuation0; /* @0x48 confirmed | P UpdateLight; L GELight::GetAttenuation0 */
+    float attenuation1; /* @0x4c confirmed | P UpdateLight; L GELight::GetAttenuation1, SetAttenuation1 */
+    float attenuation2; /* @0x50 confirmed | P UpdateLight; L GELight::GetAttenuation2, SetAttenuation2 */
+    float intensity; /* @0x54 lle-only | L GELight::GetIntensity, SetIntensity */
+    float range; /* @0x58 confirmed | P UpdateLight; L GELight::GetRange, SetRange */
+    float rangeInverse; /* @0x5c lle-only | L GELight::GetRangeInverse */
+    float rangeSquared; /* @0x60 lle-only | L GELight::GetRangeSquared */
+    float modelSpaceRange; /* @0x64 lle-only | L GELight::GetModelSpaceRange */
+    float modelSpaceRangeInverse; /* @0x68 lle-only | L GELight::GetModelSpaceRangeInverse */
+    float modelSpaceRangeSquared; /* @0x6c lle-only | L GELight::GetModelSpaceRangeSquared */
+    uint32_t style; /* @0x70 confirmed | P UpdateLight: non-zero selects D3DLIGHT_DIRECTIONAL (3), zero D3DLIGHT_POINT (1); L GELight::GetStyle, SetStyle */
+} GELightLayout;
+EEL_AT(GELightLayout, color, 0x0);
+EEL_AT(GELightLayout, computedColor, 0xc);
+EEL_AT(GELightLayout, location, 0x18);
+EEL_AT(GELightLayout, modelSpaceLocation, 0x24);
+EEL_AT(GELightLayout, direction, 0x30);
+EEL_AT(GELightLayout, modelSpaceDirection, 0x3c);
+EEL_AT(GELightLayout, attenuation0, 0x48);
+EEL_AT(GELightLayout, attenuation1, 0x4c);
+EEL_AT(GELightLayout, attenuation2, 0x50);
+EEL_AT(GELightLayout, intensity, 0x54);
+EEL_AT(GELightLayout, range, 0x58);
+EEL_AT(GELightLayout, rangeInverse, 0x5c);
+EEL_AT(GELightLayout, rangeSquared, 0x60);
+EEL_AT(GELightLayout, modelSpaceRange, 0x64);
+EEL_AT(GELightLayout, modelSpaceRangeInverse, 0x68);
+EEL_AT(GELightLayout, modelSpaceRangeSquared, 0x6c);
+EEL_AT(GELightLayout, style, 0x70);
+EEL_SIZE(GELightLayout, 0x74);
 #endif
