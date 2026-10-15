@@ -12,3 +12,8 @@ static_assert(sizeof(GETransformationLayout) == 0x40, "GETransformation is a 4x4
 static_assert(sizeof(GETextureCoordinateLayout) == 0x8, "GETextureCoordinate is two floats");
 static_assert(sizeof(GEBoundingBoxLayout) == 0x24, "GEBoundingBox is two corners and three extents");
 static_assert(sizeof(GE3DPlaneLayout) == 0x18, "GE3DPlane is a point and a normal");
+
+static_assert(sizeof(GETextureLayout) == 0x6c, "operator new(0x6c) in GETextureManager::LoadTexture");
+static_assert(sizeof(GETStageLayout) == 0x20, "GETexture::GetStage returns the 8-dword block at 0xc");
+static_assert(sizeof(GEMaterialLayout) == 0x48, "operator new(0x48) in GEModel::AllocateInternalData");
+static_assert(sizeof(GELightLayout) == 0x74, "GELight's copy constructor copies 0x0..0x73");

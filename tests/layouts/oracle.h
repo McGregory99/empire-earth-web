@@ -38,6 +38,10 @@ typedef void (TC *fn_v_u)(void *self, unsigned long a);
 typedef void (TC *fn_v_uu)(void *self, unsigned long a, unsigned long b);
 typedef void (TC *fn_v_pp)(void *self, void *a, void *b);
 typedef void (TC *fn_v_pu)(void *self, const void *a, unsigned long b);
+typedef void (TC *fn_v_fu)(void *self, float a, unsigned long b);
+typedef void *(TC *fn_p_pp)(void *self, void *a, void *b);
+typedef void *(TC *fn_p_uu)(void *self, unsigned long a, unsigned long b);
+typedef void *(TC *fn_p_p)(void *self, const void *a);
 
 extern int g_checks;
 extern int g_failures;
@@ -52,5 +56,13 @@ void oracle_check(int ok, const char *fmt, ...);
 
 /* One group of checks per source file, run in this order by oracle_main.c. */
 void oracle_value_types(void);
+void oracle_texture_material_light(void);
+
+/* The address of an exported data member, e.g. the vftable of a class ("??_7GETexture@@6B@"). */
+const void *oracle_vftable(const char *class_name);
+
+/* Guard bytes: an object buffer that is `size` bytes long inside `total` bytes of 0xA5; the engine must not touch the rest. */
+void oracle_guard_fill(void *buffer, size_t total);
+int oracle_guard_intact(const void *buffer, size_t size, size_t total);
 
 #endif
