@@ -15,7 +15,7 @@
 #   make gen-abi-headers        regenerate src/engine_abi/ge_*.h from the inventories
 #   make test-rasterizer        harness against the original DX7HRTnLDisplay.dll and ours, under Wine
 #   make game-check-rasterizer  automated in-game check (takes the game-run lock, restores the game dir)
-#   make test-game-run          the shared game-run library (tools/game_run) and both drivers, against a fake world
+#   make test-game-run          the shared game-run library (tools/game_run), the three drivers and the runtime-inventory helpers, against a fake world
 #
 # Everything outside the repository (original game binaries, Wine prefix, test
 # beds) is configured by the variables below and never written to the repo.  The
@@ -275,7 +275,7 @@ game-check-rasterizer: $(RAST_DLL)
 
 # Library and drivers against a fake world: fake ps, wine, launcher and game, a game directory with spaces.
 test-game-run:
-	@for t in core snapshot wrapper trace-driver check-driver; do bash tests/game_run/test-$$t.sh || exit 1; done
+	@for t in core snapshot wrapper trace-driver check-driver ri-analyze ri-driver ri-close; do bash tests/game_run/test-$$t.sh || exit 1; done
 
 # Create the Wine prefix the tests run in and make crashes terminate instead of
 # waiting for an interactive debugger.  Safe to repeat.
