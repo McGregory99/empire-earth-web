@@ -13,6 +13,7 @@
 #   make check-abi-rasterizer   exports, ordinals and imports of that DLL
 #   make check-abi-shapes       vtable shapes: the ABI headers generated from the inventories (P2.2)
 #   make gen-abi-headers        regenerate src/engine_abi/ge_*.h from the inventories
+#   make check-layouts          engine class layouts: compile-time asserts + the real engine as oracle, under Wine (P2.5)
 #   make test-rasterizer        harness against the original DX7HRTnLDisplay.dll and ours, under Wine
 #   make game-check-rasterizer  automated in-game check (takes the game-run lock, restores the game dir)
 #   make test-game-run          the shared game-run library (tools/game_run), the three drivers and the runtime-inventory helpers, against a fake world
@@ -69,7 +70,7 @@ PLUGIN_HEADERS := $(wildcard src/plugins/tcp_protocol/*.h) src/engine_abi/low_le
 
 .PHONY: all test golden determinism test-stub check-abi wine-prefix clean testbed-ours testbed-original testbed-stub \
     rasterizer check-abi-rasterizer test-rasterizer game-check-rasterizer testbed-rasterizer test-game-run \
-    check-abi-shapes gen-abi-headers
+    check-abi-shapes gen-abi-headers check-layouts
 
 all: $(PLUGIN) $(STUB) $(HARNESS)
 
@@ -258,6 +259,35 @@ test-rasterizer: check-abi-shapes check-abi-rasterizer testbed-rasterizer
 
 gen-abi-headers:
 	$(ABI_GEN)
+
+# ---- engine class layouts (P2.5) ---------------------------------------------------------------------
+# src/engine_abi/ge_layouts.h states the byte offsets of the engine objects the renderer plugin reads
+# inline.  `make check-layouts` proves them twice: (1) the header compiles as C++ for the plugin target
+# and states what the probe expects, (2) the REAL "Low-Level Engine.dll" is the oracle: tests/layouts/
+# builds objects through the layout structs, lets the engine's own accessors, setters and constructors
+# read and write them, and compares (under Wine, in the private prefix like the other harnesses).
+LAYOUT_BUILD     := $(BUILD)/layouts
+LAYOUT_ORACLE    := $(LAYOUT_BUILD)/layout_oracle.exe
+LAYOUT_ORACLE_SRC := $(wildcard tests/layouts/oracle*.c)
+LAYOUT_TESTBED   := $(TESTBED)/layouts
+
+$(LAYOUT_BUILD):
+	mkdir -p "$@"
+
+$(LAYOUT_ORACLE): $(LAYOUT_ORACLE_SRC) tests/layouts/oracle.h src/engine_abi/ge_layouts.h | $(LAYOUT_BUILD)
+	$(CC) $(CFLAGS) -I tests/layouts -o $@ $(LAYOUT_ORACLE_SRC)
+
+check-layouts: SHELL := /bin/bash
+check-layouts: $(LAYOUT_ORACLE)
+	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -fsyntax-only tests/layouts/probe_layouts.cpp
+	mkdir -p "$(LAYOUT_TESTBED)"
+	cp "$(ENGINE_DLL)" "$(LAYOUT_TESTBED)/Low-Level Engine.dll"
+	cp "$(RUNTIME_DLL)" "$(LAYOUT_TESTBED)/sxlrt233.dll"
+	cp $(LAYOUT_ORACLE) "$(LAYOUT_TESTBED)/layout_oracle.exe"
+	cd "$(LAYOUT_TESTBED)" && perl -e 'alarm shift; exec @ARGV' $(HARNESS_TIMEOUT) "$(WINE)" layout_oracle.exe \
+	    2>/dev/null | tee "$(CURDIR)/$(LAYOUT_BUILD)/oracle.txt"; \
+	    status=$${PIPESTATUS[0]}; test $$status -eq 0 || { echo "FAIL: the layout oracle exited with status $$status"; exit 1; }
+	@echo "PASS: ge_layouts.h states what the real engine does"
 
 check-abi-shapes: $(ABI_HEADERS)
 	python3 -I tests/abi_shapes/test_gen_abi_headers.py
