@@ -461,7 +461,7 @@ class Summarizer:
         self.thread_ops = []
         self.prio_events = []
         self.thread_top = defaultdict(Counter)
-        self.calls = defaultdict(lambda: defaultdict(lambda: {"total": 0, "game": 0, "by_module": Counter(), "phase": defaultdict(Counter)}))
+        self.calls = defaultdict(lambda: defaultdict(lambda: {"total": 0, "game": 0, "by_module": Counter(), "by_kind": Counter(), "phase": defaultdict(Counter)}))
         self.timer_set = Counter()
         self.timer_begin = Counter()
         self.timer_end = Counter()
@@ -655,6 +655,7 @@ class Summarizer:
         e["total"] += 1
         e["by_module"][f.mod[0]] += 1
         e["phase"][self.phase_of(ts)][f.mod[1]] += 1
+        e["by_kind"][f.mod[1]] += 1
         if f.mod[1] == "game":
             e["game"] += 1
         self.thread_top[tid][f.dll + "." + f.fn] += 1
@@ -1084,7 +1085,7 @@ def finish(s):
     d["fpu"] = [{"args": list(k[0]), "caller_module": k[1], "count": n} for k, n in s.fpu.items()]
     d["channels"] = {c: [[m, n] for m, n in cnt.most_common(60)] for c, cnt in s.channels.items()}
     # per DLL: every traced function with its totals
-    d["calls"] = {dll: {fn: {"total": e["total"], "game": e["game"], "by_module": dict(e["by_module"].most_common(5)),
+    d["calls"] = {dll: {fn: {"total": e["total"], "game": e["game"], "by_module": dict(e["by_module"].most_common(5)), "by_kind": dict(e["by_kind"]),
                              "startup": sum(e["phase"].get("startup", Counter()).values()), "idle": sum(e["phase"].get("idle", Counter()).values()),
                              "shutdown": sum(e["phase"].get("shutdown", Counter()).values())}
                         for fn, e in sorted(fns.items())} for dll, fns in sorted(s.calls.items())}
@@ -1092,23 +1093,27 @@ def finish(s):
     usage = OrderedDict()
     called_game = defaultdict(set)
     called_any = defaultdict(set)
+    called_compat = defaultdict(set)  # the 00xJS shim / ddraw proxy forward some of the game's calls (CreateWindowExA, LoadLibraryExA, ...)
     for dll, fns in s.calls.items():
         for fn, e in fns.items():
             called_any[dll].add(fn.lower())
             if e["game"]:
                 called_game[dll].add(fn.lower())
+            elif e["by_kind"].get("compat"):
+                called_compat[dll].add(fn.lower())
     traced = s.lists["traced"]
     for dll, names in s.imports.items():
         imported = [n for n in names if not n.startswith("#")]
         cg = [n for n in imported if any(group_ok(cd, dll) and n.lower() in fs for cd, fs in called_game.items())]
+        cc = [n for n in imported if n not in cg and any(group_ok(cd, dll) and n.lower() in fs for cd, fs in called_compat.items())]
         ca = [n for n in imported if any(group_ok(cd, dll) and n.lower() in fs for cd, fs in called_any.items())]
         tr = set(traced.get(dll, []))
         wild = "*" in tr
         not_traced = [n for n in imported if n not in cg and n.lower() not in tr and not wild]
-        dead = [n for n in imported if n not in cg and n not in not_traced]
+        dead = [n for n in imported if n not in cg and n not in cc and n not in not_traced]
         called_names = {n.lower() for n in imported}
         extra = sorted({fn for cd, fs in called_game.items() if group_ok(cd, dll) for fn in fs if fn not in called_names})
-        usage[dll] = {"imported": len(names), "called_by_game": len(cg), "called_total": len(ca), "dead": dead,
+        usage[dll] = {"imported": len(names), "called_by_game": len(cg), "called_via_compat": cc, "called_total": len(ca), "dead": dead,
                       "not_traced": not_traced, "called_not_imported": extra}
     d["usage"] = usage
     d["include"] = s.lists["include"]
@@ -1189,8 +1194,8 @@ def render(d):
         if c in ("dsound", "dinput", "mci", "winmm", "ole", "fixme", "err"):
             o.append("\nChannel %s (message shape, count):\n\n" % c + md_table(["message", "count"], rows[:25]))
     o.append("\n## 7. Imported versus called\n")
-    o.append(md_table(["DLL", "imported (distinct, all game binaries)", "called by the game", "called by anyone", "dead (traced, never called)", "not traced (hot or timer)", "called but not imported"],
-                      [[k, v["imported"], v["called_by_game"], v["called_total"], len(v["dead"]), len(v["not_traced"]), len(v["called_not_imported"])] for k, v in d["usage"].items()]))
+    o.append(md_table(["DLL", "imported (distinct, all game binaries)", "called by game modules", "called only through the compat shim", "called by anyone", "dead (traced, never called)", "not traced (hot or timer)", "called but not imported"],
+                      [[k, v["imported"], v["called_by_game"], len(v["called_via_compat"]), v["called_total"], len(v["dead"]), len(v["not_traced"]), len(v["called_not_imported"])] for k, v in d["usage"].items()]))
     for k, v in d["usage"].items():
         if v["dead"]:
             o.append("\nDead imports, %s: %s\n" % (k, ", ".join(v["dead"])))

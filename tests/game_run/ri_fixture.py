@@ -134,7 +134,7 @@ def write_world(root):
                           "EnterCriticalSection", "GetLastError", "LoadLibraryA", "GetProcAddress", "FindFirstFileA"]),
         ("advapi32.dll", ["RegOpenKeyExA", "RegQueryValueExA", "RegSetValueExA", "RegCloseKey"]),
         ("wsock32.dll", ["#115", "#23"]),
-        ("user32.dll", ["CreateWindowExA", "PeekMessageA", "SetWindowsHookExA"]),
+        ("user32.dll", ["CreateWindowExA", "PeekMessageA", "SetWindowsHookExA", "GetMessageA"]),
         ("msvcrt.dll", ["fopen", "memcpy", "malloc", "_controlfp"]),
         ("shell32.dll", ["ShellExecuteA"]),
         ("low-level engine.dll", ["?Foo@@YAXXZ"]),
@@ -242,6 +242,7 @@ def write_world(root):
     lines.append(L("0010", "Call window proc 004A0010 (hwnd=00010020,msg=WM_PAINT,wp=00000000,lp=00000000)"))
     lines.append(L("0010", "Call window proc 10007000 (hwnd=00010020,msg=WM_ACTIVATEAPP,wp=00000001,lp=00000000)"))
     lines.append(L("0002", "Call window proc 00006FFFFFF48C70 (hwnd=0000000000010020,msg=WM_NCCREATE,wp=00000000,lp=0031ebb8)"))
+    lines += call("0010", "USER32.GetMessageA", "0012f000,00000000,00000000,00000000", "30000100", "00000001")  # through the 00xJS shim
     lines += call("0010", "wsock32.WSAStartup", "00000101,0012fc00", "004a3000", "00000000")
     lines += call("0010", "msvcrt._controlfp", "00010000,00030000", "004a3100", "0008001f")
     # the window between idle_start and idle_end: 4 QPC calls by LLE, 2 by Wine's winmm (host)
