@@ -236,6 +236,7 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
     wx = WineExports(wine_root)
     imports = static_imports(game_dir, wine_root)
     include = []
+    forwards = {}  # "target dll.target function" (lower case) -> "dll.function" of the import that forwards to it
     traced = defaultdict(set)  # dll -> function names the include list covers (for "not traced")
 
     def add(dll, fn):
@@ -248,6 +249,8 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
             tdll = tdll.lower()
             if tdll.endswith(".dll"):
                 tdll = tdll[:-4]
+            if not tfn.startswith("#"):
+                forwards["%s.%s" % (tdll, tfn.lower())] = "%s.%s" % (dll, fn)
             if not tfn.startswith("#") and not _is_hot(tdll, tfn):
                 include.append("%s.%s" % (tdll, tfn))
 
@@ -296,6 +299,7 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
         "n_include": len(_dedupe(include)),
         "imports": summary,
         "traced": {k: sorted(v) for k, v in traced.items()},
+        "forwards": forwards,
     }
 
 
@@ -1102,6 +1106,12 @@ def finish(s):
             elif e["by_kind"].get("compat"):
                 called_compat[dll].add(fn.lower())
     traced = s.lists["traced"]
+    for target, imp in s.lists["forwards"].items():
+        tdll, tfn = target.split(".", 1)
+        idll, ifn = imp.split(".", 1)
+        for src, dst in ((called_game, called_game), (called_any, called_any), (called_compat, called_compat)):
+            if tfn in src.get(tdll, ()):
+                dst[idll].add(ifn.lower())
     for dll, names in s.imports.items():
         imported = [n for n in names if not n.startswith("#")]
         cg = [n for n in imported if any(group_ok(cd, dll) and n.lower() in fs for cd, fs in called_game.items())]

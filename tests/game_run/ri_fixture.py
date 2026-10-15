@@ -131,7 +131,7 @@ def write_world(root):
     od = OrderedDict
     build_pe(os.path.join(game, "Empire Earth.exe"), od([
         ("kernel32.dll", ["CreateThread", "ResumeThread", "QueryPerformanceCounter", "CreateFileA", "ReadFile", "CloseHandle",
-                          "EnterCriticalSection", "GetLastError", "LoadLibraryA", "GetProcAddress", "FindFirstFileA"]),
+                          "EnterCriticalSection", "GetLastError", "LoadLibraryA", "GetProcAddress", "FindFirstFileA", "InitializeCriticalSection"]),
         ("advapi32.dll", ["RegOpenKeyExA", "RegQueryValueExA", "RegSetValueExA", "RegCloseKey"]),
         ("wsock32.dll", ["#115", "#23"]),
         ("user32.dll", ["CreateWindowExA", "PeekMessageA", "SetWindowsHookExA", "GetMessageA"]),
@@ -159,7 +159,7 @@ def write_world(root):
         ("SetThreadPriority", None), ("CreateFileA", None), ("CreateFileMappingA", None), ("MapViewOfFile", None),
         ("ReadFile", None), ("SetFilePointer", None), ("FindFirstFileA", None), ("CloseHandle", None), ("LoadLibraryA", None),
         ("LoadLibraryExA", None), ("GetProcAddress", None), ("QueryPerformanceCounter", None), ("GetLastError", None),
-        ("EnterCriticalSection", "NTDLL.RtlEnterCriticalSection"), ("ExitProcess", None),
+        ("EnterCriticalSection", "NTDLL.RtlEnterCriticalSection"), ("InitializeCriticalSection", "NTDLL.RtlInitializeCriticalSection"), ("ExitProcess", None),
     ]), image_base=0x7B000000)
     build_pe(os.path.join(wine, "wsock32.dll"), None, od([("WSAStartup", ("#", 115)), ("socket", ("#", 23))]), image_base=0x7B800000)
 
@@ -217,6 +217,7 @@ def write_world(root):
     lines += call("0010", "KERNEL32.FindFirstFileA", '00340550 "C:\\\\GOG Games\\\\Empire Earth Gold Edition\\\\Empire Earth\\\\Data\\\\*.ssa",0012f000', "004a1100", "000000d8")
     lines += call("0010", "msvcrt.fopen", '00340550 "ee.log",00340600 "wb"', "004a1200", "00ab0000")
     lines += call("0010", "KERNEL32.CloseHandle", "000000d0", "10003040", "00000001")
+    lines += call("0010", "ntdll.RtlInitializeCriticalSection", "0012f100", "10003050", "00000000")  # kernel32.InitializeCriticalSection is a forwarder
     # registry: open, read twice through the handle, write, close
     lines += call("0010", "ADVAPI32.RegOpenKeyExA", '80000001,00340550 "Software\\\\SSSI\\\\Empire Earth",00000000,00020019,0012fe40', "10006000", "00000000")
     lines += call("0010", "ADVAPI32.RegQueryValueExA", '000000e0,00340600 "Rasterizer Name",00000000,0012fe44,0012fe50,0012fe48', "10006010", "00000000")
