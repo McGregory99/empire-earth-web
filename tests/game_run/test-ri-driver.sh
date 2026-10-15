@@ -108,6 +108,11 @@ check "its RelayInclude traces the timing functions" grep -q "^reg.RelayInclude=
 check "... and not the registry functions" bash -c "! grep '^reg.RelayInclude=' '$W/reg-at-launch.txt' | grep -q RegOpenKeyExA"
 check "... run.env names the profile" grep -q '^profile=timers' "$W/out/t3/run.env"
 check "... the launcher got the light WINEDEBUG (relay, loaddll, tid, timestamp; no component channels)" bash -c "grep -q 'WINEDEBUG=-all,+err,+relay,+loaddll,+tid,+timestamp ' '$W/launch.log' && ! grep -q '+dinput' '$W/launch.log'"
+fresh
+run_driver --tag t3c --profile full >"$W/run3c.out" 2>&1
+check_eq "the full profile runs (exit 0)" "0" "$?"
+check "... its RelayInclude traces both the broad set and the timing functions" bash -c "grep '^reg.RelayInclude=' '$W/reg-at-launch.txt' | grep -q RegOpenKeyExA && grep '^reg.RelayInclude=' '$W/reg-at-launch.txt' | grep -q QueryPerformanceCounter"
+check "... and run.env names it" grep -q '^profile=full' "$W/out/t3c/run.env"
 check "an unknown profile is refused before anything is taken (2)" bash -c "bash '$DRIVER' --test-config '$W/config.sh' --profile nonsense >'$W/run3b.out' 2>&1; test \$? -eq 2 -a ! -e '$GAME_RUN_LOCK' -a ! -e '$STATE'"
 
 # ---- 4. budget, refusals, the environment ------------------------------------------------------------------------------------

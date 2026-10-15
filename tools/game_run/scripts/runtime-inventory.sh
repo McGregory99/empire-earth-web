@@ -2,7 +2,7 @@
 # Runtime Win32 inventory of the real game: startup to the main menu, idle at the menu, clean exit, under Wine's own +relay
 # tracing of the Win32 functions that the game's binaries import.
 #
-#   runtime-inventory.sh [--test-config <file>] [--tag <name>] [--profile broad|timers] [--idle <seconds>]
+#   runtime-inventory.sh [--test-config <file>] [--tag <name>] [--profile broad|timers|full] [--idle <seconds>]
 #
 # One run: take the game-run lock, refuse if anything of an earlier run is left over or the game (or Art of Conquest) is running,
 # snapshot the game directory (sha256 manifest, verified), put the relay lists into the prefix's HKCU\Software\Wine\Debug
@@ -24,7 +24,7 @@ TEST_CONFIG=""
 TAG=""
 PROFILE=broad
 IDLE_OVERRIDE=""
-usage() { echo "usage: runtime-inventory.sh [--test-config <file>] [--tag <name>] [--profile broad|timers] [--idle <seconds>]" >&2; }
+usage() { echo "usage: runtime-inventory.sh [--test-config <file>] [--tag <name>] [--profile broad|timers|full] [--idle <seconds>]" >&2; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --test-config) TEST_CONFIG="${2:?$(usage)}"; shift 2 ;;
@@ -68,8 +68,8 @@ RUN_DIR="$OUT/$TAG"
 [ -n "$CLOSE_EXE" ] || CLOSE_EXE="$OUT/bin/ee-close.exe"
 
 case "$PROFILE" in
-  broad | timers) ;;
-  *) echo "unknown profile '$PROFILE' (use broad or timers)" >&2; exit 2 ;;
+  broad | timers | full) ;;
+  *) echo "unknown profile '$PROFILE' (use broad, timers or full)" >&2; exit 2 ;;
 esac
 [ "$PROFILE" = timers ] && WINEDEBUG_SPEC="$WINEDEBUG_TIMERS"
 case "$TAG" in */* | "" | .*) echo "bad tag '$TAG'" >&2; exit 2 ;; esac

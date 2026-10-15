@@ -76,7 +76,7 @@ FROM_ADD = [
     "d3d9", "dxgi", "d3d11", "d3d10core", "wined3d", "winevulkan", "vulkan-1",
 ]
 
-PROFILES = ("broad", "timers")
+PROFILES = ("broad", "timers", "full")
 
 
 # ---- PE files -------------------------------------------------------------------------------------------------------------------
@@ -251,7 +251,7 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
             if not tfn.startswith("#") and not _is_hot(tdll, tfn):
                 include.append("%s.%s" % (tdll, tfn))
 
-    if profile == "broad":
+    if profile in ("broad", "full"):
         for dll, names in imports.items():
             for fn in names:
                 if fn.startswith("#"):
@@ -260,10 +260,13 @@ def build_lists(game_dir, wine_root, profile="broad", existing_exclude="", exist
                     if fn in CRT_COLD:
                         add(dll, fn)
                     continue
-                if _is_hot(dll, fn) or _is_timer(dll, fn):
+                if _is_hot(dll, fn) or (_is_timer(dll, fn) and profile == "broad"):
                     continue
                 add(dll, fn)
         extra = EXTRA_BROAD
+        if profile == "full":
+            for d_, f_ in TIMER_FUNCS:
+                add(d_, f_)
     else:
         for d, f in TIMER_FUNCS:
             add(d, f)
@@ -306,7 +309,7 @@ START = re.compile(r"^Starting thread proc (?P<proc>[0-9a-fA-F]+) \(arg=(?P<arg>
 LOADED = re.compile(r'Loaded L"(?P<path>.+?)" at (?P<base>[0-9a-fA-F]+): (?P<kind>\w+)')
 UNLOADED = re.compile(r'Unloaded module L"(?P<path>.+?)" : (?P<kind>\w+)')
 GUID = re.compile(r"\{([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\}")
-COM_LINE = re.compile(r"(?:CoCreateInstance(?:Ex)?|CoGetClassObject)[^{]*\{([0-9a-fA-F-]{36})\}")
+COM_LINE = re.compile(r"^trace:ole:(?:CoCreateInstance|CoGetClassObject) \{([0-9a-fA-F-]{36})\}")
 CHANNEL = re.compile(r"^(?:trace|fixme|err|warn):(?P<chan>[\w]+):(?P<msg>.*)$")
 
 KNOWN_CLSIDS = {
@@ -483,6 +486,7 @@ class Summarizer:
         self.fpu = Counter()
         self.exits = Counter()
         self.messages = Counter()
+        self.com_caller = {}
         self.channels = defaultdict(Counter)
         self.windows_other = Counter()
         self.phases = {}
@@ -674,9 +678,10 @@ class Summarizer:
                 return
 
     def on_other(self, tid, ts, rest):
-        cm = COM_LINE.search(rest)
+        cm = COM_LINE.match(rest)
         if cm:
-            self.com[cm.group(1).lower()] += 1
+            who = self.com_caller.pop(tid, ("?", "unknown"))
+            self.com[(cm.group(1).lower(), who[0], who[1])] += 1
         ch = CHANNEL.match(rest)
         if ch:
             norm = re.sub(r"\b(?:0x)?[0-9a-fA-F]{6,16}\b", "<hex>", ch.group("msg"))[:200]
@@ -931,6 +936,12 @@ class Summarizer:
         if g:
             self.gpa[g[0]]["found" if rv else "missing"].add(g[1])
 
+    # -- COM: the ole channel prints the CLSID on the line after the call, on the same thread --
+    def call_cocreateinstance(self, f):
+        self.com_caller[f.tid] = f.mod
+
+    call_cogetclassobject = call_cocreateinstance
+
     # -- sound, input, windows, math --
     def call_mcisendcommanda(self, f):
         self.mci[f.val(1)] += 1
@@ -1058,7 +1069,8 @@ def finish(s):
         "loadlibrary": [{"path": k[0], "fn": k[1], "caller_module": k[2], "ok": k[3], "count": n} for k, n in s.loadlib.items()],
         "getprocaddress": {m: {"found": sorted(v["found"]), "missing": sorted(v["missing"])} for m, v in s.gpa.items()},
     }
-    d["com"] = [{"clsid": g, "name": KNOWN_CLSIDS.get(g), "count": n} for g, n in s.com.most_common()]
+    d["com"] = [{"clsid": k[0], "name": KNOWN_CLSIDS.get(k[0]), "caller_module": k[1], "kind": k[2], "count": n}
+                for k, n in sorted(s.com.items(), key=lambda kv: (-kv[1], kv[0]))]
     d["mci"] = [{"command": MCI.get(c, "0x%x" % c), "code": "0x%x" % c, "count": n} for c, n in sorted(s.mci.items())]
     d["audio"] = dict(s.audio)
     d["input"] = {fn: [{"version": k[0], "caller_module": k[1], "count": n} for k, n in c.items()] for fn, c in s.input.items()}
@@ -1160,7 +1172,8 @@ def render(d):
                       [[x["name"], x["kind"], x["loads"], ", ".join(x["bases"][:3]), x["size"] or "?"] for x in d["modules_distinct"]]))
     o.append("\nLoadLibrary calls:\n\n" + md_table(["path", "fn", "caller", "ok", "count"], [[x["path"], x["fn"], x["caller_module"], x["ok"], x["count"]] for x in d["dynamic"]["loadlibrary"]]))
     o.append("\nGetProcAddress by module:\n\n" + md_table(["module", "found", "missing"], [[k, ", ".join(v["found"]), ", ".join(v["missing"])] for k, v in sorted(d["dynamic"]["getprocaddress"].items())]))
-    o.append("\nCOM CLSIDs (+ole channel):\n\n" + md_table(["clsid", "name", "count"], [[x["clsid"], x["name"] or "", x["count"]] for x in d["com"]]))
+    o.append("\nCOM CLSIDs (+ole channel), by the traced caller of CoCreateInstance / CoGetClassObject (? = not a traced caller: Wine's own):\n\n" +
+             md_table(["clsid", "name", "caller", "kind", "count"], [[x["clsid"], x["name"] or "", x["caller_module"], x["kind"], x["count"]] for x in d["com"]]))
     o.append("\n## 6. Windows, input, audio\n")
     o.append(md_table(["class", "title", "style", "ex style", "x,y", "size", "caller", "count"],
                       [[x["class"], x["title"], x["style"], x["ex_style"], "%d,%d" % (x["x"], x["y"]), "%dx%d" % (x["width"], x["height"]), x["caller_module"], x["count"]] for x in d["windows"]["created"]]))

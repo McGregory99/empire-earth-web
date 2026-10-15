@@ -40,6 +40,8 @@ check "lists: the from-exclude list keeps the stock entries and adds Wine's inte
 check "lists: the static import counts per DLL are reported" py "$T/lists.json" "d['imports']['kernel32']['count']==18 and d['imports']['wsock32']['count']==2"
 ri lists --game-dir "$GAME" --wine-root "$WINE" --profile timers >"$T/lists-t.json" 2>/dev/null
 check "lists: the timers profile traces only the timing functions (and thread creation)" py "$T/lists-t.json" "set(d['include'].split(';')) >= {'kernel32.QueryPerformanceCounter','winmm.timeGetTime','kernel32.GetTickCount','kernel32.CreateThread'} and 'advapi32.RegOpenKeyExA' not in d['include'].split(';')"
+ri lists --game-dir "$GAME" --wine-root "$WINE" --profile full >"$T/lists-f.json" 2>/dev/null
+check "lists: the full profile traces the broad set and the timing functions" py "$T/lists-f.json" "set(d['include'].split(';')) >= {'kernel32.QueryPerformanceCounter','winmm.timeGetTime','kernel32.GetTickCount','kernel32.CreateThread','advapi32.RegOpenKeyExA','winmm.waveOutGetPosition'} and 'kernel32.GetLastError' not in d['include'].split(';')"
 ri lists --game-dir "$GAME" --wine-root "$WINE" --profile nonsense >/dev/null 2>"$T/lists-bad.err"
 check "lists: an unknown profile is refused (non-zero)" test $? -ne 0
 
@@ -65,7 +67,8 @@ check "summarize: registry key paths are resolved through the handle" py "$S" "(
 check "summarize: registry value names, writes and failed opens" py "$S" "{(r['op'],r.get('value'),r['ok']) for r in d['registry']} >= {('RegQueryValueExA','Rasterizer Name',True),('RegSetValueExA','Resolution',True),('RegOpenKeyExA',None,False)}"
 check "summarize: modules: loaded list with kinds" py "$S" "{m['name']:m['kind'] for m in d['modules']}.get('Low-Level Engine.dll')=='game' and {m['name']:m['kind'] for m in d['modules']}.get('version.dll')=='compat' and {m['name']:m['kind'] for m in d['modules']}.get('dsound.dll')=='wine'"
 check "summarize: LoadLibrary and GetProcAddress" py "$S" "{l['path'] for l in d['dynamic']['loadlibrary']} >= {'dsound.dll','TCP Protocol.dll'} and d['dynamic']['getprocaddress']['dsound.dll']['found']==['DirectSoundCreate'] and d['dynamic']['getprocaddress']['dsound.dll']['missing']==['DirectSoundNope']"
-check "summarize: COM CLSIDs from the ole channel" py "$S" "d['com'][0]['clsid']=='d2ac2881-b39b-11d1-8704-00600893b1bd' and d['com'][0]['name']=='DirectMusicPerformance'"
+check "summarize: COM CLSIDs from the ole channel, attributed to the module that called CoCreateInstance" py "$S" "(lambda c: c['clsid']=='d2ac2881-b39b-11d1-8704-00600893b1bd' and c['name']=='DirectMusicPerformance' and c['caller_module']=='Low-Level Engine.dll' and c['kind']=='game' and c['count']==1)([c for c in d['com'] if c['clsid'].startswith('d2ac2881')][0])"
+check "summarize: a CLSID logged without a traced caller (Wine's own) is listed as unattributed" py "$S" "any(c['clsid']=='bcde0395-e52f-467c-8e3d-c4579291692e' and c['caller_module']=='?' and c['count']==1 for c in d['com'])"
 check "summarize: MCI commands by name" py "$S" "d['mci']==[{'command':'MCI_OPEN','code':'0x803','count':1}]"
 check "summarize: audio and input entry points" py "$S" "d['audio']['waveOutOpen']==1 and d['input']['DirectInputCreateA'][0]['version']=='0x700'"
 check "summarize: the window that was created" py "$S" "(lambda w: w['class']=='EmpireEarth' and w['title']=='Empire Earth' and w['width']==1024 and w['height']==768)(d['windows']['created'][0])"
