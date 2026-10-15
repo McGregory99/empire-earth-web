@@ -202,6 +202,7 @@ def write_world(root):
     lines += call("0014", "KERNEL32.TerminateThread", "000000c8", "10004100", "00000001")
     # winmm's timer thread for timeSetEvent
     lines += call("0010", "winmm.timeBeginPeriod", "00000001", "10002000", "00000000")
+    lines += call("0010", "KERNEL32.SetThreadPriority", "fffffffe,00000000", "7ba70000", "00000001")  # Wine's own code (winmm range) on the main thread
     lines += call("0010", "winmm.timeSetEvent", "00000010,00000001,10005000,00000000,00000001", "10002010")
     lines += call("0010", "KERNEL32.CreateThread", "00000000,00000000,7ba6aba0,7ba60000,00000000,00000000", "7ba7fae3", "000000cc")
     lines.append(L("001c", "Starting thread proc 7BA6ABA0 (arg=7BA60000)"))

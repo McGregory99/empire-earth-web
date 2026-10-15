@@ -629,7 +629,7 @@ class Summarizer:
     def new_thread(self, tid):
         return {"tid": tid, "creator_tid": None, "creator_module": None, "creator_kind": None, "via": "CreateThread",
                 "start_module": None, "start_kind": None, "start_rva": None, "start_addr": None, "arg": None,
-                "created_suspended": False, "priorities": [], "first_ts": None}
+                "created_suspended": False, "priorities": [], "priorities_host": [], "first_ts": None}
 
     def on_call(self, tid, ts, c):
         if tid not in self.game_tids:
@@ -720,7 +720,7 @@ class Summarizer:
         return self.handles.get(handle)
 
     def call_setthreadpriority(self, f):
-        self.prio_events.append((self.target_of(f, f.val(0)), sgn(f.val(1))))
+        self.prio_events.append((self.target_of(f, f.val(0)), sgn(f.val(1)), f.mod[1]))
 
     def _thread_op(self, f):
         self.thread_ops.append((f.fn, f.mod[0], f.tid, self.target_of(f, f.val(0))))
@@ -1000,10 +1000,10 @@ def finish(s):
                  "n_include": s.lists["n_include"]}
     d["modules"] = [{"name": m.name, "path": m.path, "base": "0x%x" % m.base, "size": m.size, "kind": m.kind, "flag": m.flag,
                      "load_tid": m.tid, "t": m.ts, "unloaded": m.unloaded} for m in s.mods]
-    for tgt, prio in s.prio_events:
+    for tgt, prio, kind in s.prio_events:
         tid = tgt["tid"] if isinstance(tgt, dict) else tgt
         if tid in s.threads:
-            s.threads[tid]["priorities"].append(prio)
+            s.threads[tid]["priorities" if kind in ("game", "compat") else "priorities_host"].append(prio)
     distinct = OrderedDict()
     for m in s.mods:
         e = distinct.setdefault(m.name.lower(), {"name": m.name, "kind": m.kind, "loads": 0, "bases": [], "size": m.size})
@@ -1016,6 +1016,7 @@ def finish(s):
         t = dict(t)
         t["calls"] = sum(s.thread_top[tid].values())
         t["top_calls"] = s.thread_top[tid].most_common(6)
+        t["calls_detail"] = dict(s.thread_top[tid])
         th.append(t)
     d["modules_distinct"] = d_modules_distinct
     d["threads"] = th
