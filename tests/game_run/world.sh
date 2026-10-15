@@ -97,7 +97,12 @@ PS
 #!/bin/bash
 echo "wine $*" >>"$FAKE_WORLD/wine.log"
 if [ "${1:-}" = reg ]; then
-  value_file="$FAKE_WORLD/snoop.value"
+  # one file per value name; SnoopInclude keeps its historical file name (snoop.value)
+  name=""
+  args=("$@")
+  for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = /v ] && name="${args[$((i + 1))]}"; done
+  value_file="$FAKE_WORLD/reg.$name"
+  [ "$name" = SnoopInclude ] && value_file="$FAKE_WORLD/snoop.value"
   case "${2:-}" in
     query)
       # a test can stop a driver in its read-back window (after the restore: the state directory is gone) and release it
@@ -107,7 +112,7 @@ if [ "${1:-}" = reg ]; then
         while [ ! -e "$FAKE_WORLD/readback-go" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
       fi
       [ -f "$value_file" ] || exit 1
-      printf '\r\nHKEY_CURRENT_USER\\Software\\Wine\\Debug\r\n    SnoopInclude    REG_SZ    %s\r\n\r\n' "$(cat "$value_file")"
+      printf '\r\nHKEY_CURRENT_USER\\Software\\Wine\\Debug\r\n    %s    REG_SZ    %s\r\n\r\n' "$name" "$(cat "$value_file")"
       ;;
     add)
       while [ $# -gt 0 ]; do [ "$1" = /d ] && { printf '%s' "$2" >"$value_file"; break; }; shift; done
@@ -116,6 +121,14 @@ if [ "${1:-}" = reg ]; then
   esac
   exit 0
 fi
+case "${1:-}" in
+  *ee-close.exe)
+    echo "close-helper $*" >>"$FAKE_WORLD/close.log"
+    [ -e "$FAKE_WORLD/close-needs-quit" ] && [ "${2:-}" != --quit ] && exit 0
+    [ -e "$FAKE_WORLD/close-ignored" ] || { grep -v 'Empire Earth.exe\|EE-AOC.exe' "$FAKE_PS_FILE" >"$FAKE_PS_FILE.new"; mv "$FAKE_PS_FILE.new" "$FAKE_PS_FILE"; }
+    exit 0
+    ;;
+esac
 if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
   game_dir="$(dirname "$3")"
   echo "4242 50000 C:\\GOG Games\\Fake\\Empire Earth.exe" >>"$FAKE_PS_FILE"
@@ -146,6 +159,7 @@ WS
 game="$FAKE_GAME"
 log="$FAKE_SUPPORT/logs/launcher.log"
 echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset} EE_GRAPHICS=${EE_GRAPHICS:-unset} EE_BIG_ARMIES=${EE_BIG_ARMIES:-unset} SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-unset}" >>"$FAKE_WORLD/launch.log"
+for v in "$FAKE_WORLD"/reg.*; do [ -f "$v" ] && printf '%s=%s\n' "$(basename "$v")" "$(cat "$v")" >>"$FAKE_WORLD/reg-at-launch.txt"; done
 wine_path="${EMPIRE_EARTH_WINE:-$FAKE_WINE}"   # the real launcher finds its own Wine when none is given
 orig="$(cd "$(dirname "$wine_path")/.." 2>/dev/null && pwd -P)/lib/wine/i386-windows/version.dll"
 printf 'launcher ddraw %s' "$$" >"$game/ddraw.dll"
