@@ -17,3 +17,9 @@ static_assert(sizeof(GETextureLayout) == 0x6c, "operator new(0x6c) in GETextureM
 static_assert(sizeof(GETStageLayout) == 0x20, "GETexture::GetStage returns the 8-dword block at 0xc");
 static_assert(sizeof(GEMaterialLayout) == 0x48, "operator new(0x48) in GEModel::AllocateInternalData");
 static_assert(sizeof(GELightLayout) == 0x74, "GELight's copy constructor copies 0x0..0x73");
+static_assert(sizeof(GEModelLayout) == 0x188, "operator new(0x188) in GEModelManager::LoadModel");
+static_assert(sizeof(GEViewportLayout) == 0x288, "GEViewport's copy constructor copies 0x0..0x287");
+static_assert(sizeof(GETextLayout) == 0x50, "operator new(0x50) in GERasterizer::GERasterizer");
+static_assert(sizeof(GEBitmapLayout) == 0x30, "operator new(0x30) in UIManager::UIManager");
+static_assert(sizeof(GEWindowLayout) == 0x1c, "GEWindow ends at 0x1b");
+static_assert(sizeof(GETextureManagerLayout) == 0x1c, "push 0x1c before GETextureManager's constructor");

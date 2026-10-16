@@ -148,7 +148,7 @@ static void material(void)
     CHECK(m->textureIndex == 9, "GEMaterial::SetTextureIndex writes textureIndex (0x3c)");
     CHECK_F(((fn_f_v)oracle_export("?GetOpacity@GEMaterial@@QAEMXZ"))(m), 0.5f, "GEMaterial::GetOpacity reads opacity (0x44)");
     CHECK(((fn_p_v)oracle_export("?GetColor@GEMaterial@@QAEAAVGEColor@@XZ"))(m) == (void *)&m->color, "GEMaterial.color is at 0x18");
-    CHECK(((fn_p_v)oracle_export("?GetName@GEMaterial@@QAEAAVUString@@XZ"))(m) == (void *)m->name, "GEMaterial.name (a UString) is at 0x8");
+    CHECK(((fn_p_v)oracle_export("?GetName@GEMaterial@@QAEAAVUString@@XZ"))(m) == (void *)&m->name, "GEMaterial.name (a UString) is at 0x8");
 
     m->textures[1] = (struct GETextureLayout *)0x7777;
     m->polygonStart[1] = 70;

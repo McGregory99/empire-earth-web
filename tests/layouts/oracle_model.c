@@ -205,7 +205,7 @@ static void text(void)
     CHECK(FEQ(t->location.x, 12.0f) && FEQ(t->location.y, 34.0f), "GEText::SetLocation writes location (0x0)");
     ((fn_v_u)oracle_export("?SetAlignment@GEText@@QAEXK@Z"))(t, 2);
     CHECK(t->alignment == 2, "GEText::SetAlignment writes alignment (0x48)");
-    ((fn_v_ub)oracle_export("?SetIsTransparent@GEText@@QAEX_N@Z"))(t, 1);
+    ((fn_v_u)oracle_export("?SetIsTransparent@GEText@@QAEX_N@Z"))(t, 1);
     CHECK(t->isTransparent == 1, "GEText::SetIsTransparent writes isTransparent (0x4c)");
     CHECK(((fn_p_v)oracle_export("?GetFont@GEText@@QBEPAVGEFont@@XZ"))(t) == (void *)&font, "GEText.font is at 0x44");
     CHECK(((fn_p_v)oracle_export("?GetTextExtent@GEText@@QBEABVGERectangle@@XZ"))(t) == (void *)&t->textExtent, "GEText.textExtent is at 0x20");
