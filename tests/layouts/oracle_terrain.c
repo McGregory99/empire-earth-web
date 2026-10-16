@@ -17,11 +17,11 @@ typedef void *(TC *fn_p_uu_t)(const void *, unsigned long, unsigned long);
 static void accessors(void)
 {
     GETerrainMeshLayout *mesh = (GETerrainMeshLayout *)calloc(1, MESH_ALLOC);
-    GETMMaterialLayout materials[2];
-    GETMPointRowLayout rows[2];
-    GETMPointLayout points[3];
-    GETMTileRowLayout tile_rows[2];
-    GETMTileLayout tiles[3];
+    static GETMMaterialLayout materials[2];
+    static GETMPointRowLayout rows[2];
+    static GETMPointLayout points[3];
+    static GETMTileRowLayout tile_rows[2];
+    static GETMTileLayout tiles[3];
     GEVectorLayout normal;
     void *registered[2] = {(void *)0xA001, (void *)0xA002};
     uint32_t a = 0, b = 0;
@@ -45,7 +45,7 @@ static void accessors(void)
     CHECK(((fn_p_v)oracle_export("?GetEdgeWorldPoints@GETerrainMesh@@QAEAAV?$vector@VGE3DPoint@@V?$allocator@VGE3DPoint@@@std@@@std@@XZ"))(mesh) == (void *)&mesh->edgeWorldPoints, "GETerrainMesh.edgeWorldPoints is at 0x70");
     CHECK(((fn_p_v)oracle_export("?GetEdgeRenderVertices@GETerrainMesh@@QAEAAV?$vector@PAUGETMRenderVertex@GETerrainMesh@@V?$allocator@PAUGETMRenderVertex@GETerrainMesh@@@std@@@std@@XZ"))(mesh) == (void *)&mesh->edgeRenderVertices, "GETerrainMesh.edgeRenderVertices is at 0x60");
 
-    CHECK(((fn_p_u)oracle_export("?GetWaterColor@GETerrainMesh@@QBEABVGEColor@@KK@Z"))(mesh, 0) == (void *)&mesh->waterColor, "GETerrainMesh.waterColor is at 0x80");
+    CHECK(((fn_p_uu_t)oracle_export("?GetWaterColor@GETerrainMesh@@QBEABVGEColor@@KK@Z"))(mesh, 0, 0) == (void *)&mesh->waterColor, "GETerrainMesh.waterColor is at 0x80");
 
     /* Point rows: one GETMPointRow per y; a row holds the points of x in [firstIndex, firstIndex + count). */
     memset(rows, 0, sizeof(rows));
@@ -132,7 +132,6 @@ static void constructed(void)
     }
     CHECK(i >= 101 * 101, "GETerrainMesh's constructor initializes every render vertex: position 0, color 1 (0x24-byte records)");
     CHECK(mesh->maximumZ < 0.0f && mesh->minimumZ > 0.0f, "GETerrainMesh starts with an inverted z range (0x17b588, 0x17b58c)");
-    ((fn_v_v)oracle_export("??1GETerrainMesh@@UAE@XZ"))(mesh);
     free(mesh);
 }
 

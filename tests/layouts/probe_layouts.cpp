@@ -23,3 +23,8 @@ static_assert(sizeof(GETextLayout) == 0x50, "operator new(0x50) in GERasterizer:
 static_assert(sizeof(GEBitmapLayout) == 0x30, "operator new(0x30) in UIManager::UIManager");
 static_assert(sizeof(GEWindowLayout) == 0x1c, "GEWindow ends at 0x1b");
 static_assert(sizeof(GETextureManagerLayout) == 0x1c, "push 0x1c before GETextureManager's constructor");
+static_assert(sizeof(GERasterizerLayout) == 0x68, "GERasterizer's copy constructor ends with screenId at 0x64");
+static_assert(sizeof(GERScreenStateLayout) == 0x340, "operator new(0x340) in GERasterizer::AddValidScreen");
+static_assert(sizeof(GETMRenderVertexLayout) == 0x24, "the terrain render vertex arrays have a 0x24 stride");
+static_assert(sizeof(GETMMaterialLayout) == 0x34, "GetTerrainMaterialCount divides by 0x34");
+static_assert(sizeof(DX7ScreenRecordLayout) == 0x74, "operator new(0x74) in DX7Rasterizer::AddValidScreen");

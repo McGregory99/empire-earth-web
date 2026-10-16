@@ -646,4 +646,385 @@ typedef struct GEPolygonArrayLayout {
 } GEPolygonArrayLayout;
 EEL_AT(GEPolygonArrayLayout, vptr, 0x0);
 EEL_SIZE(GEPolygonArrayLayout, 0x4);
+
+/* @class StdVector size=0x10 size-confidence=confirmed | MSVC 6 std::vector: an allocator word, then first, last, end; GERasterizer.screens, DX7Rasterizer.screenRecords and the GETerrainMesh vectors all use it */
+typedef struct StdVectorLayout {
+    uint32_t allocator; /* @0x0 guess | the empty allocator occupies a word */
+    void * first; /* @0x4 confirmed | P Deactivate, Draw(GETerrainMesh), TransformToCamera iterate it; L GERasterizer::GetScreenCount, GETerrainMesh::GetNumVisibleTileRows */
+    void * last; /* @0x8 confirmed | same: (last - first) / element size is the count */
+    void * end; /* @0xc lle-only | capacity end */
+} StdVectorLayout;
+EEL_AT(StdVectorLayout, allocator, 0x0);
+EEL_AT(StdVectorLayout, first, 0x4);
+EEL_AT(StdVectorLayout, last, 0x8);
+EEL_AT(StdVectorLayout, end, 0xc);
+EEL_SIZE(StdVectorLayout, 0x10);
+
+/* @class StdMap size=0xc size-confidence=confirmed | MSVC 6 std::map as a member of GETerrainMesh: a comparator word, the head node, the node count */
+typedef struct StdMapLayout {
+    uint32_t comparator; /* @0x0 guess | the empty comparator occupies a word */
+    void * head; /* @0x4 confirmed | P Draw(GETerrainMesh) walks the nodes from head->left (node: left, parent, right, key at 0xc, value at 0x10) */
+    uint32_t size; /* @0x8 lle-only | node count */
+} StdMapLayout;
+EEL_AT(StdMapLayout, comparator, 0x0);
+EEL_AT(StdMapLayout, head, 0x4);
+EEL_AT(StdMapLayout, size, 0x8);
+EEL_SIZE(StdMapLayout, 0xc);
+
+/* @class GERasterizer size=0x68 size-confidence=confirmed | the copy constructor ends with screenId at 0x64; DX7Rasterizer adds its fields from 0x68 */
+typedef struct GERasterizerLayout {
+    void * vptr; /* @0x0 lle-only | L ctor sets the GERasterizer vftable */
+    struct GEColorLayout ambientColor; /* @0x4 confirmed | P SetAmbientColor writes it; L GERasterizer::GetAmbientColor */
+    struct GEColorLayout computedAmbientColor; /* @0x10 confirmed | P Light reads it as the base color of the terrain lighting; L GERasterizer::GetComputedAmbientColor (ambientColor * ambientIntensity) */
+    struct StdVectorLayout screens; /* @0x1c confirmed | P everywhere: this->screens.first[screen] is the screen record; L GERasterizer::GetScreenCount, AddValidScreen, Deactivate */
+    struct GEFontLayout *font; /* @0x2c lle-only | L GERasterizer ctor (Arial Bold 9) */
+    struct GETextLayout *text; /* @0x30 lle-only | L GERasterizer ctor */
+    uint32_t unknown34; /* @0x34 guess | L copy constructor copies it */
+    void * criticalSection; /* @0x38 lle-only | a TSCriticalSection; L ctor */
+    float ambientIntensity; /* @0x3c confirmed | P SetAmbientColor; L GERasterizer::GetAmbientIntensity, SetAmbientIntensity */
+    float waterRipple[3]; /* @0x40 confirmed | P TransformToCamera reads the three floats; L GERasterizer::SetWaterRippleEffect */
+    uint32_t culling; /* @0x4c confirmed | P ActivateScreen; L GERasterizer::GetCulling, SetCulling */
+    uint8_t polyAreaProfiling; /* @0x50 lle-only | L GERasterizer::GetIsPolyAreaProfiling */
+    uint8_t activated; /* @0x51 lle-only | L GERasterizer::GetIsActivated, Activate, Deactivate */
+    uint8_t pad_0x52[0x2];
+    struct UStringLayout name; /* @0x54 lle-only | L GERasterizer::GetName */
+    uint32_t screenId; /* @0x64 lle-only | L GERasterizer::GetScreenID, SetScreenID */
+} GERasterizerLayout;
+EEL_AT(GERasterizerLayout, vptr, 0x0);
+EEL_AT(GERasterizerLayout, ambientColor, 0x4);
+EEL_AT(GERasterizerLayout, computedAmbientColor, 0x10);
+EEL_AT(GERasterizerLayout, screens, 0x1c);
+EEL_AT(GERasterizerLayout, font, 0x2c);
+EEL_AT(GERasterizerLayout, text, 0x30);
+EEL_AT(GERasterizerLayout, unknown34, 0x34);
+EEL_AT(GERasterizerLayout, criticalSection, 0x38);
+EEL_AT(GERasterizerLayout, ambientIntensity, 0x3c);
+EEL_AT(GERasterizerLayout, waterRipple, 0x40);
+EEL_AT(GERasterizerLayout, culling, 0x4c);
+EEL_AT(GERasterizerLayout, polyAreaProfiling, 0x50);
+EEL_AT(GERasterizerLayout, activated, 0x51);
+EEL_AT(GERasterizerLayout, name, 0x54);
+EEL_AT(GERasterizerLayout, screenId, 0x64);
+EEL_SIZE(GERasterizerLayout, 0x68);
+
+/* @class GERScreenState size=0x340 size-confidence=confirmed | operator new(0x340) in GERasterizer::AddValidScreen; the record derives from GEViewport (name inferred, the engine has no symbol for it) */
+typedef struct GERScreenStateLayout {
+    struct GEViewportLayout viewport; /* @0x0 confirmed | P Draw(GETerrainMesh), DrawWater, SetViewport read the viewport through the record; L GERasterizer::GetViewport returns the record */
+    struct GEColorLayout fogColor; /* @0x288 confirmed | P SetFogColor; L GERasterizer::SetFogColor, GetFogAttributes */
+    uint32_t fogType; /* @0x294 lle-only | L GERasterizer::SetFogType, GetFogAttributes */
+    float fogValue; /* @0x298 lle-only | L GERasterizer::SetFogValue, GetFogAttributes */
+    float fogStart; /* @0x29c confirmed | P SetFogRange; L GERasterizer::SetFogRange */
+    float fogEnd; /* @0x2a0 confirmed | P SetFogRange; L GERasterizer::SetFogRange */
+    float fogInverseRange; /* @0x2a4 lle-only | L GERasterizer::SetFogRange */
+    struct GEScreenLayout *screen; /* @0x2a8 confirmed | P ActivateScreen, ShowScene; L GERasterizer::GetScreen, GetTextureManager (through it) */
+    struct GESurfaceLayout *primarySurface; /* @0x2ac confirmed | P ActivateRenderingSurface, ShowScene; L GERasterizer::GetPrimarySurface */
+    struct GESurfaceLayout *secondarySurface; /* @0x2b0 confirmed | P ActivateScreen, ShowScene; L GERasterizer::GetSecondarySurface */
+    struct GESurfaceLayout *renderTarget; /* @0x2b4 confirmed | P SetRenderTarget; L GERasterizer::GetRenderTarget */
+    struct GETextureLayout *currentTexture; /* @0x2b8 confirmed | P SetTexture caches the bound texture and its reference here */
+    struct GEWindowLayout *window; /* @0x2bc confirmed | P ActivateScreen; L GERasterizer::GetWindow */
+    float alphaTestRefValue; /* @0x2c0 confirmed | P SetAlphaTestingRefValue; L GERasterizer::GetAlphaTestingRefValue */
+    float polyAreaAccumulator; /* @0x2c4 confirmed | P ShowScene; L GERasterizer::AddToDrawnPolyArea */
+    float polyAreaPerFrame; /* @0x2c8 confirmed | P ShowScene; L GERasterizer::GetDrawnPolyAreaPerFrame */
+    float polyAreaPerSecond; /* @0x2cc confirmed | P ShowScene; L GERasterizer::GetDrawnPolyAreaPerSecond */
+    float polysPerFrame; /* @0x2d0 confirmed | P ShowScene; L GERasterizer::GetDrawnPolysPerFrame */
+    float polysPerSecond; /* @0x2d4 confirmed | P ShowScene; L GERasterizer::GetDrawnPolysPerSecond */
+    float framesPerSecond; /* @0x2d8 confirmed | P ShowScene; L GERasterizer::GetFramesPerSecond */
+    float scenePolysPerFrame; /* @0x2dc confirmed | P ShowScene; L GERasterizer::GetScenePolysPerFrame */
+    float scenePolysPerSecond; /* @0x2e0 confirmed | P ShowScene; L GERasterizer::GetScenePolysPerSecond */
+    float textureChangesPerFrame; /* @0x2e4 confirmed | P ShowScene; L GERasterizer::GetTotalTextureChangesPerFrame */
+    uint32_t alphaTesting; /* @0x2e8 confirmed | P SetAlphaTesting; L GERasterizer::GetAlphaTesting */
+    uint32_t alphaTestCompare; /* @0x2ec confirmed | P SetAlphaTestingCompareState; L GERasterizer::GetAlphaTestingCompareState */
+    uint32_t antiAliasing; /* @0x2f0 confirmed | P SetAntiAliasing; L GERasterizer::GetAntiAliasing */
+    uint32_t blendSource; /* @0x2f4 confirmed | P SetBlending; L GERasterizer::GetBlending */
+    uint32_t blendDest; /* @0x2f8 confirmed | P SetBlending; L GERasterizer::GetBlending */
+    uint32_t colorKeying; /* @0x2fc confirmed | P SetColorKeying; L GERasterizer::GetColorKeying */
+    uint32_t dithering; /* @0x300 confirmed | P SetDithering; L GERasterizer::GetDithering */
+    uint32_t drawStyle; /* @0x304 confirmed | P SetDrawStyle; L GERasterizer::GetDrawStyle */
+    uint32_t fog; /* @0x308 confirmed | P SetFog; L GERasterizer::GetFog */
+    uint32_t lighting; /* @0x30c confirmed | P SetLighting; L GERasterizer::GetLighting */
+    uint32_t projectionMode; /* @0x310 confirmed | P Set3DMode; L GERasterizer::SetProjectionMode */
+    uint32_t shading; /* @0x314 confirmed | P SetShading; L GERasterizer::GetShading */
+    uint32_t shadingColorSource; /* @0x318 confirmed | P SetShadingColorSource; L GERasterizer::SetShadingColorSource */
+    uint32_t specular; /* @0x31c confirmed | P SetSpecular; L GERasterizer::GetSpecular */
+    uint32_t zBuffer; /* @0x320 confirmed | P SetZBuffer; L GERasterizer::GetZBuffer */
+    uint32_t zCompare; /* @0x324 confirmed | P SetZCompare; L GERasterizer::GetZCompare */
+    uint32_t drawnPolyCount; /* @0x328 confirmed | P ShowScene; L GERasterizer::AddToDrawnPolyCount */
+    uint32_t frameCounter; /* @0x32c confirmed | P ShowScene counts frames and recomputes the statistics every 12; L ctor clears it */
+    uint32_t scenePolyCount; /* @0x330 confirmed | P Draw(GEPolygonArray), DrawWater add the polygon count; ShowScene */
+    uint32_t lastStatisticsTime; /* @0x334 confirmed | P ShowScene stores TMGetTime here */
+    uint32_t textureChangeCount; /* @0x338 confirmed | P SetTexture increments it; ShowScene */
+    uint8_t hasTexture; /* @0x33c confirmed | P SetTexture; L ctor clears it */
+    uint8_t activated; /* @0x33d confirmed | P ActivateScreen, Deactivate; L GERasterizer::GetIsScreenActivated */
+    uint8_t presentFlag; /* @0x33e confirmed | P ShowScene passes it to the primary surface flip; L ctor sets it to 1 */
+    uint8_t pad_0x33f[0x1];
+} GERScreenStateLayout;
+EEL_AT(GERScreenStateLayout, viewport, 0x0);
+EEL_AT(GERScreenStateLayout, fogColor, 0x288);
+EEL_AT(GERScreenStateLayout, fogType, 0x294);
+EEL_AT(GERScreenStateLayout, fogValue, 0x298);
+EEL_AT(GERScreenStateLayout, fogStart, 0x29c);
+EEL_AT(GERScreenStateLayout, fogEnd, 0x2a0);
+EEL_AT(GERScreenStateLayout, fogInverseRange, 0x2a4);
+EEL_AT(GERScreenStateLayout, screen, 0x2a8);
+EEL_AT(GERScreenStateLayout, primarySurface, 0x2ac);
+EEL_AT(GERScreenStateLayout, secondarySurface, 0x2b0);
+EEL_AT(GERScreenStateLayout, renderTarget, 0x2b4);
+EEL_AT(GERScreenStateLayout, currentTexture, 0x2b8);
+EEL_AT(GERScreenStateLayout, window, 0x2bc);
+EEL_AT(GERScreenStateLayout, alphaTestRefValue, 0x2c0);
+EEL_AT(GERScreenStateLayout, polyAreaAccumulator, 0x2c4);
+EEL_AT(GERScreenStateLayout, polyAreaPerFrame, 0x2c8);
+EEL_AT(GERScreenStateLayout, polyAreaPerSecond, 0x2cc);
+EEL_AT(GERScreenStateLayout, polysPerFrame, 0x2d0);
+EEL_AT(GERScreenStateLayout, polysPerSecond, 0x2d4);
+EEL_AT(GERScreenStateLayout, framesPerSecond, 0x2d8);
+EEL_AT(GERScreenStateLayout, scenePolysPerFrame, 0x2dc);
+EEL_AT(GERScreenStateLayout, scenePolysPerSecond, 0x2e0);
+EEL_AT(GERScreenStateLayout, textureChangesPerFrame, 0x2e4);
+EEL_AT(GERScreenStateLayout, alphaTesting, 0x2e8);
+EEL_AT(GERScreenStateLayout, alphaTestCompare, 0x2ec);
+EEL_AT(GERScreenStateLayout, antiAliasing, 0x2f0);
+EEL_AT(GERScreenStateLayout, blendSource, 0x2f4);
+EEL_AT(GERScreenStateLayout, blendDest, 0x2f8);
+EEL_AT(GERScreenStateLayout, colorKeying, 0x2fc);
+EEL_AT(GERScreenStateLayout, dithering, 0x300);
+EEL_AT(GERScreenStateLayout, drawStyle, 0x304);
+EEL_AT(GERScreenStateLayout, fog, 0x308);
+EEL_AT(GERScreenStateLayout, lighting, 0x30c);
+EEL_AT(GERScreenStateLayout, projectionMode, 0x310);
+EEL_AT(GERScreenStateLayout, shading, 0x314);
+EEL_AT(GERScreenStateLayout, shadingColorSource, 0x318);
+EEL_AT(GERScreenStateLayout, specular, 0x31c);
+EEL_AT(GERScreenStateLayout, zBuffer, 0x320);
+EEL_AT(GERScreenStateLayout, zCompare, 0x324);
+EEL_AT(GERScreenStateLayout, drawnPolyCount, 0x328);
+EEL_AT(GERScreenStateLayout, frameCounter, 0x32c);
+EEL_AT(GERScreenStateLayout, scenePolyCount, 0x330);
+EEL_AT(GERScreenStateLayout, lastStatisticsTime, 0x334);
+EEL_AT(GERScreenStateLayout, textureChangeCount, 0x338);
+EEL_AT(GERScreenStateLayout, hasTexture, 0x33c);
+EEL_AT(GERScreenStateLayout, activated, 0x33d);
+EEL_AT(GERScreenStateLayout, presentFlag, 0x33e);
+EEL_SIZE(GERScreenStateLayout, 0x340);
+
+/* @class GETMRenderVertex size=0x24 size-confidence=confirmed | GETerrainMesh builds 10201 of them per array with a 0x24 stride; the constructor initializes position and color */
+typedef struct GETMRenderVertexLayout {
+    struct GE3DPointLayout position; /* @0x0 confirmed | P Draw(GETerrainMesh), DrawTerrainMaterial copy it into the D3D vertex; L constructor zeroes it */
+    struct GEColorLayout color; /* @0xc confirmed | P Light writes it, DrawTerrainMaterial packs it; L constructor sets it to 1.0 */
+    float intensity; /* @0x18 plugin-only | P DrawTerrainMaterial multiplies the color by it; the constructor leaves it unset */
+    float unknown1c; /* @0x1c guess | P TransformToCamera reads it in the water pass */
+    uint32_t clipFlags; /* @0x20 plugin-only | P TransformToCamera stores the frustum outcode bits (1,2,4,8,0x10,0x20) here */
+} GETMRenderVertexLayout;
+EEL_AT(GETMRenderVertexLayout, position, 0x0);
+EEL_AT(GETMRenderVertexLayout, color, 0xc);
+EEL_AT(GETMRenderVertexLayout, intensity, 0x18);
+EEL_AT(GETMRenderVertexLayout, unknown1c, 0x1c);
+EEL_AT(GETMRenderVertexLayout, clipFlags, 0x20);
+EEL_SIZE(GETMRenderVertexLayout, 0x24);
+
+/* @class GETMPolygon size=0x30 size-confidence=confirmed | GETerrainMesh builds 12000 + 5000 of them with a 0x30 stride; the constructor initializes the three uv points at 0x18 */
+typedef struct GETMPolygonLayout {
+    void * vertices[3]; /* @0x0 confirmed | P DrawTerrainMaterial follows the three GETMRenderVertex pointers */
+    float alpha[3]; /* @0xc plugin-only | P DrawTerrainMaterial turns each into the vertex alpha */
+    struct GE2DPointLayout uv[3]; /* @0x18 confirmed | P DrawTerrainMaterial copies them to the vertex texture coordinates; L the constructor initializes them */
+} GETMPolygonLayout;
+EEL_AT(GETMPolygonLayout, vertices, 0x0);
+EEL_AT(GETMPolygonLayout, alpha, 0xc);
+EEL_AT(GETMPolygonLayout, uv, 0x18);
+EEL_SIZE(GETMPolygonLayout, 0x30);
+
+/* @class GETMMaterial size=0x34 size-confidence=confirmed | GetTerrainMaterialCount divides the byte size of the vector by 0x34 */
+typedef struct GETMMaterialLayout {
+    struct GETextureLayout *texture; /* @0x0 confirmed | P Draw(GETerrainMesh), DrawWater bind it with SetTexture */
+    struct StdVectorLayout unknownVector; /* @0x4 guess | P TransformToCamera resets it */
+    struct StdVectorLayout polygons; /* @0x14 confirmed | P Draw(GETerrainMesh), DrawWater pass its address to DrawTerrainMaterial (a vector of GETMPolygon pointers) */
+    struct StdVectorLayout overlayPolygons; /* @0x24 guess | P DrawWater, Draw(GETerrainMesh) draw it as a second pass; name inferred */
+} GETMMaterialLayout;
+EEL_AT(GETMMaterialLayout, texture, 0x0);
+EEL_AT(GETMMaterialLayout, unknownVector, 0x4);
+EEL_AT(GETMMaterialLayout, polygons, 0x14);
+EEL_AT(GETMMaterialLayout, overlayPolygons, 0x24);
+EEL_SIZE(GETMMaterialLayout, 0x34);
+
+/* @class GETMPoint size=0xc size-confidence=confirmed | GETerrainMesh::GetZ indexes the point row with a 0xc stride */
+typedef struct GETMPointLayout {
+    float z; /* @0x0 confirmed | P Light, TransformToCamera; L GETerrainMesh::GetZ */
+    struct GEVectorLayout *normal; /* @0x4 confirmed | P Light dots the light directions with it; L GETerrainMesh::GetVertexNormal */
+    uint8_t colorIndex; /* @0x8 confirmed | P Light indexes GETerrainMesh.colorTable; L GETerrainMesh::GetColorTableIndex */
+    uint8_t pad_0x9[0x3];
+} GETMPointLayout;
+EEL_AT(GETMPointLayout, z, 0x0);
+EEL_AT(GETMPointLayout, normal, 0x4);
+EEL_AT(GETMPointLayout, colorIndex, 0x8);
+EEL_SIZE(GETMPointLayout, 0xc);
+
+/* @class GETMPointRow size=0xc size-confidence=confirmed | GETerrainMesh::GETMPointRow constructor and Initialize cover 0x0..0xb; rows are 0xc apart */
+typedef struct GETMPointRowLayout {
+    uint32_t firstIndex; /* @0x0 confirmed | P Light subtracts it from x; L GETerrainMesh::GetIsValidPoint */
+    uint32_t count; /* @0x4 lle-only | L GETerrainMesh::GetIsValidPoint, GETMPointRow::Initialize */
+    struct GETMPointLayout *points; /* @0x8 confirmed | P Light, TransformToCamera; L GETerrainMesh::GetZ */
+} GETMPointRowLayout;
+EEL_AT(GETMPointRowLayout, firstIndex, 0x0);
+EEL_AT(GETMPointRowLayout, count, 0x4);
+EEL_AT(GETMPointRowLayout, points, 0x8);
+EEL_SIZE(GETMPointRowLayout, 0xc);
+
+/* @class GETMTile size=0x4 size-confidence=confirmed | GETerrainMesh::GetIsWaterTile indexes a tile row with a 4-byte stride */
+typedef struct GETMTileLayout {
+    uint8_t pad_0x0[0x2];
+    uint8_t textureSetId; /* @0x2 lle-only | L GETerrainMesh::GetTextureSetID */
+    uint8_t waterInfo; /* @0x3 lle-only | L GETerrainMesh::GetWaterInfo, GetIsWaterTile */
+} GETMTileLayout;
+EEL_AT(GETMTileLayout, textureSetId, 0x2);
+EEL_AT(GETMTileLayout, waterInfo, 0x3);
+EEL_SIZE(GETMTileLayout, 0x4);
+
+/* @class GETMTileRow size=0xc size-confidence=confirmed | GETerrainMesh::GetIsValidTile indexes rows with a 0xc stride */
+typedef struct GETMTileRowLayout {
+    uint32_t firstIndex; /* @0x0 lle-only | L GETerrainMesh::GetIsValidTile */
+    uint32_t count; /* @0x4 lle-only | L GETerrainMesh::GetIsValidTile */
+    struct GETMTileLayout *tiles; /* @0x8 lle-only | L GETerrainMesh::GetTextureSetID */
+} GETMTileRowLayout;
+EEL_AT(GETMTileRowLayout, firstIndex, 0x0);
+EEL_AT(GETMTileRowLayout, count, 0x4);
+EEL_AT(GETMTileRowLayout, tiles, 0x8);
+EEL_SIZE(GETMTileRowLayout, 0xc);
+
+/* @class GETerrainMesh size=0x181694 size-confidence=guess | at least 0x181692 (the last byte of waterPointVisibility); rounded up to a dword. It is embedded in another class, so no operator new(size) gives it directly */
+typedef struct GETerrainMeshLayout {
+    void * vptr; /* @0x0 lle-only | L ctor sets the GETerrainMesh vftable */
+    struct StdMapLayout materialMap; /* @0x4 confirmed | P Draw(GETerrainMesh) iterates it (node key = texture at 0xc, value = material index at 0x10); L GETerrainMesh::GetTerrainMaterialMap */
+    struct StdVectorLayout materials; /* @0x10 confirmed | P TransformToCamera; L GETerrainMesh::GetTerrainMaterialList, GetTerrainMaterialCount (elements: GETMMaterial) */
+    struct StdVectorLayout visibleRows; /* @0x20 confirmed | P Light, TransformToCamera; L GETerrainMesh::GetNumVisibleTileRows, GetVisibleTileRow (12-byte elements) */
+    struct StdVectorLayout waterMaterials; /* @0x30 confirmed | P DrawWater, TransformToCamera; L GETerrainMesh::GetWaterMaterialList (elements: GETMMaterial) */
+    struct StdVectorLayout registeredTextureSets; /* @0x40 lle-only | L GETerrainMesh::GetRegisteredTextureSet, RegisterTextureSet */
+    struct StdVectorLayout colorSets; /* @0x50 lle-only | L GETerrainMesh::RegisterColorSet */
+    struct StdVectorLayout edgeRenderVertices; /* @0x60 lle-only | L GETerrainMesh::GetEdgeRenderVertices */
+    struct StdVectorLayout edgeWorldPoints; /* @0x70 confirmed | P TransformToCamera tests its element count; L GETerrainMesh::GetEdgeWorldPoints */
+    struct GEColorLayout waterColor; /* @0x80 confirmed | P Light multiplies it by the light; L GETerrainMesh::GetWaterColor */
+    struct GEColorLayout colorTable[256]; /* @0x8c confirmed | P Light indexes it by GETMPoint.colorIndex; L GETerrainMesh::GetVertexColor */
+    struct GE3DPlaneLayout frontPlane; /* @0xc8c lle-only | L GETerrainMesh::GetFrontPlane */
+    struct GE3DPlaneLayout backPlane; /* @0xca4 lle-only | L GETerrainMesh::GetBackPlane */
+    struct GE3DPlaneLayout leftPlane; /* @0xcbc lle-only | L GETerrainMesh::GetLeftPlane */
+    struct GE3DPlaneLayout rightPlane; /* @0xcd4 lle-only | L GETerrainMesh::GetRightPlane */
+    struct GETMPolygonLayout polygons[12000]; /* @0xcec lle-only | L constructor initializes the uv points of 12000 polygons; the vectors in materials point into it */
+    struct GETMRenderVertexLayout renderVertices[10201]; /* @0x8d6ec confirmed | P Draw(GETerrainMesh), Light, TransformToCamera index it [x][y] with strides 0xe34 and 0x24; L GETerrainMesh::GetTerrainRenderVertexArray (101 x 101) */
+    struct GETMPolygonLayout waterPolygons[5000]; /* @0xe7170 lle-only | L constructor initializes the uv points of 5000 water polygons */
+    struct GETMRenderVertexLayout waterRenderVertices[10201]; /* @0x121af0 confirmed | P TransformToCamera, Light; L GETerrainMesh::GetWaterRenderVertexArray (101 x 101) */
+    void * fractal; /* @0x17b574 lle-only | a U2DFractal; L constructor */
+    struct GETMPointRowLayout *pointRows; /* @0x17b578 confirmed | P Light, TransformToCamera; L GETerrainMesh::GetZ, GetVertexNormal, GetColorTableIndex */
+    struct GETMTileRowLayout *tileRows; /* @0x17b57c confirmed | P DrawTerrainHighlight; L GETerrainMesh::GetIsWaterTile, GetTextureSetID, ReferenceTile */
+    float unknown17b580; /* @0x17b580 guess | L constructor sets -0.714; SetGlobalWaterState writes it */
+    float waterVisiblePercentage; /* @0x17b584 confirmed | P TransformToCamera; L GETerrainMesh::GetVisibileWaterTilePercentage */
+    float minimumZ; /* @0x17b588 lle-only | L GETerrainMesh::GetMinimumZ, SetZ */
+    float maximumZ; /* @0x17b58c lle-only | L GETerrainMesh::GetMaximumZ, SetZ */
+    uint32_t unknown17b590; /* @0x17b590 guess | L CreateFlatMesh, Save write it (mesh width?) */
+    uint32_t unknown17b594; /* @0x17b594 guess | L CreateFlatMesh, Save write it (mesh height?) */
+    uint32_t edgeLeft; /* @0x17b598 lle-only | L GETerrainMesh::GetIsLeftEdgeTile */
+    uint32_t edgeTop; /* @0x17b59c lle-only | L GETerrainMesh::GetIsTopEdgeTile */
+    uint32_t edgeRight; /* @0x17b5a0 lle-only | L GETerrainMesh::GetIsRightEdgeTile */
+    uint32_t edgeBottom; /* @0x17b5a4 lle-only | L GETerrainMesh::GetIsBottomEdgeTile */
+    uint8_t pad_0x17b5a8[0x1104];
+    uint32_t visibleTileWidth; /* @0x17c6ac confirmed | P DrawGridLines; L GETerrainMesh::GetTerrainVisibleTileDimensions */
+    uint32_t visibleTileHeight; /* @0x17c6b0 confirmed | P DrawGridLines; L GETerrainMesh::GetTerrainVisibleTileDimensions */
+    uint32_t visibleBottomLeftX; /* @0x17c6b4 confirmed | P DrawGridLines, Light; L GETerrainMesh::GetTerrainVisibleBottomLeftIndices */
+    uint32_t visibleBottomLeftY; /* @0x17c6b8 confirmed | P DrawGridLines, Light; L GETerrainMesh::GetTerrainVisibleBottomLeftIndices */
+    uint32_t unknown17c6bc; /* @0x17c6bc guess | L UpdateWaterAnimation writes it */
+    uint32_t globalWaterSetId; /* @0x17c6c0 lle-only | L GETerrainMesh::GetGlobalWaterSetID */
+    uint32_t unknown17c6c4; /* @0x17c6c4 guess | L SetWaterColorSet, SetGlobalWaterState */
+    uint32_t unknown17c6c8; /* @0x17c6c8 guess | L constructor sets 0x50 */
+    uint32_t pointRowCount; /* @0x17c6cc lle-only | L GETerrainMesh::GetIsValidPoint */
+    uint32_t tileRowCount; /* @0x17c6d0 confirmed | P DrawTerrainHighlight; L GETerrainMesh::GetIsValidTile */
+    uint32_t visiblePolyCount; /* @0x17c6d4 lle-only | L GETerrainMesh::GetVisiblePolyCount */
+    uint32_t numVisibleTiles; /* @0x17c6d8 lle-only | L GETerrainMesh::GetNumVisibleTiles */
+    uint32_t createTime; /* @0x17c6dc lle-only | L constructor stores TMGetTime */
+    uint8_t pointVisibility[10201]; /* @0x17c6e0 confirmed | P Light, TransformToCamera test it [x * 101 + y]; L GETerrainMesh::GetTerrainPointVisibilityArray */
+    uint8_t waterPointVisibility[10201]; /* @0x17eeb9 confirmed | P Light, TransformToCamera; L GETerrainMesh::GetWaterPointVisibilityArray */
+    uint8_t pad_0x181692[0x2];
+} GETerrainMeshLayout;
+EEL_AT(GETerrainMeshLayout, vptr, 0x0);
+EEL_AT(GETerrainMeshLayout, materialMap, 0x4);
+EEL_AT(GETerrainMeshLayout, materials, 0x10);
+EEL_AT(GETerrainMeshLayout, visibleRows, 0x20);
+EEL_AT(GETerrainMeshLayout, waterMaterials, 0x30);
+EEL_AT(GETerrainMeshLayout, registeredTextureSets, 0x40);
+EEL_AT(GETerrainMeshLayout, colorSets, 0x50);
+EEL_AT(GETerrainMeshLayout, edgeRenderVertices, 0x60);
+EEL_AT(GETerrainMeshLayout, edgeWorldPoints, 0x70);
+EEL_AT(GETerrainMeshLayout, waterColor, 0x80);
+EEL_AT(GETerrainMeshLayout, colorTable, 0x8c);
+EEL_AT(GETerrainMeshLayout, frontPlane, 0xc8c);
+EEL_AT(GETerrainMeshLayout, backPlane, 0xca4);
+EEL_AT(GETerrainMeshLayout, leftPlane, 0xcbc);
+EEL_AT(GETerrainMeshLayout, rightPlane, 0xcd4);
+EEL_AT(GETerrainMeshLayout, polygons, 0xcec);
+EEL_AT(GETerrainMeshLayout, renderVertices, 0x8d6ec);
+EEL_AT(GETerrainMeshLayout, waterPolygons, 0xe7170);
+EEL_AT(GETerrainMeshLayout, waterRenderVertices, 0x121af0);
+EEL_AT(GETerrainMeshLayout, fractal, 0x17b574);
+EEL_AT(GETerrainMeshLayout, pointRows, 0x17b578);
+EEL_AT(GETerrainMeshLayout, tileRows, 0x17b57c);
+EEL_AT(GETerrainMeshLayout, unknown17b580, 0x17b580);
+EEL_AT(GETerrainMeshLayout, waterVisiblePercentage, 0x17b584);
+EEL_AT(GETerrainMeshLayout, minimumZ, 0x17b588);
+EEL_AT(GETerrainMeshLayout, maximumZ, 0x17b58c);
+EEL_AT(GETerrainMeshLayout, unknown17b590, 0x17b590);
+EEL_AT(GETerrainMeshLayout, unknown17b594, 0x17b594);
+EEL_AT(GETerrainMeshLayout, edgeLeft, 0x17b598);
+EEL_AT(GETerrainMeshLayout, edgeTop, 0x17b59c);
+EEL_AT(GETerrainMeshLayout, edgeRight, 0x17b5a0);
+EEL_AT(GETerrainMeshLayout, edgeBottom, 0x17b5a4);
+EEL_AT(GETerrainMeshLayout, visibleTileWidth, 0x17c6ac);
+EEL_AT(GETerrainMeshLayout, visibleTileHeight, 0x17c6b0);
+EEL_AT(GETerrainMeshLayout, visibleBottomLeftX, 0x17c6b4);
+EEL_AT(GETerrainMeshLayout, visibleBottomLeftY, 0x17c6b8);
+EEL_AT(GETerrainMeshLayout, unknown17c6bc, 0x17c6bc);
+EEL_AT(GETerrainMeshLayout, globalWaterSetId, 0x17c6c0);
+EEL_AT(GETerrainMeshLayout, unknown17c6c4, 0x17c6c4);
+EEL_AT(GETerrainMeshLayout, unknown17c6c8, 0x17c6c8);
+EEL_AT(GETerrainMeshLayout, pointRowCount, 0x17c6cc);
+EEL_AT(GETerrainMeshLayout, tileRowCount, 0x17c6d0);
+EEL_AT(GETerrainMeshLayout, visiblePolyCount, 0x17c6d4);
+EEL_AT(GETerrainMeshLayout, numVisibleTiles, 0x17c6d8);
+EEL_AT(GETerrainMeshLayout, createTime, 0x17c6dc);
+EEL_AT(GETerrainMeshLayout, pointVisibility, 0x17c6e0);
+EEL_AT(GETerrainMeshLayout, waterPointVisibility, 0x17eeb9);
+EEL_SIZE(GETerrainMeshLayout, 0x181694);
+
+/* @class DX7ScreenRecord size=0x74 size-confidence=confirmed | plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen */
+typedef struct DX7ScreenRecordLayout {
+    uint8_t pad_0x0[0x18];
+    void * direct3d; /* @0x18 plugin-only | P Deactivate releases it */
+    void * device; /* @0x1c plugin-only | an IDirect3DDevice7; P everywhere through DX7Rasterizer.screenRecords */
+    struct GEScreenLayout *screen; /* @0x20 plugin-only | P AddValidScreen stores the GEScreen; Deactivate calls its virtual slot 19 */
+    void * vertexBuffer; /* @0x24 plugin-only | an IDirect3DVertexBuffer7 (FVF 0x152, 0x10000 bytes); P CreateVertexBuffers */
+    uint32_t vertexCursor; /* @0x28 plugin-only | P LockVB/UnlockVB advance it by the vertices written */
+    uint32_t textureStateDirty; /* @0x2c plugin-only | P SetTexture sets it */
+    uint32_t stageCache[12]; /* @0x30 plugin-only | P SetTexture mirrors the GETStage words it last sent to the device */
+    uint8_t pad_0x60[0xc];
+    uint8_t unknown6c; /* @0x6c guess | P DX7Rasterizer constructor */
+    uint8_t sceneDrawn; /* @0x6d guess | P AddValidScreen sets it, Draw(GETerrainMesh), DrawWater set it after drawing */
+    uint8_t pad_0x6e[0x6];
+} DX7ScreenRecordLayout;
+EEL_AT(DX7ScreenRecordLayout, direct3d, 0x18);
+EEL_AT(DX7ScreenRecordLayout, device, 0x1c);
+EEL_AT(DX7ScreenRecordLayout, screen, 0x20);
+EEL_AT(DX7ScreenRecordLayout, vertexBuffer, 0x24);
+EEL_AT(DX7ScreenRecordLayout, vertexCursor, 0x28);
+EEL_AT(DX7ScreenRecordLayout, textureStateDirty, 0x2c);
+EEL_AT(DX7ScreenRecordLayout, stageCache, 0x30);
+EEL_AT(DX7ScreenRecordLayout, unknown6c, 0x6c);
+EEL_AT(DX7ScreenRecordLayout, sceneDrawn, 0x6d);
+EEL_SIZE(DX7ScreenRecordLayout, 0x74);
+
+/* @class DX7Rasterizer size=0x7c size-confidence=guess | plugin-owned: base GERasterizer (0x68) plus a vector and a dword; the copy constructor ends at 0x78 */
+typedef struct DX7RasterizerLayout {
+    struct GERasterizerLayout base; /* @0x0 confirmed | the engine base class */
+    struct StdVectorLayout screenRecords; /* @0x68 plugin-only | P AddValidScreen, Deactivate, DX7Rasterizer copy constructor; elements are DX7ScreenRecord pointers */
+    uint32_t unknown78; /* @0x78 guess | P DX7Rasterizer copy constructor */
+} DX7RasterizerLayout;
+EEL_AT(DX7RasterizerLayout, base, 0x0);
+EEL_AT(DX7RasterizerLayout, screenRecords, 0x68);
+EEL_AT(DX7RasterizerLayout, unknown78, 0x78);
+EEL_SIZE(DX7RasterizerLayout, 0x7c);
 #endif
