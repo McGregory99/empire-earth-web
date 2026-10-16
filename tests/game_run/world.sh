@@ -130,7 +130,13 @@ case "${1:-}" in
     ;;
 esac
 if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
-  game_dir="$(dirname "$3")"
+  game_dir="${FAKE_GAME:-$(dirname "$3")}"
+  case "$3" in
+    *ee-start.exe)
+      # what the helper would start, and what the game finds in its Saved Games at that moment
+      echo "scenario-start cmd=$(tr '\n' '|' <"$(dirname "$3")/ee-start.cmd" 2>/dev/null) save=$(cat "$game_dir/Data/Saved Games/"*.ees 2>/dev/null)" >>"$FAKE_WORLD/wine.log"
+      ;;
+  esac
   echo "4242 50000 C:\\GOG Games\\Fake\\Empire Earth.exe" >>"$FAKE_PS_FILE"
   if [ -f "$game_dir/ddraw_trace.cfg" ]; then
     trace="$(sed -n 's/^DDT_TRACE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
@@ -158,7 +164,7 @@ WS
 #!/bin/bash
 game="$FAKE_GAME"
 log="$FAKE_SUPPORT/logs/launcher.log"
-echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset} EE_GRAPHICS=${EE_GRAPHICS:-unset} EE_BIG_ARMIES=${EE_BIG_ARMIES:-unset} SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-unset}" >>"$FAKE_WORLD/launch.log"
+echo "launch.sh pid $$ EMPIRE_EARTH_WINE=${EMPIRE_EARTH_WINE:-} WINEDEBUG=${WINEDEBUG:-unset} EE_GRAPHICS=${EE_GRAPHICS:-unset} EE_BIG_ARMIES=${EE_BIG_ARMIES:-unset} EE_SIMHASH=${EE_SIMHASH:-unset} EE_SIM_FIXED_MS=${EE_SIM_FIXED_MS:-unset} SUPPORT=${EMPIRE_EARTH_SUPPORT_DIR:-unset}" >>"$FAKE_WORLD/launch.log"
 for v in "$FAKE_WORLD"/reg.*; do [ -f "$v" ] && printf '%s=%s\n' "$(basename "$v")" "$(cat "$v")" >>"$FAKE_WORLD/reg-at-launch.txt"; done
 wine_path="${EMPIRE_EARTH_WINE:-$FAKE_WINE}"   # the real launcher finds its own Wine when none is given
 orig="$(cd "$(dirname "$wine_path")/.." 2>/dev/null && pwd -P)/lib/wine/i386-windows/version.dll"

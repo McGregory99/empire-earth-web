@@ -174,4 +174,92 @@ check "... saying so" grep -q "did not install the version.dll shim" "$W/run8.ou
 check "... and the game directory is restored" same_game
 printf 'wine version dll' >"$W_WINE_ROOT/lib/wine/i386-windows/version.dll"
 
+# ---- 9. scenarios: a saved game loaded with -loadgame, started through ee-start.exe, closed with WM_CLOSE ----------------------------
+# A scenario is a data file (tests/ddraw_trace/scenarios/*.env); the save lives outside the repository and outside the game
+# directory, and is put in the game's Saved Games only for the run (the snapshot restore removes it again).
+SCN_DIR="$W_HOME/Games/EmpireEarth-re/scenarios"
+mkdir -p "$SCN_DIR" "$W/scn-bin"
+printf 'SAVE-BYTES' >"$SCN_DIR/ee_p24_skirm1.ees"
+save_sha="$(shasum -a 256 "$SCN_DIR/ee_p24_skirm1.ees" | cut -c1-64)"
+cat >"$W/scn.env" <<SCN
+SCN_NAME=skirmish-paused
+SCN_ARGS='-loadgame "ee_p24_skirm1"'
+SCN_SAVE=ee_p24_skirm1.ees
+SCN_SAVE_SHA256=$save_sha
+SCN_PRESENTS=3
+SCN_ENV="EE_SIMHASH=1 EE_SIM_FIXED_MS=33"
+SCN
+{ cat "$W/config.sh"; cat <<CONF
+START_BUILD=0
+START_EXE="$W/scn-bin/ee-start.exe"
+CLOSE_BUILD=0
+CLOSE_EXE="$W/scn-bin/ee-close.exe"
+CLOSE_GRACE=2
+EXIT_WAIT=2
+SCENARIO_DIR="$SCN_DIR"
+CONF
+} >"$W/config-scn.sh"
+printf 'start' >"$W/scn-bin/ee-start.exe"
+printf 'close' >"$W/scn-bin/ee-close.exe"
+run_scn() { bash "$DRIVER" --test-config "$W/config-scn.sh" --scenario "$W/scn.env" "$W/proxy.dll" "$@"; }
+
+fresh
+rm -f "$W/close.log" "$W/scn-bin/ee-start.cmd"
+run_scn >"$W/run9.out" 2>&1
+check_eq "a scenario run exits 0" "0" "$?"
+check "the game was started through the helper, not directly" grep -q "wine start /unix $W/scn-bin/ee-start.exe" "$W/wine.log"
+check_eq "... the game's own path never reached start" "0" "$(grep -c 'wine start /unix .*Empire Earth.exe' "$W/wine.log")"
+check "... its command file names the game and the exact arguments" \
+  grep -qF 'scenario-start cmd=C:\GOG Games\Empire Earth Gold Edition\Empire Earth\Empire Earth.exe|-loadgame "ee_p24_skirm1"|' "$W/wine.log"
+check "... and the save was in the game's Saved Games at that moment" grep -q 'save=SAVE-BYTES' "$W/wine.log"
+check "the determinism helpers reached the launcher" grep -q "EE_SIMHASH=1 EE_SIM_FIXED_MS=33" "$W/launch.log"
+check "the game was closed with the close helper (WM_CLOSE) before the prefix was stopped" test -s "$W/close.log"
+check "... which was asked for Empire Earth.exe on the game's desktop" grep -q "Empire Earth.exe EmpireEarth Default" "$W/close.log"
+check "the save is gone again and the game directory is what it was" same_game
+check_not "... in particular no save is left in Saved Games" test -e "$W_GAME/Data/Saved Games/ee_p24_skirm1.ees"
+check "the lock is released and the state removed" test ! -e "$GAME_RUN_LOCK" -a ! -e "$STATE"
+check "the trace was kept" grep -q "T1 fake" "$W/out"/trace.*.txt
+check "the run says how the game left" grep -q "left by itself (via wm_close)" "$W/run9.out"
+
+fresh
+touch "$W/close-needs-quit"
+run_scn >"$W/run9b.out" 2>&1
+check_eq "a game that ignores WM_CLOSE gets WM_QUIT (exit 0)" "0" "$?"
+check "... and the run says so" grep -q "via wm_quit" "$W/run9b.out"
+rm -f "$W/close-needs-quit"
+
+fresh
+touch "$W/close-ignored"
+run_scn >"$W/run9c.out" 2>&1
+check "a game that ignores both is stopped with the prefix's wineserver and the run is unclean (non-zero: $?)" test $? -ne 0
+check "... and the game directory is restored all the same" same_game
+rm -f "$W/close-ignored"
+
+fresh
+printf 'OTHER-BYTES' >"$SCN_DIR/ee_p24_skirm1.ees"
+run_scn >"$W/run9d.out" 2>&1
+check_eq "a save whose sha256 is not the scenario's is refused (3)" "3" "$?"
+check "... naming both checksums" grep -q "$save_sha" "$W/run9d.out"
+check "... before the lock is taken or anything is touched" same_game
+check_not "... no game was started" grep -q "wine start" "$W/wine.log"
+printf 'SAVE-BYTES' >"$SCN_DIR/ee_p24_skirm1.ees"
+fresh
+rm -f "$SCN_DIR/ee_p24_skirm1.ees"
+run_scn >"$W/run9e.out" 2>&1
+check_eq "a missing save is refused (3)" "3" "$?"
+check "... saying where it should be" grep -q "$SCN_DIR/ee_p24_skirm1.ees" "$W/run9e.out"
+printf 'SAVE-BYTES' >"$SCN_DIR/ee_p24_skirm1.ees"
+
+# the user's own copy of the save is already in the game's Saved Games: the run replaces it and the restore puts it back
+fresh
+mkdir -p "$W_GAME/Data/Saved Games"
+printf 'USERS-OWN-COPY' >"$W_GAME/Data/Saved Games/ee_p24_skirm1.ees"
+gr_manifest "$W_GAME" "$W/manifest.expected"
+run_scn >"$W/run9f.out" 2>&1
+check_eq "a save already in the game's Saved Games: the run works (0)" "0" "$?"
+check "... the scenario's bytes were the ones loaded" grep -q 'save=SAVE-BYTES' "$W/wine.log"
+check "... and the user's copy is back, byte for byte" same_game
+rm -rf "$W_GAME/Data/Saved Games"
+
+
 summary
