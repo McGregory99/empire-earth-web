@@ -314,7 +314,7 @@ game-check-rasterizer: $(RAST_DLL)
 
 # Library and drivers against a fake world: fake ps, wine, launcher and game, a game directory with spaces.
 test-game-run:
-	@for t in core snapshot wrapper trace-driver check-driver ri-analyze ri-driver ri-close; do bash tests/game_run/test-$$t.sh || exit 1; done
+	@for t in core snapshot wrapper trace-driver check-driver ri-analyze ri-driver ri-close ee-start; do bash tests/game_run/test-$$t.sh || exit 1; done
 
 # Create the Wine prefix the tests run in and make crashes terminate instead of
 # waiting for an interactive debugger.  Safe to repeat.
