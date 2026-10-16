@@ -15,6 +15,7 @@
 #define EEWEB_NULL_RASTERIZER_H
 
 #include "ge_interfaces.h"
+#include "layout_canaries.h"
 #include "rasterizer_abi.h"
 
 class EEWebNullRasterizer : public DX7RasterizerAbi {
@@ -31,10 +32,10 @@ public:
     // sets are declared in reverse slot order, which is how MSVC lays them out.
     long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 0
     long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 1
-    long AddLight(GELight &, unsigned long, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 2
+    long AddLight(GELight &light, unsigned long, unsigned long &) override { return Verdict(EEWebCheckLight(&light), EEWEB_NOT_SUPPORTED); }  // 2
     long AddValidScreen(GEScreen *) override { return EEWEB_NOT_SUPPORTED; }  // 3
     long BeginScene(GESurface *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 4
-    bool CanDoCurrentState(GETexture *, unsigned long) override { return false; }  // 5
+    bool CanDoCurrentState(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); return false; }  // 5
     long Clear(GEColor const &, GERectangle const &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 6
     long ClearZBuffer(float, GERectangle const &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 7
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override { return 0; }  // 9
@@ -44,26 +45,26 @@ public:
     long Deactivate() override;  // 12
     long Draw(GEBitmap *, unsigned long) override;  // 21
     long Draw(GELine *, unsigned long, unsigned long) override;  // 20
-    long Draw(GEModel *, unsigned long, float, bool) override { return EEWEB_NOT_SUPPORTED; }  // 19
+    long Draw(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 19
     long Draw(GEPoint *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 18
     long Draw(GERhombus *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 17
-    long Draw(GEText *, GESurface *) override { return EEWEB_NOT_SUPPORTED; }  // 16
-    long Draw(GEText *, GERectangle const &, GESurface *) override { return EEWEB_NOT_SUPPORTED; }  // 15
-    long Draw(GETerrainMesh &, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 14
+    long Draw(GEText *text, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 16
+    long Draw(GEText *text, GERectangle const &, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 15
+    long Draw(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 14
     long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 13
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 22
     long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23
-    long DrawSky(GEModel *, unsigned long, float, bool) override { return EEWEB_NOT_SUPPORTED; }  // 24
-    long DrawTerrainGrid(GETerrainMesh &, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 25
-    long DrawTerrainHighlight(GETerrainMesh &, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return EEWEB_NOT_SUPPORTED; }  // 26
-    long DrawWater(GETerrainMesh &, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 27
+    long DrawSky(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 24
+    long DrawTerrainGrid(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 25
+    long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
+    long DrawWater(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 27
     long EndScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 28
     long GetAvailableVideoMemory(unsigned long, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 29
     long GetTotalVideoMemory(unsigned long, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 30
     unsigned long GetCaps(unsigned long, unsigned long) override { return 0; }  // 31
     bool GetCanModulateTextureAlpha(unsigned long) override { return false; }  // 32
     bool GetDirtyRectangleSupport(unsigned long) override { return false; }  // 33
-    void Light(GETerrainMesh &, unsigned long) override {}  // 34
+    void Light(GETerrainMesh &mesh, unsigned long) override { Note(EEWebCheckTerrainMesh(&mesh)); }  // 34
     long RemoveAllLights(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 35
     long RemoveLight(unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 36
     void SetAlphaTesting(unsigned long, unsigned long) override {}  // 37
@@ -90,21 +91,21 @@ public:
     void SetShading(unsigned long, unsigned long) override {}  // 58
     void SetShadingColorSource(unsigned long, unsigned long) override {}  // 59
     void SetSpecular(unsigned long, unsigned long) override {}  // 60
-    void SetTexture(GETexture *, unsigned long) override {}  // 61
+    void SetTexture(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); }  // 61
     void SetViewport(GEViewport const &, unsigned long) override {}  // 62
     void SetWaitForVSync(bool, unsigned long) override {}  // 63
     void SetZBuffer(unsigned long, unsigned long) override {}  // 64
     void SetZCompare(unsigned long, unsigned long) override {}  // 65
     long ShowScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 66
-    void TransformToCamera(GETerrainMesh &, GEViewport &, float, bool, bool) override {}  // 67
-    long UpdateLight(unsigned long, GELight &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 68
+    void TransformToCamera(GETerrainMesh &mesh, GEViewport &viewport, float, bool, bool) override { if (Note(EEWebCheckTerrainMesh(&mesh)) == EEWEB_LAYOUT_OK) Note(EEWebCheckViewport(&viewport)); }  // 67
+    long UpdateLight(unsigned long, GELight &light, unsigned long) override { return Verdict(EEWebCheckLight(&light), EEWEB_NOT_SUPPORTED); }  // 68
 protected:
     long ActivateRasterizer() override;  // 70
     long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override { return EEWEB_NOT_SUPPORTED; }  // 71
     long slot72(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 72
     long slot73(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 73
     void DestroyTextureHandle(GETexture *) override {}  // 74
-    long DrawModelHierarchy(GEModel *, unsigned long, float, bool) override { return EEWEB_NOT_SUPPORTED; }  // 75
+    long DrawModelHierarchy(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 75
     long slot76(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 76
     void SetRenderTarget(GESurface *, unsigned long) override {}  // 77
 public:
@@ -115,6 +116,11 @@ protected:
     long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 81
 
 private:
+    // The layout canaries' bookkeeping: Note counts a refusal (and returns the canary's status); Verdict
+    // turns a refusal into the status EEWEB_LAYOUT_VIOLATION and otherwise returns `result`.
+    long Note(long canaryStatus);
+    long Verdict(long canaryStatus, long result);
+
     // Right behind the vptr: the harness reads them from there (EEWEB_COUNTERS_OFFSET).
     volatile long m_counters[EEWEB_COUNTER_COUNT];
 };

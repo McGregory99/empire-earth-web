@@ -35,6 +35,20 @@ EEWebNullRasterizer::~EEWebNullRasterizer()
     ++m_counters[EEWEB_COUNTER_DESTROYED];
 }
 
+long EEWebNullRasterizer::Note(long canaryStatus)
+{
+    if (canaryStatus != EEWEB_LAYOUT_OK) {
+        ++m_counters[EEWEB_COUNTER_LAYOUT_VIOLATIONS];
+        m_counters[EEWEB_COUNTER_LAST_VIOLATION] = canaryStatus;
+    }
+    return canaryStatus;
+}
+
+long EEWebNullRasterizer::Verdict(long canaryStatus, long result)
+{
+    return Note(canaryStatus) == EEWEB_LAYOUT_OK ? result : EEWEB_LAYOUT_VIOLATION;
+}
+
 long EEWebNullRasterizer::Activate()
 {
     return ActivateRasterizer();

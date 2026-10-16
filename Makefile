@@ -209,13 +209,16 @@ $(RAST_BUILD)/msvcrt.lib: $(RAST_SRC)/msvcrt_vc6.def | $(RAST_BUILD)
 $(RAST_BUILD)/lowlevel.lib: $(RAST_SRC)/lle_imports.def | $(RAST_BUILD)
 	$(LLVM_DLLTOOL) -m i386 -d $< -l $@ -D "Low-Level Engine.dll"
 
+$(RAST_BUILD)/kernel32.lib: $(RAST_SRC)/kernel32_imports.def | $(RAST_BUILD)
+	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D kernel32.dll
+
 $(RAST_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) $(ABI_HEADERS) | $(RAST_BUILD)
 	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -c -o $@ $<
 
-$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
+$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib
 	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
 	    /subsystem:windows,5.0 /opt:ref /filealign:512 /brepro $(RAST_OBJECTS) \
-	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib
+	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib
 
 $(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
 	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine

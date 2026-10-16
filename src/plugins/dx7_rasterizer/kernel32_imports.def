@@ -1,0 +1,6 @@
+; The two kernel32.dll functions the layout canaries need (see layout_canaries.cpp): a readability probe
+; and the debugger log.  Both exist in every Windows (and in Wine); both are stdcall.
+LIBRARY kernel32.dll
+EXPORTS
+    IsBadReadPtr@8
+    OutputDebugStringA@4
