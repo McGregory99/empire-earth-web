@@ -86,6 +86,23 @@ gr_make_wine_wrapper "$W/wrap fail" "$W/hook-fail.sh"
 check_eq "a failing hook refuses the start (exit 97)" "97" "$?"
 check_eq "... the game is not started" "0" "$(grep -c 'wine start' "$W/wine.log")"
 
+# a driver that must start the game with a command line of its own names a replacement program (GR_START_REPLACE): the real
+# wine is asked to `start /unix` that program instead, after the hook; every other call is untouched
+GR_START_REPLACE="$W/bin dir/ee-start.exe" gr_make_wine_wrapper "$W/wrap replace" "$W/hook.sh" one
+: >"$W/wine.log"
+rm -f "$W/hook.log"
+"$W/wrap replace/bin/wine" start /unix "$W_GAME/Empire Earth.exe" >/dev/null 2>&1
+check "a replacement program is started instead of the game" grep -qF "wine start /unix $W/bin dir/ee-start.exe" "$W/wine.log"
+check_eq "... the game's own path is not passed on" "0" "$(grep -c 'Empire Earth.exe' "$W/wine.log")"
+check "... after the hook" grep -q 'hook-ran one' "$W/hook.log"
+: >"$W/wine.log"
+"$W/wrap replace/bin/wine" reg add 'HKCU\Software\X' /v a /d b
+check "... other calls keep their arguments" grep -qF 'wine reg add HKCU\Software\X /v a /d b' "$W/wine.log"
+gr_make_wine_wrapper "$W/wrap plain" "$W/hook.sh" one
+: >"$W/wine.log"
+"$W/wrap plain/bin/wine" start /unix "$W_GAME/Empire Earth.exe" >/dev/null 2>&1
+check "without GR_START_REPLACE the game itself is started (as before)" grep -qF "wine start /unix $W_GAME/Empire Earth.exe" "$W/wine.log"
+
 # ---- 3. the fake launcher through the wrapper ----------------------------------------------------------------------------------
 : >"$W_SUP/logs/launcher.log"
 gr_launcher_log_mark
