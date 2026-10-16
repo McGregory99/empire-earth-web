@@ -29,6 +29,10 @@ typedef unsigned long (TC *fn_u_v)(const void *self);
 typedef unsigned long (TC *fn_u_u)(const void *self, unsigned long a);
 typedef unsigned char (TC *fn_b_v)(const void *self);
 typedef unsigned char (TC *fn_b_u)(const void *self, unsigned long a);
+typedef void (TC *fn_v_ffu)(void *self, float a, float b, unsigned long c);
+typedef void (TC *fn_v_uuu)(void *self, unsigned long a, unsigned long b, unsigned long c);
+typedef void (TC *fn_v_ppu)(const void *self, void *a, void *b, unsigned long c);
+typedef void (TC *fn_v_ppp)(const void *self, void *a, void *b, void *c);
 typedef void *(TC *fn_p_v)(const void *self);
 typedef void *(TC *fn_p_u)(const void *self, unsigned long a);
 typedef void (TC *fn_v_v)(void *self);
@@ -81,6 +85,8 @@ static inline int oracle_same_float(float a, float b)
 void oracle_value_types(void);
 void oracle_texture_material_light(void);
 void oracle_model_viewport_text(void);
+void oracle_rasterizer_terrain(void);
+void oracle_terrain(void);
 
 /* The address of an exported data member, e.g. the vftable of a class ("??_7GETexture@@6B@"). */
 const void *oracle_vftable(const char *class_name);

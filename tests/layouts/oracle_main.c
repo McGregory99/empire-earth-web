@@ -70,6 +70,7 @@ int main(void)
     oracle_value_types();
     oracle_texture_material_light();
     oracle_model_viewport_text();
+    oracle_rasterizer_terrain();
     printf("layout oracle: %d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
 }
