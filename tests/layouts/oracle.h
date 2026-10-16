@@ -28,6 +28,7 @@ typedef float (TC *fn_f_uu)(const void *self, unsigned long a, unsigned long b);
 typedef unsigned long (TC *fn_u_v)(const void *self);
 typedef unsigned long (TC *fn_u_u)(const void *self, unsigned long a);
 typedef unsigned char (TC *fn_b_v)(const void *self);
+typedef unsigned char (TC *fn_b_u)(const void *self, unsigned long a);
 typedef void *(TC *fn_p_v)(const void *self);
 typedef void *(TC *fn_p_u)(const void *self, unsigned long a);
 typedef void (TC *fn_v_v)(void *self);
@@ -43,6 +44,11 @@ typedef void (TC *fn_v_fu)(void *self, float a, unsigned long b);
 typedef void *(TC *fn_p_pp)(void *self, void *a, void *b);
 typedef void *(TC *fn_p_uu)(void *self, unsigned long a, unsigned long b);
 typedef void *(TC *fn_p_p)(void *self, const void *a);
+typedef void (TC *fn_v_fp)(void *self, float a, const void *b);
+typedef void *(TC *fn_p_pu)(void *self, const void *a, unsigned long b);
+typedef void (TC *fn_v_ub)(void *self, unsigned long a, unsigned char b);
+typedef void *(TC *fn_p_uu2)(void *self, unsigned long a, unsigned long b, unsigned long c);
+typedef void (TC *fn_v_puuuu)(void *self, void *a, unsigned long b, unsigned long c, unsigned long d, unsigned char e);
 
 extern int g_checks;
 extern int g_failures;
@@ -74,6 +80,7 @@ static inline int oracle_same_float(float a, float b)
 /* One group of checks per source file, run in this order by oracle_main.c. */
 void oracle_value_types(void);
 void oracle_texture_material_light(void);
+void oracle_model_viewport_text(void);
 
 /* The address of an exported data member, e.g. the vftable of a class ("??_7GETexture@@6B@"). */
 const void *oracle_vftable(const char *class_name);
