@@ -220,6 +220,8 @@ static long counter(const void *obj, int which)
     return ((const volatile long *)((const char *)obj + EEWEB_COUNTERS_OFFSET))[which];
 }
 
+#include "canary_checks.h" /* the layout canaries, driven through our rasterizer's vtable */
+
 /*
  * Number of slots of a vtable: the consecutive entries that point into executable code of `module`.
  * The entry behind the last slot is the next vtable's RTTI locator, which lies in a data section.
@@ -333,6 +335,8 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
           "%s: the self-check (new, virtual calls, dynamic_cast, virtual delete) found no fault", e->label);
     CHECK(after[EEWEB_COUNTER_DESTROYED] == before[EEWEB_COUNTER_DESTROYED],
           "%s: the shared object itself was not destroyed by it", e->label);
+
+    check_layout_canaries(e->label, obj, vtable);
 
     /* Last, because it destroys the shared object: the deleting-destructor slot with flags 0 (destroy, do
      * not free) must run our destructor.  (The vptr is not checked: optimizers drop the stores that reset
