@@ -13,6 +13,7 @@
 #   make check-abi-rasterizer   exports, ordinals and imports of that DLL
 #   make check-abi-shapes       vtable shapes: the ABI headers generated from the inventories (P2.2)
 #   make gen-abi-headers        regenerate src/engine_abi/ge_*.h from the inventories
+#   make gen-layouts-md         regenerate src/engine_abi/LAYOUTS.md from the comments of ge_layouts.h
 #   make check-layouts          engine class layouts: compile-time asserts + the real engine as oracle, under Wine (P2.5)
 #   make test-rasterizer        harness against the original DX7HRTnLDisplay.dll and ours, under Wine
 #   make game-check-rasterizer  automated in-game check (takes the game-run lock, restores the game dir)
@@ -70,7 +71,7 @@ PLUGIN_HEADERS := $(wildcard src/plugins/tcp_protocol/*.h) src/engine_abi/low_le
 
 .PHONY: all test golden determinism test-stub check-abi wine-prefix clean testbed-ours testbed-original testbed-stub \
     rasterizer check-abi-rasterizer test-rasterizer game-check-rasterizer testbed-rasterizer test-game-run \
-    check-abi-shapes gen-abi-headers check-layouts
+    check-abi-shapes gen-abi-headers check-layouts gen-layouts-md
 
 all: $(PLUGIN) $(STUB) $(HARNESS)
 
@@ -255,7 +256,7 @@ define run_rast_harness
 endef
 
 test-rasterizer: SHELL := /bin/bash
-test-rasterizer: check-abi-shapes check-abi-rasterizer testbed-rasterizer
+test-rasterizer: check-abi-shapes check-layouts check-abi-rasterizer testbed-rasterizer
 	$(call run_rast_harness,original,DX7HRTnLDisplay.dll)
 	$(call run_rast_harness,ours,$(RAST_DLL_NAME))
 	@echo "PASS: the original rasterizer plugin and ours both satisfy the plugin contract"
@@ -280,8 +281,13 @@ $(LAYOUT_BUILD):
 $(LAYOUT_ORACLE): $(LAYOUT_ORACLE_SRC) tests/layouts/oracle.h src/engine_abi/ge_layouts.h | $(LAYOUT_BUILD)
 	$(CC) $(CFLAGS) -Wno-cast-function-type -I tests/layouts -o $@ $(LAYOUT_ORACLE_SRC)
 
+gen-layouts-md:
+	python3 -I tools/re/gen_layouts_md.py --header src/engine_abi/ge_layouts.h --out src/engine_abi/LAYOUTS.md
+
 check-layouts: SHELL := /bin/bash
 check-layouts: $(LAYOUT_ORACLE)
+	python3 -I tests/layouts/test_gen_layouts_md.py
+	python3 -I tools/re/gen_layouts_md.py --header src/engine_abi/ge_layouts.h --check src/engine_abi/LAYOUTS.md
 	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -fsyntax-only tests/layouts/probe_layouts.cpp
 	mkdir -p "$(LAYOUT_TESTBED)"
 	cp "$(ENGINE_DLL)" "$(LAYOUT_TESTBED)/Low-Level Engine.dll"
