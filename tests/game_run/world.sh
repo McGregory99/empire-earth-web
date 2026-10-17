@@ -153,7 +153,11 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
         while [ ! -e "$arm" ] && [ "$i" -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
         [ -e "$arm" ] || exit 0
       fi
-      printf '# ddraw_trace v1\nT1 fake\n# end: 3 presents\n' >"$trace"
+      id=1
+      if [ -e "$FAKE_WORLD/vary-ids" ]; then   # a run history that shifts the object ids and the hashes, as the game's does
+        id=$(( $(cat "$FAKE_WORLD/id-counter" 2>/dev/null || echo 100) + 7 )); echo "$id" >"$FAKE_WORLD/id-counter"
+      fi
+      printf '# ddraw_trace v1\nT1 fake\nT1 surf#%s.Unlock() = DD_OK locked={bytes=8, hash=fnv1a64:%016x}\n# end: 3 presents\n' "$id" "$id" >"$trace"
       : >"$trace.done"
     ) &
   fi

@@ -324,4 +324,27 @@ check "... and the stale log is back, byte for byte" same_game
 rm -f "$W_GAME/ee-version.log"
 
 
+# ---- 12. the gate of a scenario compares the structure form when the scenario says so ------------------------------------------------------------------
+# The paused game's object ids, content hashes and vertex ring phase depend on the run before the capture window and on the tick it
+# was paused at; the scenario names the normalization (SCN_NORMALIZE=structure) under which two captures must be identical.
+cat >"$W/scn-struct.env" <<SCN
+$(cat "$W/scn.env")
+SCN_NORMALIZE=structure
+SCN
+run_struct() { bash "$DRIVER" --test-config "$W/config-scn.sh" --scenario "$W/scn-struct.env" "$W/proxy.dll" --gate; }
+fresh
+rm -f "$W/id-counter"
+: >"$W/vary-ids"
+run_struct >"$W/run12.out" 2>&1
+check_eq "two captures that differ only in ids and hashes pass the structure gate (0)" "0" "$?"
+check "... and the log says which form made them equal" grep -q "identical in structure form" "$W/run12.out"
+check "... after reporting the raw difference" grep -q "traces differ raw" "$W/run12.out"
+fresh
+rm -f "$W/id-counter"
+run_scn --gate >"$W/run12b.out" 2>&1
+check "the same two captures fail a scenario gate that does not ask for the structure form (non-zero: $?)" test $? -ne 0
+check "... saying they differ" grep -q "traces DIFFER" "$W/run12b.out"
+rm -f "$W/vary-ids" "$W/id-counter"
+
+
 summary
