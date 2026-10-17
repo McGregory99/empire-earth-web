@@ -19,11 +19,13 @@ static void cfg_set(const char *key, const char *value) {
         lstrcpynA(g_cfg.modules, value, sizeof g_cfg.modules);
     else if (!strcmp(key, "DDT_MAX_PRESENTS"))
         g_cfg.max_presents = (unsigned)strtoul(value, NULL, 0);
+    else if (!strcmp(key, "DDT_ARM_FILE"))
+        lstrcpynA(g_cfg.arm_file, value, sizeof g_cfg.arm_file);
     else if (!strcmp(key, "DDT_FLUSH"))
         g_cfg.flush_each = atoi(value) != 0;
 }
 
-static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH"};
+static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH", "DDT_ARM_FILE"};
 
 /* ddraw_trace.cfg next to the proxy (KEY=VALUE per line), then the environment, which wins. */
 static void cfg_load(void) {

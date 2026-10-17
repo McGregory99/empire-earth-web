@@ -8,7 +8,7 @@ static CRITICAL_SECTION g_cs;
 static volatile LONG g_cs_ready;
 static HANDLE g_file = INVALID_HANDLE_VALUE, g_times = INVALID_HANDLE_VALUE;
 static LARGE_INTEGER g_t0, g_freq;
-static int g_opened, g_capped;
+static int g_opened, g_capped, g_armed;
 static unsigned g_presents;
 static char g_out[1 << 16];
 static unsigned g_out_len;
@@ -181,10 +181,31 @@ static void open_locked(void) {
     }
 }
 
-static int active_locked(void) {
+static int open_ok_locked(void) {
     if (!g_opened)
         open_locked();
-    return g_file != INVALID_HANDLE_VALUE && !g_capped;
+    return g_file != INVALID_HANDLE_VALUE;
+}
+
+/* Lines are written and presents counted only while the trace is open, not capped and, if DDT_ARM_FILE is configured, armed. */
+static int active_locked(void) {
+    return open_ok_locked() && !g_capped && (g_armed || !g_cfg.arm_file[0]);
+}
+
+/* A scenario that must trace only a settled state (a paused game) names a file that its driver creates once that state is
+ * reached.  Every present looks for it until it exists; the present that sees it is the last one outside the trace, so the
+ * window starts at a frame boundary and its presents are counted from there.  Object ids are assigned all the same while
+ * unarmed, so the lines of the window name the objects as a full trace would. */
+static void arm_locked(void) {
+    static const char mark[] = "# armed\n";
+    if (g_armed || !g_cfg.arm_file[0] || !open_ok_locked() || g_capped)
+        return;
+    if (GetFileAttributesA(g_cfg.arm_file) == INVALID_FILE_ATTRIBUTES)
+        return;
+    g_armed = 1;
+    put_locked(mark, sizeof mark - 1);
+    if (g_times != INVALID_HANDLE_VALUE)
+        QueryPerformanceCounter(&g_t0);
 }
 
 int trace_active(void) {
@@ -193,7 +214,8 @@ int trace_active(void) {
     if (!g_cfg.trace_path[0])
         return 0;
     lock();
-    a = active_locked();
+    a = open_ok_locked() && !g_capped; /* not "armed": the calls before the arming are still formatted, so that the present
+                                          that arms the trace is seen (trace_emit then drops their lines) */
     unlock();
     return a;
 }
@@ -272,7 +294,9 @@ void trace_present(void) {
     if (!g_cfg.trace_path[0])
         return;
     lock();
-    if (active_locked()) {
+    if (!g_armed && g_cfg.arm_file[0]) {
+        arm_locked();
+    } else if (active_locked()) {
         LARGE_INTEGER now;
         DWORD written;
         ++g_presents;

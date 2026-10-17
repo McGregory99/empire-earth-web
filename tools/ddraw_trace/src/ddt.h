@@ -13,6 +13,7 @@ typedef struct DdtConfig {
     char modules[512];         /* comma separated module base names whose calls are traced */
     unsigned max_presents;     /* stop tracing after this many present-equivalent calls; 0 = unlimited */
     int flush_each;            /* flush the trace after every line (debugging) */
+    char arm_file[MAX_PATH];   /* if set: nothing is traced (nor counted) until this file exists; see trace_present */
 } DdtConfig;
 
 extern DdtConfig g_cfg;
