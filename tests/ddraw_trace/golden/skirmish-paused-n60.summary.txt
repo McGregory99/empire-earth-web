@@ -1,0 +1,52 @@
+== lines: 84840 calls, 0 callback lines
+== calls per interface.method
+17160 dev7.SetTextureStageState
+13500 dev7.SetRenderState
+12120 vb.Unlock
+12120 vb.Lock
+10980 dev7.SetTexture
+8100 dev7.DrawIndexedPrimitiveVB
+4020 dev7.DrawPrimitiveVB
+2640 dev7.SetTransform
+1560 dev7.SetMaterial
+ 720 dev7.SetViewport
+ 600 dev7.SetLight
+ 480 dev7.LightEnable
+ 240 surf.Blt
+ 180 dev7.Clear
+  60 surf.Unlock
+  60 surf.ReleaseDC
+  60 surf.Lock
+  60 surf.GetDC
+  60 surf.Flip
+  60 dev7.EndScene
+  60 dev7.BeginScene
+== exports
+== distinct render states set
+7980 CLIPPING(136)
+1920 AMBIENT(139)
+ 360 ZWRITEENABLE(14)
+ 360 ZFUNC(23)
+ 360 SRCBLEND(19)
+ 360 DESTBLEND(20)
+ 360 ALPHABLENDENABLE(27)
+ 240 ZENABLE(7)
+ 240 FOGENABLE(28)
+ 240 DIFFUSEMATERIALSOURCE(145)
+ 240 CULLMODE(22)
+ 240 COLORVERTEX(141)
+ 240 AMBIENTMATERIALSOURCE(147)
+ 120 LIGHTING(137)
+ 120 ALPHATESTENABLE(15)
+ 120 ALPHAREF(24)
+== distinct texture stage state types set
+6840 COLOROP(1)
+6840 ALPHAOP(4)
+ 960 MIPFILTER(18)
+ 840 MIPMAPLODBIAS(19)
+ 720 MINFILTER(17)
+ 720 MAGFILTER(16)
+ 240 ADDRESS(12)
+== texture formats offered by EnumTextureFormats
+== surfaces created (distinct descriptions, ids stripped)
+== presents: 300 flip/blit calls; end marker: # end: 60 presents

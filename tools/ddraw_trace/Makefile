@@ -7,6 +7,8 @@
 #   make game-trace   one in-game capture (takes the game-run lock, launches the game, ~3 min); compares with the previous run
 #   make game-gate    two in-game captures and their diff: the determinism gate
 #   make game-check   one capture compared with tests/ddraw_trace/golden (this machine's display)
+#   make game-gate-skirmish   the paused-skirmish scenario (tests/ddraw_trace/scenarios.md): two captures, identical in structure form
+#   make game-check-skirmish  one capture of that scenario compared with its golden
 #   make clean
 #
 # Everything outside the repository (Wine, the test prefix, the game) is configured below and never
@@ -36,7 +38,7 @@ HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test test-unit test-game-run test-normalize check-tables gen-tables game-trace game-gate game-check clean
+.PHONY: all test test-unit test-game-run test-normalize check-tables gen-tables game-trace game-gate game-check game-gate-skirmish game-check-skirmish clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -110,6 +112,20 @@ game-check: $(BUILD)/ddraw.dll
 	gzip -dc $(TESTDIR)/golden/startup-menu-n60.trace.gz | python3 -I scripts/normalize.py >$(BUILD)/golden.normalized.txt
 	python3 -I scripts/normalize.py <$(BUILD)/game-trace/last.txt | diff $(BUILD)/golden.normalized.txt - >/dev/null \
 	    && echo 'game-check: identical to the golden trace (cursor blits normalized)' || { echo 'game-check: DIFFERS from the golden trace'; exit 1; }
+
+# Scenario 3: a saved skirmish loaded with -loadgame and paused (tests/ddraw_trace/scenarios.md).  The save is user data kept in
+# $(HOME)/Games/EmpireEarth-re/scenarios (the driver checks its sha256); the golden is the structure form of the capture.
+SKIRMISH := ../../tests/ddraw_trace/scenarios/skirmish-paused.env
+SKIRMISH_OUT := $(BUILD)/game-trace-skirmish-paused
+
+game-gate-skirmish: $(BUILD)/ddraw.dll
+	scripts/game-trace.sh --scenario $(SKIRMISH) $(BUILD)/ddraw.dll --gate
+
+game-check-skirmish: SHELL := /bin/bash
+game-check-skirmish: $(BUILD)/ddraw.dll
+	scripts/game-trace.sh --scenario $(SKIRMISH) $(BUILD)/ddraw.dll
+	python3 -I scripts/normalize.py --structure <$(SKIRMISH_OUT)/last.txt | cmp - <(gzip -dc $(TESTDIR)/golden/skirmish-paused-n60.structure.trace.gz) \
+	    && echo 'game-check-skirmish: identical to the golden (structure form)' || { echo 'game-check-skirmish: DIFFERS from the golden'; exit 1; }
 
 clean:
 	rm -rf $(BUILD)

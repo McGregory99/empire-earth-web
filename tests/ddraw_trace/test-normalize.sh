@@ -90,5 +90,14 @@ python3 -I "$TOOL/scripts/normalize.py" --structure <"$work/in.txt" >"$work/out1
 check_eq "--structure also removes the cursor blits" "0" "$(grep -c 'lpSrcRect={512,384,544,416}, dwFlags=0x8000000' "$work/out1s.txt")"
 python3 -I "$TOOL/scripts/normalize.py" --nonsense </dev/null >/dev/null 2>&1
 check_eq "an unknown option is refused (exit 2)" "2" "$?"
+
+# ---- the scenario golden (structure form): what the manifest says it is, and already in normal form --------------------------
+GOLDEN="$TOOL/../../tests/ddraw_trace/golden/skirmish-paused-n60.structure.trace.gz"
+gzip -dc "$GOLDEN" >"$work/golden.txt"
+check_eq "the skirmish golden has the sha256 that tests/ddraw_trace/scenarios.md records" "852c752f05a38edf1f2095081781b6289d1ab778d47dbde122ead314a19c9163" "$(shasum -a 256 "$work/golden.txt" | cut -c1-64)"
+check_eq "... 84,844 lines and 60 presents" "84844 60" "$(wc -l <"$work/golden.txt" | tr -d ' ') $(grep -c '\.Flip(' "$work/golden.txt")"
+python3 -I "$TOOL/scripts/normalize.py" --structure <"$work/golden.txt" | cmp -s - "$work/golden.txt"
+check_eq "... it is already in structure form (normalizing it again changes nothing)" "0" "$?"
+check_eq "... it holds no content hash (only the mask)" "0" "$(grep -E -c 'fnv1a64:[0-9a-f]{16}' "$work/golden.txt")"
 echo "$([ "$fails" -eq 0 ] && echo PASS || echo FAIL): $checks checks, $fails failed"
 [ "$fails" -eq 0 ]

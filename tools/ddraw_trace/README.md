@@ -181,6 +181,7 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 | `DDT_MODULES` | comma separated base names whose calls are traced | the two renderer plugins |
 | `DDT_MAX_PRESENTS` | present cap, 0 = unlimited | 0 |
 | `DDT_FLUSH` | `1`: flush after every line (the unit tests) | 0 |
+| `DDT_ARM_FILE` | nothing is traced, and no present counted, until this file exists; the present that first sees it is the last outside the trace, the window opens after it and the trace gets a `# armed` line. Object ids are assigned all the same. Used by the scenarios that capture a settled state | empty |
 
 ## How the wrapping works
 
@@ -236,6 +237,13 @@ Wine Stable 11.0, d7vk stack, the launcher's `EE_*` switches off as in the task)
 
 Golden: `tests/ddraw_trace/golden/startup-menu-n60.trace.gz` (the 60-present trace, call metadata and hashes only, no game
 data) and `startup-menu-n60.summary.txt` (call counts per method, render states, texture formats).
+
+## Scenarios
+
+`game-trace.sh --scenario <file>` captures a scenario instead of the startup (a saved game loaded with `-loadgame`, paused, then a
+window of presents); `tests/ddraw_trace/scenarios.md` lists them with their command lines, save checksums, windows, normalization and
+goldens. `normalize.py --structure` is the form of a trace that does not depend on the history of the run before the window or on
+the tick the game was paused at (see there for what it masks and why).
 
 ## Self-check
 
