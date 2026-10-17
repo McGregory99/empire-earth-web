@@ -54,13 +54,11 @@ DESKTOP_NAME=EmpireEarth
 GAME_EXE_NAME="Empire Earth.exe"
 SCENARIO_DIR="$HOME/Games/EmpireEarth-re/scenarios" # the saves the scenarios load; outside the repository, never committed
 SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV=""
-SCN_HOLD=0  # 1: hold SCN_KEYS down from the moment the game's window exists until its loop runs (see scenario_hold_start)
 SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
 KEY_BUILD=1
 KEY_EXE=""
 LOOP_WAIT=180        # seconds to wait for the game loop (EE_SIMHASH's "tick 0" line) after the launcher returns
 SETTLE_SECONDS=6     # seconds between the keys and the check that the simulation stopped
-HOLD_AFTER=0.5       # seconds from the first tick line to the release of a held key
 PAUSE_WINDOW=5       # seconds without a new tick line that prove it stopped (a tick line comes every 50 ticks, ~1.8 s)
 if [ -n "$SCENARIO_FILE" ]; then
   [ -f "$SCENARIO_FILE" ] || { echo "no scenario file $SCENARIO_FILE" >&2; exit 2; }
@@ -84,12 +82,7 @@ if command -v caffeinate >/dev/null 2>&1; then
   caffeinate -d -i -w $$ >/dev/null 2>&1 &
 fi
 
-HOLD_PID=""
-cleanup() {
-  [ -n "$HOLD_PID" ] && kill "$HOLD_PID" 2>/dev/null
-  HOLD_PID=""
-  gr_teardown
-}
+cleanup() { gr_teardown; }
 gr_install_traps cleanup
 
 # ---- scenarios ---------------------------------------------------------------------------------------------------------------------
@@ -129,25 +122,10 @@ scenario_build_helpers() {
 # The simulation's tick lines (EE_SIMHASH) in the game's ee-version.log.
 tick_lines() { grep -c 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null || true; }
 
-# A key that is already down when the game's loop starts is seen at the loop's very first poll: the pause then lands at a fixed
-# point of the start, not at a tick that depends on when a press arrives (28 ticks a second; two runs paused at different ticks
-# differ in every vertex buffer hash).  The holder waits for the game's window, presses and holds the keys until the release file
-# exists; scenario_pause_and_arm releases them once the loop runs.  Started before the launcher, killed by the cleanup.
-scenario_hold_start() {
-  local release="$1"
-  rm -f "$release"
-  (
-    until grep -q "class='SSSI Empire Earth'" "$GR_GAME/ee-version.log" 2>/dev/null; do sleep 0.2; done
-    # shellcheck disable=SC2086
-    WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" --hold "$release" $SCN_KEYS
-  ) >>"$OUT/ee-key.out" 2>&1 &
-  HOLD_PID=$!
-}
-
 # With keys: wait for the game loop, press the keys, prove from the tick lines that the simulation stopped, then arm the proxy by
 # creating its arm file.  Returns non-zero (and says why) if the loop never starts or the simulation keeps running.
 scenario_pause_and_arm() {
-  local arm="$1" release="$1.release" waited=0
+  local arm="$1" waited=0 before after
   until [ "$(tick_lines)" -gt 0 ]; do
     if [ "$waited" -ge "$LOOP_WAIT" ]; then
       gr_log "FAIL: the game loop never started (no simhash tick line in ee-version.log after ${LOOP_WAIT}s)"
@@ -157,38 +135,20 @@ scenario_pause_and_arm() {
     sleep 1
     waited=$((waited + 1))
   done
-  if [ "$SCN_HOLD" = 1 ]; then
-    gr_log "the game loop runs; releasing the held key(s) $SCN_KEYS"
-    sleep "$HOLD_AFTER"
-    : >"$release"
-    if [ -n "$HOLD_PID" ]; then wait "$HOLD_PID" 2>/dev/null; HOLD_PID=""; fi
-    if simulation_stopped; then
-      gr_log "paused by the held key ($(tick_lines) tick line(s))"
-      : >"$arm"
-      return 0
-    fi
-    gr_log "WARNING: the held key did not pause the game; pressing it now (this pause is timing dependent: the state is not reproducible)"
-  else
-    gr_log "the game loop runs; pressing scancode(s) $SCN_KEYS"
-  fi
+  gr_log "the game loop runs; pressing scancode(s) $SCN_KEYS"
   # shellcheck disable=SC2086
   WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
     { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 1; }
-  if ! simulation_stopped; then
-    gr_log "FAIL: the simulation is still running ${SETTLE_SECONDS}s after the keys (tick lines kept coming for ${PAUSE_WINDOW}s)"
-    return 1
-  fi
-  gr_log "the simulation stopped ($(tick_lines) tick lines, none new in ${PAUSE_WINDOW}s); arming the proxy"
-  : >"$arm"
-}
-
-# Settle, then no new tick line for the whole pause window.
-simulation_stopped() {
-  local before
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
   sleep "$PAUSE_WINDOW"
-  [ "$(tick_lines)" = "$before" ]
+  after="$(tick_lines)"
+  if [ "$after" != "$before" ]; then
+    gr_log "FAIL: the simulation is still running ${SETTLE_SECONDS}s after the keys ($before -> $after tick lines in ${PAUSE_WINDOW}s)"
+    return 1
+  fi
+  gr_log "the simulation stopped ($after tick lines, none new in ${PAUSE_WINDOW}s); arming the proxy"
+  : >"$arm"
 }
 
 # The Windows path of the game's exe, from its place in the prefix: C:\GOG Games\...\Empire Earth.exe
@@ -202,7 +162,6 @@ scenario_prepare() {
   printf '%s\n%s\n' "$(game_exe_windows_path)" "$SCN_ARGS" >"$(dirname "$START_EXE")/ee-start.cmd" || return 1
   mkdir -p "$GR_GAME/Data/Saved Games" && cp "$SCENARIO_DIR/$SCN_SAVE" "$GR_GAME/Data/Saved Games/$SCN_SAVE" || return 1
   [ "$(shasum -a 256 "$GR_GAME/Data/Saved Games/$SCN_SAVE" | cut -c1-64)" = "$SCN_SAVE_SHA256" ] || { gr_log "FAIL: the save copied into the game is not the scenario's"; return 1; }
-  rm -f "$GR_GAME/ee-version.log" # the shim writes a fresh one; the restore brings the old one back
   gr_log "scenario $SCN_NAME: $SCN_ARGS (save sha256 $SCN_SAVE_SHA256)"
 }
 
@@ -239,7 +198,6 @@ one_run() {
   gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" ${arm_args[@]+"${arm_args[@]}"} || return 3
 
   gr_launcher_log_mark
-  [ "$SCN_HOLD" = 1 ] && scenario_hold_start "$raw.arm.release"
   gr_log "launching the game through the launcher (presents cap: $PRESENTS)"
   gr_run_launcher "$LAUNCH_LIMIT" "$OUT/launch.log" \
     bash -c 'cd "$1" && shift && exec "$@"' _ "$GR_LAUNCHER_DIR" \
