@@ -142,6 +142,13 @@ check "swap-in: our proxy is ddraw.dll" cmp -s "$W_GAME/ddraw.dll" "$W/proxy.dll
 check_eq "swap-in: the launcher's file is kept as ddraw_next.dll" "launcher ddraw v1" "$(cat "$W_GAME/ddraw_next.dll")"
 check "swap-in: the config names the trace and the cap" grep -q '^DDT_MAX_PRESENTS=77$' "$W_GAME/ddraw_trace.cfg"
 check_not "swap-in: no temporary file is left" ls "$W_GAME"/*.tmp
+# an arm file (scenarios that trace a settled state only) is named in the config only when one is given
+check_not "swap-in: no arm file is configured by default" grep -q DDT_ARM_FILE "$W_GAME/ddraw_trace.cfg"
+reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm'
+check "swap-in: the config names the arm file when one is given" grep -qF 'DDT_ARM_FILE=Z:\tmp\t.arm' "$W_GAME/ddraw_trace.cfg"
+reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
 # idempotent: the launcher retries a launch that dies early, and the wrapper's hook runs again
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
 check "swap-in twice: our proxy is still ddraw.dll" cmp -s "$W_GAME/ddraw.dll" "$W/proxy.dll"

@@ -262,4 +262,54 @@ check "... and the user's copy is back, byte for byte" same_game
 rm -rf "$W_GAME/Data/Saved Games"
 
 
+# ---- 10. scenarios that settle the game first: wait for the game loop, press the pause key, check the simulation stopped, arm the proxy ---------
+# The save does not come up paused, so the driver presses the scenario's keys once the simulation runs (EE_SIMHASH's tick lines in
+# ee-version.log), proves from the same lines that it stopped, and only then creates the arm file the proxy waits for.
+cat >"$W/scn-keys.env" <<SCN
+$(cat "$W/scn.env")
+SCN_KEYS="3d"
+SCN
+{ cat "$W/config-scn.sh"; cat <<CONF
+KEY_BUILD=0
+KEY_EXE="$W/scn-bin/ee-key.exe"
+LOOP_WAIT=4
+SETTLE_SECONDS=1
+PAUSE_WINDOW=1
+CONF
+} >"$W/config-keys.sh"
+printf 'key' >"$W/scn-bin/ee-key.exe"
+run_keys() { bash "$DRIVER" --test-config "$W/config-keys.sh" --scenario "$W/scn-keys.env" "$W/proxy.dll" "$@"; }
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/not-paused"
+: >"$W/ticking"
+run_keys >"$W/run10.out" 2>&1
+check_eq "a scenario with keys exits 0" "0" "$?"
+check "the key helper was asked for the pause key (scancode 3d)" grep -q "ee-key.exe 3d" "$W/key.log"
+check "the simulation was seen to stop" grep -q "the simulation stopped" "$W/run10.out"
+check "the proxy was armed only after that (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
+check "the arm file is in the output folder, not in the game directory" test -e "$W/out/run.raw.arm"
+check "the game directory is what it was (ee-version.log included)" same_game
+
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/not-paused"
+run_keys >"$W/run10b.out" 2>&1
+check "a game that keeps ticking after the key fails the run (non-zero: $?)" test $? -ne 0
+check "... saying the simulation did not stop" grep -q "still running" "$W/run10b.out"
+check "... the proxy was never armed (no trace)" bash -c "! ls '$W/out'/trace.*.txt >/dev/null 2>&1"
+check "... and the game directory is restored" same_game
+rm -f "$W/not-paused"
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/ticking"
+run_keys >"$W/run10c.out" 2>&1
+check "a game whose loop never starts fails the run (non-zero: $?)" test $? -ne 0
+check "... saying so" grep -q "game loop" "$W/run10c.out"
+check "... without pressing any key" test ! -e "$W/key.log"
+check "... and the game directory is restored" same_game
+rm -f "$W/ticking"
+
+
 summary

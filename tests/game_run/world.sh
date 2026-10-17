@@ -122,6 +122,11 @@ if [ "${1:-}" = reg ]; then
   exit 0
 fi
 case "${1:-}" in
+  *ee-key.exe)
+    echo "key-helper $*" >>"$FAKE_WORLD/key.log"
+    [ -e "$FAKE_WORLD/not-paused" ] || : >"$FAKE_WORLD/paused"   # the fake game stops ticking when it gets its pause key
+    exit 0
+    ;;
   *ee-close.exe)
     echo "close-helper $*" >>"$FAKE_WORLD/close.log"
     [ -e "$FAKE_WORLD/close-needs-quit" ] && [ "${2:-}" != --quit ] && exit 0
@@ -140,9 +145,32 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
   echo "4242 50000 C:\\GOG Games\\Fake\\Empire Earth.exe" >>"$FAKE_PS_FILE"
   if [ -f "$game_dir/ddraw_trace.cfg" ]; then
     trace="$(sed -n 's/^DDT_TRACE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
-    printf '# ddraw_trace v1\nT1 fake\n# end: 3 presents\n' >"$trace"
-    : >"$trace.done"
+    arm="$(sed -n 's/^DDT_ARM_FILE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
+    # the fake proxy: with an arm file it writes the trace only once the file exists
+    (
+      if [ -n "$arm" ]; then
+        i=0
+        while [ ! -e "$arm" ] && [ "$i" -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
+        [ -e "$arm" ] || exit 0
+      fi
+      printf '# ddraw_trace v1\nT1 fake\n# end: 3 presents\n' >"$trace"
+      : >"$trace.done"
+    ) &
   fi
+  case "$3" in
+    *ee-start.exe)
+      # the fake game's simulation: a tick line every 0.2 s until it is paused (the key helper) -- like EE_SIMHASH's lines
+      rm -f "$FAKE_WORLD/paused"
+      [ -e "$FAKE_WORLD/ticking" ] && (
+        printf 'ee-version: simhash: tick 0: 00000000 over 90 objects\n' >>"$game_dir/ee-version.log"
+        n=0
+        while [ ! -e "$FAKE_WORLD/paused" ] && [ "$n" -lt 100 ] && grep -q 'Empire Earth.exe' "$FAKE_PS_FILE" 2>/dev/null; do
+          sleep 0.2; n=$((n + 1))
+          [ -e "$FAKE_WORLD/paused" ] || printf 'ee-version: simhash: tick %s: 00000000 over 90 objects\n' "$((n * 50))" >>"$game_dir/ee-version.log"
+        done
+      ) &
+      ;;
+  esac
 fi
 exit 0
 WINE
