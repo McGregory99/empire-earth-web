@@ -3,9 +3,10 @@
 # before the game starts.  Idempotent (the launcher retries a launch that dies early), and it never leaves the game
 # directory without a ddraw.dll: every file is copied to a temporary name first and renamed into place.
 #
-#   swap-in.sh <game dir> <proxy ddraw.dll> <Windows path of the trace file> <presents cap>
+#   swap-in.sh <game dir> <proxy ddraw.dll> <Windows path of the trace file> <presents cap> [<Windows path of the arm file>]
+# With an arm file the proxy traces nothing until the file exists (DDT_ARM_FILE; scenarios that capture a settled state).
 set -eu
-game="$1" proxy="$2" trace="$3" presents="$4"
+game="$1" proxy="$2" trace="$3" presents="$4" arm="${5:-}"
 cd "$game"
 if ! cmp -s ddraw.dll "$proxy"; then
   # The 00xJS proxy (written by the launcher a moment ago) keeps working under another name: it loads its target
@@ -20,4 +21,7 @@ DDT_NEXT=ddraw_next.dll
 DDT_TRACE=$trace
 DDT_MAX_PRESENTS=$presents
 CFG
+if [ -n "$arm" ]; then
+  echo "DDT_ARM_FILE=$arm" >>ddraw_trace.cfg.tmp
+fi
 mv -f ddraw_trace.cfg.tmp ddraw_trace.cfg

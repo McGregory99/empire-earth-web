@@ -54,16 +54,24 @@ DESKTOP_NAME=EmpireEarth
 GAME_EXE_NAME="Empire Earth.exe"
 SCENARIO_DIR="$HOME/Games/EmpireEarth-re/scenarios" # the saves the scenarios load; outside the repository, never committed
 SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV=""
+SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
+KEY_BUILD=1
+KEY_EXE=""
+LOOP_WAIT=180        # seconds to wait for the game loop (EE_SIMHASH's "tick 0" line) after the launcher returns
+SETTLE_SECONDS=6     # seconds between the keys and the check that the simulation stopped
+PAUSE_WINDOW=5       # seconds without a new tick line that prove it stopped (a tick line comes every 50 ticks, ~1.8 s)
 if [ -n "$SCENARIO_FILE" ]; then
   [ -f "$SCENARIO_FILE" ] || { echo "no scenario file $SCENARIO_FILE" >&2; exit 2; }
   # shellcheck source=/dev/null
   . "$SCENARIO_FILE"
   [ -n "$SCN_PRESENTS" ] && PRESENTS="${DDT_PRESENTS:-$SCN_PRESENTS}"
+  OUT="$HERE/build/game-trace-$SCN_NAME" # its own folder: last.txt / prev.txt must never compare it with the startup trace
 fi
 gr_test_hook "$TEST_CONFIG"
 gr_sanitize_env
 [ -n "$START_EXE" ] || START_EXE="$OUT/bin/ee-start.exe"
 [ -n "$CLOSE_EXE" ] || CLOSE_EXE="$OUT/bin/ee-close.exe"
+[ -n "$KEY_EXE" ] || KEY_EXE="$OUT/bin/ee-key.exe"
 
 mkdir -p "$OUT"
 GR_LOG_FILE="$OUT/game-trace.log"
@@ -103,7 +111,44 @@ scenario_build_helpers() {
     # shellcheck disable=SC2086
     "$START_CC" $cc_flags -o "$CLOSE_EXE" "$src/ee-close.c" -luser32 2>"$OUT/ee-close.build.log" || { gr_log "FAIL: cannot build ee-close.exe (see $OUT/ee-close.build.log)"; return 1; }
   fi
+  if [ -n "$SCN_KEYS" ] && [ "$KEY_BUILD" = 1 ]; then
+    # shellcheck disable=SC2086
+    "$START_CC" $cc_flags -o "$KEY_EXE" "$src/ee-key.c" -luser32 2>"$OUT/ee-key.build.log" || { gr_log "FAIL: cannot build ee-key.exe (see $OUT/ee-key.build.log)"; return 1; }
+  fi
+  [ -z "$SCN_KEYS" ] || [ -f "$KEY_EXE" ] || { gr_log "FAIL: the key helper is missing ($KEY_EXE)"; return 1; }
   [ -f "$START_EXE" ] && [ -f "$CLOSE_EXE" ] || { gr_log "FAIL: the scenario helpers are missing ($START_EXE, $CLOSE_EXE)"; return 1; }
+}
+
+# The simulation's tick lines (EE_SIMHASH) in the game's ee-version.log.
+tick_lines() { grep -c 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null || true; }
+
+# With keys: wait for the game loop, press the keys, prove from the tick lines that the simulation stopped, then arm the proxy by
+# creating its arm file.  Returns non-zero (and says why) if the loop never starts or the simulation keeps running.
+scenario_pause_and_arm() {
+  local arm="$1" waited=0 before after
+  until [ "$(tick_lines)" -gt 0 ]; do
+    if [ "$waited" -ge "$LOOP_WAIT" ]; then
+      gr_log "FAIL: the game loop never started (no simhash tick line in ee-version.log after ${LOOP_WAIT}s)"
+      return 1
+    fi
+    gr_game_running || { gr_log "FAIL: the game exited before its game loop started"; return 1; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  gr_log "the game loop runs; pressing scancode(s) $SCN_KEYS"
+  # shellcheck disable=SC2086
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
+    { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 1; }
+  sleep "$SETTLE_SECONDS"
+  before="$(tick_lines)"
+  sleep "$PAUSE_WINDOW"
+  after="$(tick_lines)"
+  if [ "$after" != "$before" ]; then
+    gr_log "FAIL: the simulation is still running ${SETTLE_SECONDS}s after the keys ($before -> $after tick lines in ${PAUSE_WINDOW}s)"
+    return 1
+  fi
+  gr_log "the simulation stopped ($after tick lines, none new in ${PAUSE_WINDOW}s); arming the proxy"
+  : >"$arm"
 }
 
 # The Windows path of the game's exe, from its place in the prefix: C:\GOG Games\...\Empire Earth.exe
@@ -145,7 +190,12 @@ one_run() {
 
   win_raw="Z:$(printf '%s' "$raw" | tr '/' '\\')"
   rm -f "$raw" "$raw.done" "$raw.times" "$raw.callers"
-  gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" || return 3
+  local arm_args=()
+  if [ -n "$SCN_KEYS" ]; then
+    rm -f "$raw.arm"
+    arm_args=("Z:$(printf '%s' "$raw.arm" | tr '/' '\\')")
+  fi
+  gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" ${arm_args[@]+"${arm_args[@]}"} || return 3
 
   gr_launcher_log_mark
   gr_log "launching the game through the launcher (presents cap: $PRESENTS)"
@@ -164,6 +214,9 @@ one_run() {
   gr_check_launcher_log || return 4
   gr_log "launcher reports the first frames are up; waiting for the capture cap"
 
+  if [ -n "$SCN_KEYS" ]; then
+    scenario_pause_and_arm "$raw.arm" || return 5
+  fi
   local waited=0
   while [ ! -f "$raw.done" ]; do
     if ! gr_game_running; then
