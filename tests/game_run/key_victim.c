@@ -1,4 +1,4 @@
-/* Test program for tools/game_run/scripts/ee-key.c: a focused window on a desktop of its own that appends the scancode of every
+/* Test program for tools/game_run/scripts/ee-key.c: a focused window that appends the scancode of every
  * key-down it gets to key_victim.out (one hex byte per line), and ends after the key 0x01 (Esc) or after 20 s. */
 #include <windows.h>
 #include <stdio.h>

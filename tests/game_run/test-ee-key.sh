@@ -27,14 +27,14 @@ $CC -mcrtdll=msvcrt-os -O2 -mwindows -o "$T/key_victim.exe" "$HERE/key_victim.c"
 check_eq "the test window program compiles" "0" "$?"
 [ -x "$T/ee-key.exe" ] || { summary; exit 1; }
 
-( cd "$T" && wine key_victim.exe EEKeyDesktop >/dev/null 2>&1; echo $? >"$T/victim.rc" ) &
+( cd "$T" && wine key_victim.exe >/dev/null 2>&1; echo $? >"$T/victim.rc" ) &
 wait_for 300 test -e "$T/key_victim.ready"
 check "the focused test window is up" test -e "$T/key_victim.ready"
 
-wine "$T/ee-key.exe" --desktop EEKeyDesktop 3d 23 01 >"$T/k1.out" 2>&1
+wine "$T/ee-key.exe" 3d 23 01 >"$T/k1.out" 2>&1
 check_eq "pressing three scancodes: exit 0" "0" "$?"
 wait_for 100 test -e "$T/victim.rc"
-check_eq "the window got them, in order (F3, H, Esc)" "3d 23 01" "$(tr '\n' ' ' <"$T/key_victim.out" 2>/dev/null | sed 's/ $//')"
+check_eq "the window got them, in order (F3, H, Esc)" "3d 23 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' 2>/dev/null | sed 's/ $//')"
 check "the helper said what it pressed" grep -q "pressed 3d" "$T/k1.out"
 
 wine "$T/ee-key.exe" >"$T/k2.out" 2>&1
