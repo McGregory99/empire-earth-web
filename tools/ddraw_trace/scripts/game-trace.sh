@@ -162,6 +162,7 @@ scenario_prepare() {
   printf '%s\n%s\n' "$(game_exe_windows_path)" "$SCN_ARGS" >"$(dirname "$START_EXE")/ee-start.cmd" || return 1
   mkdir -p "$GR_GAME/Data/Saved Games" && cp "$SCENARIO_DIR/$SCN_SAVE" "$GR_GAME/Data/Saved Games/$SCN_SAVE" || return 1
   [ "$(shasum -a 256 "$GR_GAME/Data/Saved Games/$SCN_SAVE" | cut -c1-64)" = "$SCN_SAVE_SHA256" ] || { gr_log "FAIL: the save copied into the game is not the scenario's"; return 1; }
+  rm -f "$GR_GAME/ee-version.log" # tick lines of an earlier session must not pass for this run's; the restore brings the old file back
   gr_log "scenario $SCN_NAME: $SCN_ARGS (save sha256 $SCN_SAVE_SHA256)"
 }
 
