@@ -54,6 +54,7 @@ DESKTOP_NAME=EmpireEarth
 GAME_EXE_NAME="Empire Earth.exe"
 SCENARIO_DIR="$HOME/Games/EmpireEarth-re/scenarios" # the saves the scenarios load; outside the repository, never committed
 SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV=""
+SCN_NORMALIZE="" # "structure": two captures must be identical in normalize.py's --structure form (see there for what it leaves out)
 SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
 KEY_BUILD=1
 KEY_EXE=""
@@ -253,19 +254,31 @@ one_run() {
   return 0
 }
 
-# Two traces are equal if they are identical, or identical after the cursor-sprite normalization (scripts/normalize.py).
+# Two traces are equal if they are identical, or identical after the normalization (scripts/normalize.py): the cursor-sprite
+# blits removed; and, for a scenario that asks for it (SCN_NORMALIZE=structure), the structure form.
 compare_traces() {
-  local a="$1" b="$2" na nb
+  local a="$1" b="$2" na nb what="the cursor-sprite blits" form=""
+  if [ "$SCN_NORMALIZE" = structure ]; then
+    form="--structure"
+    what="ids, content hashes, texture bindings, vertex ring phase and lock flags (structure form)"
+  fi
   if cmp -s "$a" "$b"; then
     gr_log "traces identical ($(wc -l <"$a" | tr -d ' ') lines)"
     return 0
   fi
   na="$(mktemp "$OUT/norm.XXXXXX")"
   nb="$(mktemp "$OUT/norm.XXXXXX")"
-  python3 -I "$HERE/scripts/normalize.py" <"$a" >"$na"
-  python3 -I "$HERE/scripts/normalize.py" <"$b" >"$nb"
+  # shellcheck disable=SC2086
+  python3 -I "$HERE/scripts/normalize.py" $form <"$a" >"$na"
+  # shellcheck disable=SC2086
+  python3 -I "$HERE/scripts/normalize.py" $form <"$b" >"$nb"
+  gr_log "traces differ raw in $(paste -d '\n' "$a" "$b" | awk 'NR % 2 == 1 { x = $0; next } $0 != x { n++ } END { print n + 0 }') of $(wc -l <"$a" | tr -d ' ') lines (position by position)"
   if cmp -s "$na" "$nb"; then
-    gr_log "traces differ raw but are identical after removing the cursor-sprite blits ($(wc -l <"$na" | tr -d ' ') lines left; raw $(wc -l <"$a" | tr -d ' ') and $(wc -l <"$b" | tr -d ' '))"
+    if [ -n "$form" ]; then
+      gr_log "traces differ raw but are identical in structure form ($(wc -l <"$na" | tr -d ' ') lines; masked: $what)"
+    else
+      gr_log "traces differ raw but are identical after removing $what ($(wc -l <"$na" | tr -d ' ') lines left; raw $(wc -l <"$a" | tr -d ' ') and $(wc -l <"$b" | tr -d ' '))"
+    fi
     rm -f "$na" "$nb"
     return 0
   fi
