@@ -312,4 +312,16 @@ check "... and the game directory is restored" same_game
 rm -f "$W/ticking"
 
 
+# an ee-version.log left by an earlier session (with tick lines in it) must not be taken for this run's game loop
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/ticking"
+printf 'ee-version: simhash: tick 0: 11111111 over 90 objects\nee-version: simhash: tick 50: 22222222 over 90 objects\n' >"$W_GAME/ee-version.log"
+gr_manifest "$W_GAME" "$W/manifest.expected"
+run_keys >"$W/run10d.out" 2>&1
+check "a stale log with tick lines does not start the game loop for this run (non-zero: $?)" test $? -ne 0
+check "... the run says the loop never started" grep -q "game loop" "$W/run10d.out"
+check "... and the stale log is back, byte for byte" same_game
+rm -f "$W_GAME/ee-version.log"
+
+
 summary
