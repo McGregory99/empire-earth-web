@@ -312,4 +312,34 @@ check "... and the game directory is restored" same_game
 rm -f "$W/ticking"
 
 
+# ---- 11. holding the key from the moment the game's window exists: the pause lands at the loop's first poll, not at a timing-dependent tick -------
+cat >"$W/scn-hold.env" <<SCN
+$(cat "$W/scn-keys.env")
+SCN_HOLD=1
+SCN
+{ cat "$W/config-keys.sh"; echo 'HOLD_AFTER=0.3'; } >"$W/config-hold.sh"
+run_hold() { bash "$DRIVER" --test-config "$W/config-hold.sh" --scenario "$W/scn-hold.env" "$W/proxy.dll" "$@"; }
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/not-paused" "$W/hold-fails"
+: >"$W/ticking"
+run_hold >"$W/run11.out" 2>&1
+check_eq "a scenario that holds the key exits 0" "0" "$?"
+check "the key was held from the game's window on (--hold, scancode 3d)" grep -q "ee-key.exe --hold .*3d" "$W/key.log"
+check_eq "... and not pressed again" "1" "$(grep -c . "$W/key.log")"
+check "the run says the pause came from the held key" grep -q "paused by the held key" "$W/run11.out"
+check "the proxy was armed and the trace saved" grep -q "T1 fake" "$W/out"/trace.*.txt
+check "the game directory is what it was" same_game
+
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/hold-fails"
+run_hold >"$W/run11b.out" 2>&1
+check_eq "a held key that does not pause the game: the run falls back to pressing it (exit 0)" "0" "$?"
+check "... after the hold, one plain press" test "$(grep -c . "$W/key.log")" -eq 2
+check "... and says that this pause is timing dependent" grep -q "timing dependent" "$W/run11b.out"
+rm -f "$W/hold-fails" "$W/ticking"
+
+
 summary

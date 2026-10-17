@@ -124,7 +124,14 @@ fi
 case "${1:-}" in
   *ee-key.exe)
     echo "key-helper $*" >>"$FAKE_WORLD/key.log"
-    [ -e "$FAKE_WORLD/not-paused" ] || : >"$FAKE_WORLD/paused"   # the fake game stops ticking when it gets its pause key
+    # the fake game stops ticking when it gets its pause key; a key held down (--hold) pauses it unless the test says it does not take
+    if [ "${2:-}" = --hold ]; then
+      [ -e "$FAKE_WORLD/not-paused" ] || [ -e "$FAKE_WORLD/hold-fails" ] || : >"$FAKE_WORLD/paused"
+      i=0
+      while [ ! -e "$3" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+      exit 0
+    fi
+    [ -e "$FAKE_WORLD/not-paused" ] || : >"$FAKE_WORLD/paused"
     exit 0
     ;;
   *ee-close.exe)
@@ -162,6 +169,8 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
       # the fake game's simulation: a tick line every 0.2 s until it is paused (the key helper) -- like EE_SIMHASH's lines
       rm -f "$FAKE_WORLD/paused"
       [ -e "$FAKE_WORLD/ticking" ] && (
+        printf "ee-version: CreateWindowExA class='SSSI Empire Earth' title='Empire Earth' 1710x1107 parent=00000000 style=0x90000000\n" >>"$game_dir/ee-version.log"
+        sleep 0.5
         printf 'ee-version: simhash: tick 0: 00000000 over 90 objects\n' >>"$game_dir/ee-version.log"
         n=0
         while [ ! -e "$FAKE_WORLD/paused" ] && [ "$n" -lt 100 ] && grep -q 'Empire Earth.exe' "$FAKE_PS_FILE" 2>/dev/null; do
