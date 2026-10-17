@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Capture a normalized ddraw trace of the ORIGINAL renderer plugin from startup to the main menu, in the real game.
 #
-#   game-trace.sh [--test-config <file>] <path-to-proxy-ddraw.dll> [--gate]
+#   game-trace.sh [--test-config <file>] [--scenario <file>] <path-to-proxy-ddraw.dll> [--gate]
 #
 # One run: take the game-run lock, refuse if anything of an earlier run is left over or if the game (or Art of Conquest) is
 # running, snapshot the game directory (verified against its sha256 manifest), launch through the unmodified 00xJS launcher
@@ -9,18 +9,29 @@
 # launch), wait for the capture cap, then stop the prefix with its own wineserver, restore the game directory byte for byte
 # and release the lock.  --gate does two runs and compares them.
 #
+# --scenario <file> (tests/ddraw_trace/scenarios/*.env) runs a scenario instead of the startup: the game is started with the
+# scenario's command line (-loadgame "<save>") by tools/game_run/scripts/ee-start.exe, which the Wine wrapper starts in place
+# of the game; the save (kept outside the repository, checked against its sha256) is in the game's Saved Games only for the
+# run; the scenario's determinism switches (EE_SIMHASH, EE_SIM_FIXED_MS) reach the game; when the capture is complete the
+# game is closed with WM_CLOSE (ee-close.exe) before the prefix is stopped.
+#
 # The protocol, the lock, the snapshot and the signal-safe teardown are the shared library tools/game_run/lib.sh; the design
 # and the safety argument are in README.md ("The ddraw chain").
 set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+USAGE="usage: game-trace.sh [--test-config <file>] [--scenario <file>] <proxy ddraw.dll> [--gate]"
 # --test-config <file>: the fake world of tests/game_run (the only way anything but the real installation is used)
 TEST_CONFIG=""
-if [ "${1:-}" = --test-config ]; then
-  TEST_CONFIG="${2:?usage: game-trace.sh [--test-config <file>] <proxy ddraw.dll> [--gate]}"
-  shift 2
-fi
-PROXY="$(cd "$(dirname "${1:?usage: game-trace.sh [--test-config <file>] <proxy ddraw.dll> [--gate]}")" && pwd)/$(basename "$1")"
+SCENARIO_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --test-config) TEST_CONFIG="${2:?$USAGE}"; shift 2 ;;
+    --scenario) SCENARIO_FILE="${2:?$USAGE}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+PROXY="$(cd "$(dirname "${1:?$USAGE}")" && pwd)/$(basename "$1")"
 MODE="${2:-single}"
 
 # shellcheck source=../../game_run/lib.sh
@@ -31,8 +42,28 @@ OUT="$HERE/build/game-trace"
 PRESENTS="${DDT_PRESENTS:-60}" # the menu changes by wall clock after ~110 frames (README, "Determinism")
 CAPTURE_WAIT="${DDT_CAPTURE_WAIT:-420}"
 LAUNCH_LIMIT=900
+# the scenario helpers: built from tools/game_run/scripts unless a test names fake ones
+START_BUILD=1
+START_CC=i686-w64-mingw32-gcc
+START_EXE=""
+CLOSE_BUILD=1
+CLOSE_EXE=""
+CLOSE_GRACE=25  # seconds to wait for the game to leave after WM_CLOSE before WM_QUIT is posted
+EXIT_WAIT=60    # seconds to wait for the game to leave after WM_QUIT
+DESKTOP_NAME=EmpireEarth
+GAME_EXE_NAME="Empire Earth.exe"
+SCENARIO_DIR="$HOME/Games/EmpireEarth-re/scenarios" # the saves the scenarios load; outside the repository, never committed
+SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV=""
+if [ -n "$SCENARIO_FILE" ]; then
+  [ -f "$SCENARIO_FILE" ] || { echo "no scenario file $SCENARIO_FILE" >&2; exit 2; }
+  # shellcheck source=/dev/null
+  . "$SCENARIO_FILE"
+  [ -n "$SCN_PRESENTS" ] && PRESENTS="${DDT_PRESENTS:-$SCN_PRESENTS}"
+fi
 gr_test_hook "$TEST_CONFIG"
 gr_sanitize_env
+[ -n "$START_EXE" ] || START_EXE="$OUT/bin/ee-start.exe"
+[ -n "$CLOSE_EXE" ] || CLOSE_EXE="$OUT/bin/ee-close.exe"
 
 mkdir -p "$OUT"
 GR_LOG_FILE="$OUT/game-trace.log"
@@ -46,10 +77,57 @@ fi
 cleanup() { gr_teardown; }
 gr_install_traps cleanup
 
+# ---- scenarios ---------------------------------------------------------------------------------------------------------------------
+
+# Before the lock is taken and anything is touched: the save is there and is the one the scenario was recorded with.
+scenario_check_save() {
+  local save="$SCENARIO_DIR/$SCN_SAVE" got
+  [ -f "$save" ] || { gr_log "FAIL: the scenario's save is not there: $save (it is user data, kept outside the repository)"; return 3; }
+  got="$(shasum -a 256 "$save" | cut -c1-64)"
+  if [ "$got" != "$SCN_SAVE_SHA256" ]; then
+    gr_log "FAIL: $save has sha256 $got, the scenario was recorded with $SCN_SAVE_SHA256"
+    return 3
+  fi
+  return 0
+}
+
+# Build ee-start.exe / ee-close.exe from tools/game_run/scripts (the same source the drivers use), unless a test names fakes.
+scenario_build_helpers() {
+  local src="$HERE/../game_run/scripts" cc_flags="-mcrtdll=msvcrt-os -O2 -Wall -D_WIN32_WINNT=0x0600"
+  mkdir -p "$OUT/bin"
+  if [ "$START_BUILD" = 1 ]; then
+    # shellcheck disable=SC2086
+    "$START_CC" $cc_flags -o "$START_EXE" "$src/ee-start.c" 2>"$OUT/ee-start.build.log" || { gr_log "FAIL: cannot build ee-start.exe (see $OUT/ee-start.build.log)"; return 1; }
+  fi
+  if [ "$CLOSE_BUILD" = 1 ]; then
+    # shellcheck disable=SC2086
+    "$START_CC" $cc_flags -o "$CLOSE_EXE" "$src/ee-close.c" -luser32 2>"$OUT/ee-close.build.log" || { gr_log "FAIL: cannot build ee-close.exe (see $OUT/ee-close.build.log)"; return 1; }
+  fi
+  [ -f "$START_EXE" ] && [ -f "$CLOSE_EXE" ] || { gr_log "FAIL: the scenario helpers are missing ($START_EXE, $CLOSE_EXE)"; return 1; }
+}
+
+# The Windows path of the game's exe, from its place in the prefix: C:\GOG Games\...\Empire Earth.exe
+game_exe_windows_path() {
+  local rel="${GR_GAME#"$GR_PREFIX"/drive_c/}"
+  printf 'C:\\%s\\%s' "$(printf '%s' "$rel" | tr '/' '\\')" "$GAME_EXE_NAME"
+}
+
+# After the snapshot: the helper's command file and the save in the game's Saved Games (the restore removes it again).
+scenario_prepare() {
+  printf '%s\n%s\n' "$(game_exe_windows_path)" "$SCN_ARGS" >"$(dirname "$START_EXE")/ee-start.cmd" || return 1
+  mkdir -p "$GR_GAME/Data/Saved Games" && cp "$SCENARIO_DIR/$SCN_SAVE" "$GR_GAME/Data/Saved Games/$SCN_SAVE" || return 1
+  [ "$(shasum -a 256 "$GR_GAME/Data/Saved Games/$SCN_SAVE" | cut -c1-64)" = "$SCN_SAVE_SHA256" ] || { gr_log "FAIL: the save copied into the game is not the scenario's"; return 1; }
+  gr_log "scenario $SCN_NAME: $SCN_ARGS (save sha256 $SCN_SAVE_SHA256)"
+}
+
 # The launcher's start of the game is `wine start /unix <exe>`; the wrapper runs swap-in.sh just before it.
 one_run() {
-  local tag="$1" raw="$OUT/run.raw" win_raw blocking rc
+  local tag="$1" raw="$OUT/run.raw" win_raw blocking rc unclean=0
 
+  if [ -n "$SCENARIO_FILE" ]; then
+    scenario_check_save || return 3
+    scenario_build_helpers || return 3
+  fi
   gr_lock_acquire || return 2
   gr_check_leftovers ddraw_next.dll ddraw_trace.cfg ddraw_next.dll.tmp ddraw.dll.tmp ddraw_trace.cfg.tmp || { gr_teardown; return 3; }
   gr_assert_config || { gr_teardown; return 3; }
@@ -60,6 +138,10 @@ one_run() {
     return 3
   fi
   gr_state_begin && gr_snapshot_take || { gr_teardown; return 3; }
+  if [ -n "$SCENARIO_FILE" ]; then
+    scenario_prepare || { gr_teardown; return 3; }
+    GR_START_REPLACE="$START_EXE"
+  fi
 
   win_raw="Z:$(printf '%s' "$raw" | tr '/' '\\')"
   rm -f "$raw" "$raw.done" "$raw.times" "$raw.callers"
@@ -71,6 +153,7 @@ one_run() {
     bash -c 'cd "$1" && shift && exec "$@"' _ "$GR_LAUNCHER_DIR" \
     env EMPIRE_EARTH_WINE="$GR_WRAPPED_WINE" \
     EE_BIG_ARMIES=0 EE_BIG_CROWDS=0 EE_X87T=0 EE_SSE_MATH=0 EE_MEMFILE_DOUBLE=0 EE_POINTLIST_GUARD=0 EE_ANIMATION_SMOOTHING=0 \
+    $SCN_ENV \
     "$GR_LAUNCHER_DIR/scripts/launch.sh"
   rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -94,13 +177,25 @@ one_run() {
     sleep 1
     waited=$((waited + 1))
   done
-  gr_log "capture complete ($(wc -l <"$raw" | tr -d ' ') lines); stopping the prefix"
-  gr_stop_game || return 7
+  gr_log "capture complete ($(wc -l <"$raw" | tr -d ' ') lines)"
   cp "$raw" "$OUT/trace.$tag.txt"
   [ -f "$raw.times" ] && cp "$raw.times" "$OUT/trace.$tag.times"
   [ -f "$raw.callers" ] && cp "$raw.callers" "$OUT/trace.$tag.callers"
+  if [ -n "$SCENARIO_FILE" ]; then
+    # the scenario ends the way a player's session does: WM_CLOSE, then (if ignored) WM_QUIT; the prefix is stopped after
+    [ -f "$GR_GAME/ee-version.log" ] && cp "$GR_GAME/ee-version.log" "$OUT/ee-version.$tag.log"
+    gr_log "asking the game to close (ee-close.exe: WM_CLOSE on desktop $DESKTOP_NAME)"
+    if gr_close_game "$CLOSE_EXE" "$CLOSE_GRACE" "$EXIT_WAIT" "$DESKTOP_NAME"; then
+      gr_log "the game left by itself (via $GR_CLOSE_VIA)"
+    else
+      unclean=1
+    fi
+  fi
+  gr_log "stopping the prefix"
+  gr_stop_game || return 7
   gr_log "trace saved: $OUT/trace.$tag.txt"
   gr_teardown || return 6
+  [ "${unclean:-0}" -eq 0 ] || { gr_log "FAIL: the game did not close by itself (WM_CLOSE and WM_QUIT were ignored); the trace is kept, the run is not clean"; return 8; }
   return 0
 }
 

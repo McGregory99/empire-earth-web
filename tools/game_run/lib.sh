@@ -11,8 +11,10 @@
 #   lib.sh       the configuration, game detection, the lock, the traps (gr_install_traps) and the launcher job;
 #   snapshot.sh  the state directory, the verified snapshot and the exact restore of the game directory, and the teardown that
 #                ties it all together (gr_teardown);
-#   wrapper.sh   the Wine wrapper that lets game-trace.sh put its DLL in place at the moment the game starts, and the
-#                launcher.log check for the version.dll shim (game_check.sh uses only the check).
+#   wrapper.sh   the Wine wrapper that lets game-trace.sh put its DLL in place at the moment the game starts (and start a
+#                helper in place of the game), and the launcher.log check for the version.dll shim (game_check.sh uses only
+#                the check);
+#   close.sh     the clean close of the game (WM_CLOSE, then WM_QUIT) with ee-close.exe.
 # recover.sh is a script of its own, not sourced: it finishes the restore of a run that died.
 #
 # Everything is a plain variable with a fixed default.  Nothing is read from the caller's environment: an ambient
@@ -407,3 +409,5 @@ gr_kill_launcher() {
 . "$GR_LIB_DIR/snapshot.sh"
 # shellcheck source=wrapper.sh
 . "$GR_LIB_DIR/wrapper.sh"
+# shellcheck source=close.sh
+. "$GR_LIB_DIR/close.sh"
