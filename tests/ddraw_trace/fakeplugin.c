@@ -311,6 +311,51 @@ __declspec(dllexport) int WINAPI scenario_m(HWND hwnd, ScenarioM *r) {
     return 0;
 }
 
+__declspec(dllexport) int WINAPI scenario_r(HWND hwnd, ScenarioR *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;
+    LPDIRECTDRAWCLIPPER clipper = NULL;
+    DDSURFACEDESC2 sd;
+    char arm[MAX_PATH];
+    int i;
+
+    r->hr_setup = DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL);
+    if (FAILED(r->hr_setup))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL);
+    if (SUCCEEDED(IDirectDraw7_CreateClipper(dd, 0, &clipper, NULL))) {
+        IDirectDrawClipper_SetHWnd(clipper, 0, hwnd);
+        IDirectDrawSurface7_SetClipper(primary, clipper);
+    }
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+    sd.dwWidth = 64;
+    sd.dwHeight = 64;
+    IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);
+    for (i = 0; i < 8; i++) {
+        if (i == 2 && GetEnvironmentVariableA("DDT_ARM_FILE", arm, sizeof arm)) {
+            HANDLE h = CreateFileA(arm, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (h != INVALID_HANDLE_VALUE) {
+                CloseHandle(h);
+                r->armed_file_made = 1;
+            }
+        }
+        r->hr_blt[i] = IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_WAIT, NULL);
+    }
+    IDirectDrawSurface7_Release(back);
+    if (clipper) IDirectDrawClipper_Release(clipper);
+    IDirectDrawSurface7_Release(primary);
+    IDirectDraw7_Release(dd);
+    return 0;
+}
+
 static HRESULT WINAPI enum_att_cb(LPDIRECTDRAWSURFACE7 s, LPDDSURFACEDESC2 d, LPVOID ctx) {
     ScenarioD *r = ctx;
     (void)d;

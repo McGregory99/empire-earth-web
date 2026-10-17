@@ -510,6 +510,37 @@ static void cycle_mock(HMODULE plugin, HWND hwnd) {
     check(strstr(text, "3 ") != NULL && strstr(text, "4 ") == NULL, "<trace>.times has exactly the three successful presents");
 }
 
+/* Run with DDT_ARM_FILE and DDT_MAX_PRESENTS=2 (separate process): nothing is traced until the file exists. */
+static void cycle_arm(HMODULE plugin, HWND hwnd) {
+    ScenarioR r;
+    ScenarioRFn fn = (ScenarioRFn)GetProcAddress(plugin, "scenario_r");
+    const char *trace = getenv("DDT_TRACE");
+    char done[600];
+    int i;
+
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_r");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario R ran to the end");
+    check(r.armed_file_made, "the plugin made the arm file after its second present");
+    for (i = 0; i < 8; i++)
+        check_hr(r.hr_blt[i], DD_OK, "every present passes through, armed or not");
+    load_trace_again();
+    check(g_nlines > 0, "the armed trace could be read");
+    if (!g_nlines)
+        return;
+    /* the arm file appeared before present 3; present 3 itself is still outside the window (its line is written before the
+     * proxy looks), so the window holds presents 4 and 5 and the cap of 2 ends it there */
+    expect_count("*CreateSurface*", 0);
+    expect_count("*SetCooperativeLevel*", 0);
+    expect_count("T1 surf#1.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#2, lpSrcRect=NULL, dwFlags=0x1000000, lpDDBltFx=NULL) = DD_OK", 2);
+    expect_count("# armed*", 1);
+    check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 2 presents"), "the cap counts presents from the arming, not from the start");
+    sprintf(done, "%s.done", trace ? trace : "");
+    check(GetFileAttributesA(done) != INVALID_FILE_ATTRIBUTES, "the armed capture writes the .done marker");
+}
+
 int main(int argc, char **argv) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
@@ -518,6 +549,9 @@ int main(int argc, char **argv) {
     check(plugin != NULL, "fake plugin loads");
     if (argc > 1 && !strcmp(argv[1], "selfcheck-broken")) {
         check_selfcheck(1);
+    } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "arm")) {
+        load_trace();
+        cycle_arm(plugin, hwnd);
     } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {
         load_trace();
         cycle_mock(plugin, hwnd);

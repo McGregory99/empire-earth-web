@@ -37,6 +37,14 @@ typedef struct ScenarioC {
 } ScenarioC;
 typedef int(WINAPI *ScenarioCFn)(HWND hwnd, ScenarioC *out);
 
+/* Scenario R: the capture is armed by a file.  Two whole-surface blits (presents) before the arm file exists, then the plugin
+ * creates DDT_ARM_FILE, then six more presents: the trace starts after the present that first sees the file. */
+typedef struct ScenarioR {
+    HRESULT hr_setup, hr_blt[8];
+    int armed_file_made;
+} ScenarioR;
+typedef int(WINAPI *ScenarioRFn)(HWND hwnd, ScenarioR *out);
+
 /* Scenario D: the wrapped-surface paths that the other scenarios do not reach. */
 typedef struct ScenarioD {
     HRESULT hr_setup, hr_srt, hr_get_rt, hr_get_tex, hr_att1, hr_att2, hr_enum_att, hr_not_found, hr_bltfast;

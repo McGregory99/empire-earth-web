@@ -88,6 +88,12 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-mock.txt' \
 	    "$(WINE)" harness.exe mock 2>/dev/null
+	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-arm.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=ddraw_next.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \
+	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-arm.txt' \
+	    "$(WINE)" harness.exe arm 2>/dev/null
 	rm -rf $(BUILD)/testbed-broken && mkdir -p $(BUILD)/testbed-broken
 	cp $(BUILD)/broken/ddraw.dll $(BUILD)/harness.exe $(BUILD)/fakeplugin.dll $(BUILD)/testbed-broken/
 	cd $(BUILD)/testbed-broken && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" "$(WINE)" harness.exe selfcheck-broken 2>/dev/null
