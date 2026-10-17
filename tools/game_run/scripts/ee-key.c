@@ -1,11 +1,15 @@
 /* ee-key.exe: press keys by scancode with SendInput, the way a player's keyboard does.  The game reads its keyboard through
  * DirectInput, which Wine feeds from the same low-level events; a scancode (not a virtual key) is what it sees.
  *
- *   ee-key.exe [--desktop <name>] <scancode in hex> [<scancode> ...]
+ *   ee-key.exe [--desktop <name>] [--hold <release file>] <scancode in hex> [<scancode> ...]
  *
  * Each key goes down, stays down 60 ms, goes up, and the next one follows 150 ms later.  With --desktop the input goes to that
  * desktop (the tests use one of their own).  Exit status: 0 pressed, 2 usage or a scancode that is not hex, 3 the desktop
  * cannot be used, 4 SendInput failed.
+ *
+ * With --hold the keys go down at once and stay down until <release file> exists (at most 300 s), then go up.  A key that is
+ * already down when the game's loop starts is seen at its very first poll, so the game reacts at a fixed point of its start,
+ * not at a tick that depends on when a press happens to arrive.
  * Build: i686-w64-mingw32-gcc -mcrtdll=msvcrt-os -D_WIN32_WINNT=0x0600 -o ee-key.exe ee-key.c -luser32 */
 #include <windows.h>
 #include <stdio.h>
@@ -31,8 +35,13 @@ int main(int argc, char **argv) {
     }
     i += 2;
   }
+  const char *hold = NULL;
+  if (i + 1 < argc && strcmp(argv[i], "--hold") == 0) {
+    hold = argv[i + 1];
+    i += 2;
+  }
   if (i >= argc) {
-    fprintf(stderr, "usage: ee-key.exe [--desktop <name>] <scancode in hex> [<scancode> ...]\n");
+    fprintf(stderr, "usage: ee-key.exe [--desktop <name>] [--hold <release file>] <scancode in hex> [<scancode> ...]\n");
     return 2;
   }
   for (int j = i; j < argc; j++) {
@@ -42,6 +51,22 @@ int main(int argc, char **argv) {
       fprintf(stderr, "ee-key: '%s' is not a scancode (1..7f, hex)\n", argv[j]);
       return 2;
     }
+  }
+  if (hold) {
+    int first = i;
+    for (int j = first; j < argc; j++)
+      if (!send_key((WORD)strtoul(argv[j], NULL, 16), 0)) return 4;
+    printf("ee-key: holding");
+    for (int j = first; j < argc; j++) printf(" %s", argv[j]);
+    printf("\n");
+    fflush(stdout);
+    for (int waited = 0; waited < 300 * 50 && GetFileAttributesA(hold) == INVALID_FILE_ATTRIBUTES; waited++) Sleep(20);
+    for (int j = argc - 1; j >= first; j--) {
+      if (!send_key((WORD)strtoul(argv[j], NULL, 16), KEYEVENTF_KEYUP)) return 4;
+      printf("ee-key: released %s\n", argv[j]);
+    }
+    fflush(stdout);
+    return 0;
   }
   for (; i < argc; i++) {
     WORD scan = (WORD)strtoul(argv[i], NULL, 16);
