@@ -21,6 +21,10 @@
 
 #define FAKE_DD_STDCALL __attribute__((stdcall))
 
+typedef struct FakeMode {
+    unsigned w, h, hz, bpp, r, g, b, a;
+} FakeMode;
+
 typedef struct FakeDD FakeDD;
 struct FakeDD {
     const void *const *vtbl; /* must stay first: this is the COM object */
@@ -39,8 +43,11 @@ struct FakeDD {
     int create_result_count, create_result_pos;
     long create_device_result;          /* what IDirect3D7::CreateDevice returns */
     unsigned long device_depth_mask;    /* dwDeviceRenderBitDepth of the fake device */
-    unsigned long texture_formats[4][5]; /* {bit count, r, g, b, a} of the formats EnumTextureFormats offers */
+    unsigned long texture_formats[8][5]; /* {bit count, r, g, b, a} of the formats EnumTextureFormats offers */
     int texture_format_count;
+    int texture_formats_delivered;       /* how many of them the callback saw (it stops the enumeration when it has enough) */
+    const FakeMode *modes;               /* the modes EnumDisplayModes offers; null: kFakeModes (P2.6.3) */
+    unsigned mode_count;
 };
 
 typedef struct FakeD3D {
@@ -62,10 +69,6 @@ static void fake_log(FakeDD *dd, const char *fmt, ...)
     va_end(ap);
     strncat(dd->log, "\n", sizeof dd->log - strlen(dd->log) - 1);
 }
-
-typedef struct FakeMode {
-    unsigned w, h, hz, bpp, r, g, b, a;
-} FakeMode;
 
 static const FakeMode kFakeModes[] = {
     {640, 480, 60, 16, 0xf800, 0x07e0, 0x001f, 0},       /* 565 -> format 7 */
@@ -129,9 +132,11 @@ static long FAKE_DD_STDCALL fake_enum_display_modes(FakeDD *dd, DWORD flags, voi
                                                     int(FAKE_DD_STDCALL *cb)(void *, void *))
 {
     fake_log(dd, "dd.EnumDisplayModes(flags=%lu,desc=%s)", (unsigned long)flags, desc ? "set" : "null");
-    for (unsigned i = 0; i < FAKE_MODE_COUNT; i++) {
+    const FakeMode *modes = dd->modes ? dd->modes : kFakeModes;
+    const unsigned count = dd->modes ? dd->mode_count : FAKE_MODE_COUNT;
+    for (unsigned i = 0; i < count; i++) {
         DWORD mode[0x7c / 4];
-        fake_fill_mode(mode, &kFakeModes[i]);
+        fake_fill_mode(mode, &modes[i]);
         if (!cb(mode, ctx)) {
             break;
         }
@@ -449,6 +454,7 @@ static long FAKE_DD_STDCALL fake_device_enum_texture_formats(FakeDevice *device,
         pf[5] = (DWORD)device->dd->texture_formats[i][2];
         pf[6] = (DWORD)device->dd->texture_formats[i][3];
         pf[7] = (DWORD)device->dd->texture_formats[i][4];
+        device->dd->texture_formats_delivered++;
         if (cb(pf, ctx) == 0) {
             break;
         }
@@ -854,6 +860,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 }
 
 #include "surface_checks.h" /* the surface object, CreateSurface, CreateAWindow and the 32-bit probe (P2.6.2) */
+#include "format_checks.h"  /* the pixel format table in every consumer, texture format enumeration (P2.6.3) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -875,6 +882,7 @@ static int probe_screens(const struct Expect *e, const char *path)
     if (raw && load_screen_api(e, h, &api)) {
         check_screen_object(e, h, &api);
         check_surfaces(e, h, &api);
+        check_pixel_formats(e, &api);
         check_real_screens(e, get_rasterizer(), &api);
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
