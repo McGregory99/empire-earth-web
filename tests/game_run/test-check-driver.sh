@@ -28,8 +28,9 @@ RET @DLL@.PIMGetType() retval=72617374 ret=0x1
 CALL @DLL@.PIMGetName() ret=0x1
 RET @DLL@.PIMGetName() retval=10003000 ret=0x1
 CALL @DLL@.PIMIsValid() ret=0x1
-RET @DLL@.PIMIsValid() retval=0012ab00 ret=0x1
-trace:loaddll:free_modref Unloaded module L"C:\\GOG Games\\Empire Earth Gold Edition\\Empire Earth\\@DLL@.dll" : native
+RET @DLL@.PIMIsValid() retval=0012ab01 ret=0x1
+CALL @DLL@.RPIMGetRasterizer() ret=0x1
+RET @DLL@.RPIMGetRasterizer() retval=00130000 ret=0x1
 trace:loaddll:build_module Loaded L"C:\\GOG Games\\Empire Earth Gold Edition\\Empire Earth\\DX7HRTnLDisplay.dll" at 11000000: native
 LOG
 export FAKE_DLL=EEWebRasterizer
