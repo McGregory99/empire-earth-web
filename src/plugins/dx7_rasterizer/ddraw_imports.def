@@ -1,0 +1,6 @@
+; Import definition for ddraw.dll: the two entry points the plugin calls.  The game directory carries a
+; ddraw.dll of its own (a shim in front of the real implementation); both export these names.
+LIBRARY ddraw.dll
+EXPORTS
+    DirectDrawCreateEx@16
+    DirectDrawEnumerateExA@12

@@ -8,12 +8,12 @@ names it but the plugin does not touch it; `guess` = offset certain, type or mea
 
 ## Summary
 
-44 classes and structs, 373 fields.
+45 classes and structs, 378 fields.
 
 | confidence | fields |
 |---|---|
 | confirmed | 191 |
-| plugin-only | 12 |
+| plugin-only | 17 |
 | lle-only | 142 |
 | guess | 28 |
 
@@ -414,6 +414,18 @@ Size evidence: the base-class copy constructor copies 0x4 and 0x8; DX7Screen add
 | 0x0 | 4 | `void *` | `vptr` | lle-only | L ctor sets the GEScreen vftable |
 | 0x4 | 4 | `struct GETextureManagerLayout *` | `textureManager` | confirmed | P DX7Screen constructor writes it; L GEScreen::GetTextureManager, SetTextureManager |
 | 0x8 | 4 | `uint32_t` | `rasterizerIndex` | confirmed | P DX7Screen constructor writes it; L GEScreen::GetRasterizerIndex, SetRasterizerIndex |
+
+### GEVideoMode (0x14 bytes, size confirmed)
+
+Size evidence: the plugin's mode vector divides by 0x14 (GetModeCount); DX7Screen's constructor and EnumVideoModeCallback fill the five fields; the engine receives a reference through GEScreen::GetMode and GetCurrentMode.
+
+| offset | width | type | field | confidence | evidence |
+|---|---|---|---|---|---|
+| 0x0 | 4 | `uint32_t` | `width` | plugin-only | P EnumVideoModeCallback (dwWidth); the constructor and Test32BitSupport compare it |
+| 0x4 | 4 | `uint32_t` | `height` | plugin-only | P EnumVideoModeCallback (dwHeight) |
+| 0x8 | 4 | `uint32_t` | `refreshRate` | plugin-only | P EnumVideoModeCallback (dwRefreshRate, 0 when the driver does not say) |
+| 0xc | 4 | `uint32_t` | `bitsPerPixel` | plugin-only | P EnumVideoModeCallback (RGB bit count); the constructor matches the current mode by it |
+| 0x10 | 4 | `uint32_t` | `pixelFormat` | plugin-only | P EnumVideoModeCallback (index into the plugin's pixel format table, 14 when none matches); SetMode reads the bit count through it |
 
 ### GESurface (0x8 bytes, size confirmed)
 

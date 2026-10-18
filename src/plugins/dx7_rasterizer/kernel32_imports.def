@@ -1,6 +1,10 @@
-; The two kernel32.dll functions the layout canaries need (see layout_canaries.cpp): a readability probe
-; and the debugger log.  Both exist in every Windows (and in Wine); both are stdcall.
+; The kernel32.dll functions the plugin needs: a readability probe and the debugger log (layout_canaries.cpp), a
+; short sleep (DX7Screen::RestoreAllSurfaces) and the lookup of user32's GetMonitorInfoA (dx7_screen.cpp,
+; which the original also resolves at run time).  All exist in every Windows (and in Wine); all are stdcall.
 LIBRARY kernel32.dll
 EXPORTS
     IsBadReadPtr@8
     OutputDebugStringA@4
+    Sleep@4
+    GetModuleHandleA@4
+    GetProcAddress@8

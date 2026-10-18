@@ -4,7 +4,8 @@
 // Low-Level Engine.dll), resolves PIMGetName / PIMGetType / PIMIsValid by name, and keeps only
 // the modules whose PIMGetType() is 'rast'.  GEInitialize then calls PIMIsValid(); when that is
 // true it calls RPIMGetRasterizer() and registers the returned object, otherwise the module is
-// unloaded.  This build is a null rasterizer: it identifies itself, and always says "not valid".
+// unloaded.  This build identifies itself and activates by creating a DX7Screen for each DirectDraw device
+// with hardware T&L (task P2.6.1), so on such a machine it says "valid"; the drawing operations are still null.
 //
 // All four exports are cdecl.  PIMGetName returns `const UString&` (a pointer to an engine
 // UString that outlives the call), PIMGetType an unsigned long, and PIMIsValid a bool, which the
@@ -49,8 +50,8 @@ ulong PIMGetType(void)
     return 0x72617374; // 'rast'
 }
 
-// Mirrors the original: activate the rasterizer, ask for its screens, deactivate it again.  A
-// null rasterizer cannot activate, so it is never valid and the engine unloads the module.
+// Mirrors the original: activate the rasterizer (which creates its screens), ask how many it has,
+// deactivate it again (which destroys them).  Valid means at least one screen could render.
 // Each call also runs the class self-check so the build keeps proving its C++ ABI.
 bool PIMIsValid(void)
 {
@@ -64,7 +65,7 @@ bool PIMIsValid(void)
     return valid;
 }
 
-// Only called by the engine when PIMIsValid() is true, so never for this build.  The engine sees a GERasterizer.
+// Only called by the engine when PIMIsValid() is true.  The engine sees a GERasterizer.
 void* RPIMGetRasterizer(void)
 {
     GERasterizer* rasterizer = &Rasterizer();

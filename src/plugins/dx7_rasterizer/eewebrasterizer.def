@@ -9,3 +9,8 @@ EXPORTS
     PIMGetType          @2
     PIMIsValid          @3
     RPIMGetRasterizer   @4
+; The screen registry and the private constructor of the screen class, under the decorated names the original
+; exports them by: the test harness builds screens and reaches the live ones through them (the engine does not).
+    ??0DX7Screen@@AAE@PAUHMONITOR__@@PAUIDirectDraw7@@ABVUString@@_N3@Z   @5
+    ?GetScreen@DX7Screen@@SAPAV1@K@Z                                       @6
+    ?GetScreenCount@DX7Screen@@SAKXZ                                       @7

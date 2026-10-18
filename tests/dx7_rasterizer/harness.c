@@ -87,7 +87,7 @@ static const char *const kExportNames[4] = {"PIMGetName", "PIMGetType", "PIMIsVa
 static const struct Expect kOriginal = {"original", 0, {252, 253, 254, 255}, -1, "Direct3D Hardware TnL",
                                         ".?AVDX7TnLRasterizer@@",
                                         {".?AVDX7TnLRasterizer@@", ".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL}};
-static const struct Expect kOurs = {"ours", 1, {1, 2, 3, 4}, 0, "EEWeb Null Rasterizer",
+static const struct Expect kOurs = {"ours", 1, {1, 2, 3, 4}, 1, "EEWeb Null Rasterizer",
                                     EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_ABI, EEWEB_RTTI_GE, NULL}};
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
@@ -246,6 +246,22 @@ static unsigned vtable_slot_count(HMODULE module, void *const *vtable)
     return 1024;
 }
 
+/* How many screens the rasterizer holds: the engine's own GERasterizer::GetScreenCount for the original's object;
+ * for ours, the count it keeps behind its vptr (the engine's base class is not part of our object yet). */
+static unsigned long rasterizer_screen_count(const struct Expect *e, void *obj)
+{
+    if (e->ours) {
+        return (unsigned long)counter(obj, EEWEB_COUNTER_SCREENS);
+    }
+    typedef unsigned long(THISCALL * GetCount)(void *self);
+    GetCount fn;
+    void *raw = proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?GetScreenCount@GERasterizer@@QBEKXZ");
+    memcpy(&fn, &raw, sizeof fn);
+    return fn(obj);
+}
+
+#include "screen_checks.h" /* the GEScreen object and the rasterizer slots that expose it (P2.6.1) */
+
 /*
  * What RPIMGetRasterizer returns.  Both variants: a vtable inside the DLL, MSVC RTTI and the same
  * number of slots.  Ours is driven through its vtable exactly like the engine would (thiscall through
@@ -287,7 +303,7 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     void *fn;
     fn = slot(vtable, EEWEB_SLOT_GERasterizer_ActivateRasterizer);
     memcpy(&m0, &fn, sizeof m0);
-    CHECK(m0(obj) == EEWEB_ACTIVATE_FAILED, "%s: slot %d is ActivateRasterizer(), which fails", e->label,
+    CHECK(m0(obj) == 0, "%s: slot %d is ActivateRasterizer(), which enumerates the DirectDraw devices and succeeds", e->label,
           EEWEB_SLOT_GERasterizer_ActivateRasterizer);
     fn = slot(vtable, EEWEB_SLOT_GERasterizer_Deactivate);
     memcpy(&m0, &fn, sizeof m0);
@@ -321,7 +337,7 @@ static void check_rasterizer_object(const struct Expect *e, HMODULE h, void *get
     for (int k = 0; k < EEWEB_COUNTER_COUNT; k++) {
         before[k] = counter(obj, k);
     }
-    CHECK(is_valid() == 0, "%s: PIMIsValid() is still false", e->label);
+    CHECK(is_valid() == 1, "%s: PIMIsValid() is true: the rasterizer activates and holds a screen", e->label);
     for (int k = 0; k < EEWEB_COUNTER_COUNT; k++) {
         after[k] = counter(obj, k);
     }
@@ -503,13 +519,19 @@ static void reload_cycles(const struct Expect *e, HMODULE first, const char *pat
                 }
                 CHECK(fresh == 0, "%s: %s: all %d counters are zero on a fresh load", e->label, when,
                       EEWEB_COUNTER_COUNT);
-                CHECK(is_valid() == 0, "%s: %s: PIMIsValid() is false", e->label, when);
-                CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1 && counter(obj, EEWEB_COUNTER_DEACTIVATIONS) == 1 &&
-                          counter(obj, EEWEB_COUNTER_SELF_CHECKS) == 1 &&
-                          counter(obj, EEWEB_COUNTER_SELF_CHECK_FAILURES) == 0 &&
-                          counter(obj, EEWEB_COUNTER_DESTROYED) == 0,
-                      "%s: %s: one PIMIsValid call counted once (activate, deactivate, self-check; the object survives)",
-                      e->label, when);
+                /* PIMIsValid enumerates the real DirectDraw devices, and Wine's DirectDraw leaves a few heap blocks
+                 * behind per use (the original does the same: measured with its PIMIsValid run in-process).  It
+                 * therefore runs in the first cycle only, which is not held to the heap check; cycles 2..4 stay
+                 * strict about the plugin itself. */
+                if (cycle == 1) {
+                    CHECK(is_valid() == 1, "%s: %s: PIMIsValid() is true", e->label, when);
+                    CHECK(counter(obj, EEWEB_COUNTER_ACTIVATIONS) == 1 && counter(obj, EEWEB_COUNTER_DEACTIVATIONS) == 1 &&
+                              counter(obj, EEWEB_COUNTER_SELF_CHECKS) == 1 &&
+                              counter(obj, EEWEB_COUNTER_SELF_CHECK_FAILURES) == 0 &&
+                              counter(obj, EEWEB_COUNTER_DESTROYED) == 0 && counter(obj, EEWEB_COUNTER_SCREENS) == 0,
+                          "%s: %s: one PIMIsValid call counted once (activate, deactivate, self-check; the object survives and holds no screen)",
+                          e->label, when);
+                }
             }
         }
         check_unloaded(e, h, base, when, name_buffer);
@@ -581,8 +603,11 @@ static void record_original_isvalid(const char *self, const char *path)
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
+    if (argc == 4 && strcmp(argv[1], "probe-screens") == 0) {
+        return probe_screens(strcmp(argv[3], "ours") == 0 ? &kOurs : &kOriginal, argv[2]);
+    }
     if (argc != 3) {
-        fprintf(stderr, "usage: %s original|ours|probe-isvalid <dll>\n", argv[0]);
+        fprintf(stderr, "usage: %s original|ours|probe-isvalid <dll>\n       %s probe-screens <dll> original|ours\n", argv[0], argv[0]);
         return 64;
     }
     if (strcmp(argv[1], "probe-isvalid") == 0) {
@@ -596,6 +621,7 @@ int main(int argc, char **argv)
         return 64;
     }
     HMODULE first = run_plugin_checks(e, argv[2]);
+    run_real_screens_child(argv[0], argv[2], e);
     if (e == &kOriginal) {
         record_original_isvalid(argv[0], argv[2]);
     }

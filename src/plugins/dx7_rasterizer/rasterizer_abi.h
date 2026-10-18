@@ -38,11 +38,11 @@ enum {
     EEWEB_COUNTER_DESTROYED = 4,      /* destructor runs of this object */
     EEWEB_COUNTER_LAYOUT_VIOLATIONS = 5,  /* engine objects refused by a layout canary (layout_canaries.h) */
     EEWEB_COUNTER_LAST_VIOLATION = 6,     /* the EEWEB_LAYOUT_* code of the latest refusal */
-    EEWEB_COUNTER_COUNT = 7
+    EEWEB_COUNTER_SCREENS = 7,            /* screens the rasterizer holds (GetScreenCount): the engine's base-class vector is not ours yet */
+    EEWEB_COUNTER_COUNT = 8
 };
 
-/* Results of the null implementation. */
-#define EEWEB_ACTIVATE_FAILED 0x45570001L /* ActivateRasterizer(): the null rasterizer cannot activate */
+/* Results of the null operations. */
 #define EEWEB_NOT_SUPPORTED 0x45570002L   /* the other operations that return a status */
 #define EEWEB_DRAW_BITMAP_BASE 0x1000L    /* Draw(GEBitmap *, mode)        returns this + mode */
 #define EEWEB_LAYOUT_VIOLATION 0x45570003L /* an operation refused an engine object whose layout canary failed */

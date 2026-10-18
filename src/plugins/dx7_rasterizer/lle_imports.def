@@ -5,3 +5,5 @@ LIBRARY "Low-Level Engine.dll"
 EXPORTS
     ??0UString@@QAE@PBD@Z
     ??1UString@@UAE@XZ
+    ??0UString@@QAE@ABV0@@Z
+    ?ESRecordNativeError@@YAKK@Z

@@ -8,6 +8,7 @@
 class UString {
 public:
     UString(const char* text);   // ??0UString@@QAE@PBD@Z
+    UString(const UString& other); // ??0UString@@QAE@ABV0@@Z
     virtual ~UString();          // ??1UString@@UAE@XZ
 
 private:

@@ -615,6 +615,21 @@ EEL_AT(GEScreenLayout, textureManager, 0x4);
 EEL_AT(GEScreenLayout, rasterizerIndex, 0x8);
 EEL_SIZE(GEScreenLayout, 0xc);
 
+/* @class GEVideoMode size=0x14 size-confidence=confirmed | the plugin's mode vector divides by 0x14 (GetModeCount); DX7Screen's constructor and EnumVideoModeCallback fill the five fields; the engine receives a reference through GEScreen::GetMode and GetCurrentMode */
+typedef struct GEVideoModeLayout {
+    uint32_t width; /* @0x0 plugin-only | P EnumVideoModeCallback (dwWidth); the constructor and Test32BitSupport compare it */
+    uint32_t height; /* @0x4 plugin-only | P EnumVideoModeCallback (dwHeight) */
+    uint32_t refreshRate; /* @0x8 plugin-only | P EnumVideoModeCallback (dwRefreshRate, 0 when the driver does not say) */
+    uint32_t bitsPerPixel; /* @0xc plugin-only | P EnumVideoModeCallback (RGB bit count); the constructor matches the current mode by it */
+    uint32_t pixelFormat; /* @0x10 plugin-only | P EnumVideoModeCallback (index into the plugin's pixel format table, 14 when none matches); SetMode reads the bit count through it */
+} GEVideoModeLayout;
+EEL_AT(GEVideoModeLayout, width, 0x0);
+EEL_AT(GEVideoModeLayout, height, 0x4);
+EEL_AT(GEVideoModeLayout, refreshRate, 0x8);
+EEL_AT(GEVideoModeLayout, bitsPerPixel, 0xc);
+EEL_AT(GEVideoModeLayout, pixelFormat, 0x10);
+EEL_SIZE(GEVideoModeLayout, 0x14);
+
 /* @class GESurface size=0x8 size-confidence=confirmed | the base constructor writes 0x0 and 0x4; DX7Surface adds its own fields from 0x8 */
 typedef struct GESurfaceLayout {
     void * vptr; /* @0x0 lle-only | L ctor sets the GESurface vftable */

@@ -4,16 +4,17 @@
 // original's order; see ../../engine_abi/ge_interfaces.h) and overrides every slot with a null
 // operation, so the harness can drive it through the positional vtable like the engine would.
 //
-// The engine never reaches these methods: PIMIsValid() says "not valid" and the module is unloaded.  The
-// operations that return a status say "not supported", the ones that return a pointer return null.  Only
-// ActivateRasterizer, Deactivate, the destructor and the last two Draw overloads do anything observable;
-// they count their calls where the harness can read them (rasterizer_abi.h) or return a marker.
+// What it does (task P2.6.1): it activates by enumerating the DirectDraw devices and creating a DX7Screen
+// for each one that has a hardware T&L Direct3D 7 device, so PIMIsValid() says "valid" on a machine that has
+// one.  The drawing operations are still null: operations that return a status say "not supported", the ones
+// that return a pointer return null.
 //
 // This class has no engine fields behind its vptr: the layouts GERasterizer and DX7Rasterizer give the
 // real object are task P2.5.
 #ifndef EEWEB_NULL_RASTERIZER_H
 #define EEWEB_NULL_RASTERIZER_H
 
+#include "dx7_screen.h"
 #include "ge_interfaces.h"
 #include "layout_canaries.h"
 #include "rasterizer_abi.h"
@@ -33,7 +34,7 @@ public:
     long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 0
     long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 1
     long AddLight(GELight &light, unsigned long, unsigned long &) override { return Verdict(EEWebCheckLight(&light), EEWEB_NOT_SUPPORTED); }  // 2
-    long AddValidScreen(GEScreen *) override { return EEWEB_NOT_SUPPORTED; }  // 3
+    long AddValidScreen(GEScreen *) override;  // 3
     long BeginScene(GESurface *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 4
     bool CanDoCurrentState(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); return false; }  // 5
     long Clear(GEColor const &, GERectangle const &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 6
@@ -59,8 +60,8 @@ public:
     long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
     long DrawWater(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 27
     long EndScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 28
-    long GetAvailableVideoMemory(unsigned long, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 29
-    long GetTotalVideoMemory(unsigned long, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 30
+    long GetAvailableVideoMemory(unsigned long, unsigned long &) override;  // 29
+    long GetTotalVideoMemory(unsigned long, unsigned long &) override;  // 30
     unsigned long GetCaps(unsigned long, unsigned long) override { return 0; }  // 31
     bool GetCanModulateTextureAlpha(unsigned long) override { return false; }  // 32
     bool GetDirtyRectangleSupport(unsigned long) override { return false; }  // 33
@@ -109,11 +110,11 @@ protected:
     long slot76(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 76
     void SetRenderTarget(GESurface *, unsigned long) override {}  // 77
 public:
-    bool GetIsScreenValid(DX7Screen *) override { return false; }  // 78
+    bool GetIsScreenValid(DX7Screen *) override;  // 78
 protected:
     long CreateVertexBuffers(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 79
     long DrawTerrainMaterial(GEViewport *, std::vector<GETerrainMesh::GETMPolygon *, std::allocator<GETerrainMesh::GETMPolygon *>> &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 80
-    long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override { return EEWEB_NOT_SUPPORTED; }  // 81
+    long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override;  // 81
 
 private:
     // The layout canaries' bookkeeping: Note counts a refusal (and returns the canary's status); Verdict
@@ -121,8 +122,18 @@ private:
     long Note(long canaryStatus);
     long Verdict(long canaryStatus, long result);
 
+    // Called for each DirectDraw device ActivateRasterizer finds (see null_rasterizer.cpp).
+    static int __attribute__((stdcall)) EnumerateDevice(GUID_ *, char *, char *, void *, void *);
+    void ClearScreens();
+
     // Right behind the vptr: the harness reads them from there (EEWEB_COUNTERS_OFFSET).
     volatile long m_counters[EEWEB_COUNTER_COUNT];
+
+    // The valid screens, in the order they were added: this class's own list, standing in for the
+    // engine-side vector of the base class (GERasterizerLayout.screens) until the object has the base layout.
+    DX7Screen **m_screens;
+    unsigned long m_screenCount;
+    unsigned long m_screenCapacity;
 };
 
 // Exercises the class the way the engine will: allocates a temporary through an opaque factory (so the
