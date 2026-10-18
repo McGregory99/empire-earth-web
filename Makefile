@@ -216,15 +216,22 @@ $(RAST_BUILD)/kernel32.lib: $(RAST_SRC)/kernel32_imports.def | $(RAST_BUILD)
 $(RAST_BUILD)/ddraw.lib: $(RAST_SRC)/ddraw_imports.def | $(RAST_BUILD)
 	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D ddraw.dll
 
+$(RAST_BUILD)/user32.lib: $(RAST_SRC)/user32_imports.def | $(RAST_BUILD)
+	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D user32.dll
+
+$(RAST_BUILD)/gdi32.lib: $(RAST_SRC)/gdi32_imports.def | $(RAST_BUILD)
+	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D gdi32.dll
+
 $(RAST_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) $(ABI_HEADERS) | $(RAST_BUILD)
 	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -c -o $@ $<
 
-$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib
+$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib
 	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
 	    /subsystem:windows,5.0 /opt:ref /filealign:512 /brepro $(RAST_OBJECTS) \
-	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib
+	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib \
+	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib
 
-$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
+$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
 	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine
 
 # Exports, ordinals and imports of our DLL against the contract (tests/dx7_rasterizer/).
@@ -313,9 +320,11 @@ check-abi-shapes: $(ABI_HEADERS)
 	$(ABI_DUMP) tests/abi_shapes/probe.cpp > $(ABI_BUILD)/probe-layouts.txt
 	$(ABI_DUMP) $(RAST_SRC)/null_rasterizer.cpp > $(ABI_BUILD)/null-layouts.txt
 	$(ABI_DUMP) $(RAST_SRC)/dx7_screen.cpp > $(ABI_BUILD)/screen-layouts.txt
+	$(ABI_DUMP) $(RAST_SRC)/dx7_surface.cpp > $(ABI_BUILD)/surface-layouts.txt
 	python3 -I tests/abi_shapes/check_shapes.py --header-dir src/engine_abi \
 	    --dump $(ABI_BUILD)/probe-layouts.txt --dump $(ABI_BUILD)/null-layouts.txt --dump $(ABI_BUILD)/screen-layouts.txt \
-	    --implements EEWebNullRasterizer=DX7RasterizerAbi --implements DX7Screen=GEScreen
+	    --dump $(ABI_BUILD)/surface-layouts.txt \
+	    --implements EEWebNullRasterizer=DX7RasterizerAbi --implements DX7Screen=GEScreen --implements DX7Surface=GESurface
 
 game-check-rasterizer: $(RAST_DLL)
 	bash $(RAST_GAME_CHECK) "$(RAST_DLL)" "$(RAST_DLL_NAME)"

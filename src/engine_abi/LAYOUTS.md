@@ -8,14 +8,14 @@ names it but the plugin does not touch it; `guess` = offset certain, type or mea
 
 ## Summary
 
-45 classes and structs, 378 fields.
+46 classes and structs, 389 fields.
 
 | confidence | fields |
 |---|---|
 | confirmed | 191 |
-| plugin-only | 17 |
+| plugin-only | 27 |
 | lle-only | 142 |
-| guess | 28 |
+| guess | 29 |
 
 ### UString (0x10 bytes, size confirmed)
 
@@ -435,6 +435,24 @@ Size evidence: the base constructor writes 0x0 and 0x4; DX7Surface adds its own 
 |---|---|---|---|---|---|
 | 0x0 | 4 | `void *` | `vptr` | lle-only | L ctor sets the GESurface vftable |
 | 0x4 | 4 | `uint32_t` | `refCount` | confirmed | P DX7Surface constructor writes it; L GESurface ctor starts it at 1 |
+
+### GESurfaceDescription (0x24 bytes, size plugin-only)
+
+Size evidence: the engine builds one and passes it to GEScreen::CreateSurface; DX7Screen::CreateSurface copies nine dwords of it and DX7Surface's constructor keeps that copy at 0x8.
+
+| offset | width | type | field | confidence | evidence |
+|---|---|---|---|---|---|
+| 0x0 | 4 | `uint32_t` | `type` | plugin-only | P CreateSurface selects the DirectDraw caps by it (0 primary, 1 video memory, 2 flipping primary, 3 depth buffer, 4 system memory, 5 texture, 6 mipmapped texture; 7 is the plugin's mark of a flip chain's back buffer) |
+| 0x4 | 4 | `uint32_t` | `pixelFormat` | plugin-only | P CreateSurface indexes its pixel format table with it (types 3: 12 and 13 ask for any depth buffer format) |
+| 0x8 | 4 | `uint32_t` | `volatility` | plugin-only | P CreateSurface (types 5 and 6: non-zero adds the dynamic hint); GetSurfaceVolatility |
+| 0xc | 4 | `uint32_t` | `width` | plugin-only | P CreateSurface (dwWidth), GetWidth |
+| 0x10 | 4 | `uint32_t` | `height` | plugin-only | P CreateSurface (dwHeight), GetHeight |
+| 0x14 | 4 | `uint32_t` | `backBufferCount` | plugin-only | P CreateSurface (type 2: dwBackBufferCount and the length of the flip chain) |
+| 0x18 | 4 | `uint32_t` | `mipMapCount` | plugin-only | P CreateSurface (type 6: dwMipMapCount and the length of the mipmap chain) |
+| 0x1c | 4 | `uint32_t` | `pixelDepth` | plugin-only | P CreateSurface writes it for fallback depth buffer formats; GetPixelDepth, GetAllocatedSize, CopyWithFilter |
+| 0x20 | 1 | `uint8_t` | `is3DRenderable` | plugin-only | P CreateSurface (adds DDSCAPS_3DDEVICE); GetIs3DRenderable |
+| 0x21 | 1 | `uint8_t` | `isTransparencyEnabled` | plugin-only | P CreateSurface (adds DDSD_CKSRCBLT); GetIsTransparencyEnabled |
+| 0x22 | 2 | `uint8_t[2]` | `pad22` | guess | padding to the dword boundary; copied with the rest |
 
 ### GEMovie (0x8 bytes, size confirmed)
 

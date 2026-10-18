@@ -639,6 +639,33 @@ EEL_AT(GESurfaceLayout, vptr, 0x0);
 EEL_AT(GESurfaceLayout, refCount, 0x4);
 EEL_SIZE(GESurfaceLayout, 0x8);
 
+/* @class GESurfaceDescription size=0x24 size-confidence=plugin-only | the engine builds one and passes it to GEScreen::CreateSurface; DX7Screen::CreateSurface copies nine dwords of it and DX7Surface's constructor keeps that copy at 0x8 */
+typedef struct GESurfaceDescriptionLayout {
+    uint32_t type; /* @0x0 plugin-only | P CreateSurface selects the DirectDraw caps by it (0 primary, 1 video memory, 2 flipping primary, 3 depth buffer, 4 system memory, 5 texture, 6 mipmapped texture; 7 is the plugin's mark of a flip chain's back buffer) */
+    uint32_t pixelFormat; /* @0x4 plugin-only | P CreateSurface indexes its pixel format table with it (types 3: 12 and 13 ask for any depth buffer format) */
+    uint32_t volatility; /* @0x8 plugin-only | P CreateSurface (types 5 and 6: non-zero adds the dynamic hint); GetSurfaceVolatility */
+    uint32_t width; /* @0xc plugin-only | P CreateSurface (dwWidth), GetWidth */
+    uint32_t height; /* @0x10 plugin-only | P CreateSurface (dwHeight), GetHeight */
+    uint32_t backBufferCount; /* @0x14 plugin-only | P CreateSurface (type 2: dwBackBufferCount and the length of the flip chain) */
+    uint32_t mipMapCount; /* @0x18 plugin-only | P CreateSurface (type 6: dwMipMapCount and the length of the mipmap chain) */
+    uint32_t pixelDepth; /* @0x1c plugin-only | P CreateSurface writes it for fallback depth buffer formats; GetPixelDepth, GetAllocatedSize, CopyWithFilter */
+    uint8_t is3DRenderable; /* @0x20 plugin-only | P CreateSurface (adds DDSCAPS_3DDEVICE); GetIs3DRenderable */
+    uint8_t isTransparencyEnabled; /* @0x21 plugin-only | P CreateSurface (adds DDSD_CKSRCBLT); GetIsTransparencyEnabled */
+    uint8_t pad22[2]; /* @0x22 guess | padding to the dword boundary; copied with the rest */
+} GESurfaceDescriptionLayout;
+EEL_AT(GESurfaceDescriptionLayout, type, 0x0);
+EEL_AT(GESurfaceDescriptionLayout, pixelFormat, 0x4);
+EEL_AT(GESurfaceDescriptionLayout, volatility, 0x8);
+EEL_AT(GESurfaceDescriptionLayout, width, 0xc);
+EEL_AT(GESurfaceDescriptionLayout, height, 0x10);
+EEL_AT(GESurfaceDescriptionLayout, backBufferCount, 0x14);
+EEL_AT(GESurfaceDescriptionLayout, mipMapCount, 0x18);
+EEL_AT(GESurfaceDescriptionLayout, pixelDepth, 0x1c);
+EEL_AT(GESurfaceDescriptionLayout, is3DRenderable, 0x20);
+EEL_AT(GESurfaceDescriptionLayout, isTransparencyEnabled, 0x21);
+EEL_AT(GESurfaceDescriptionLayout, pad22, 0x22);
+EEL_SIZE(GESurfaceDescriptionLayout, 0x24);
+
 /* @class GEMovie size=0x8 size-confidence=confirmed | the base constructor writes 0x0 and 0x4 */
 typedef struct GEMovieLayout {
     void * vptr; /* @0x0 lle-only | L ctor sets the GEMovie vftable */

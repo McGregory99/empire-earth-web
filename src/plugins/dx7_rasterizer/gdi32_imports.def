@@ -1,0 +1,4 @@
+; The gdi32.dll function the 32-bit probe's window class needs (its background brush).  stdcall.
+LIBRARY gdi32.dll
+EXPORTS
+    GetStockObject@4

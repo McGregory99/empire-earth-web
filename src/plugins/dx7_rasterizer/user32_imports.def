@@ -1,0 +1,11 @@
+; The user32.dll functions the window of DX7Screen::CreateAWindow and of the 32-bit probe need (the original imports
+; the same seven).  All are stdcall.
+LIBRARY user32.dll
+EXPORTS
+    AdjustWindowRect@12
+    CreateWindowExA@48
+    DefWindowProcA@16
+    GetClassInfoExA@12
+    LoadCursorA@8
+    RegisterClassExA@4
+    UnregisterClassA@8

@@ -42,11 +42,31 @@ struct DDSCAPS2_ {
 };
 #define DDSCAPS_VIDEOMEMORY 0x00004000UL
 
+// A pixel format, a caps block, a colour key and the blit effects block, as DirectDraw 7 lays them out.
+struct DDCOLORKEY_ {
+    DWORD_ low, high;
+};
+struct DDBLTFX_ {
+    DWORD_ words[25]; // 100 bytes; word 0 is dwSize, word 20 (offset 0x50) is dwFillColor
+};
+static_assert(sizeof(DDBLTFX_) == 100, "DDBLTFX is 100 bytes");
+struct RECT_ {
+    long left, top, right, bottom;
+};
+
+// Results the surface methods tell apart (the SDK's values).
+#define DDERR_SURFACEBUSY_ 0x887601AEUL
+#define DDERR_SURFACELOST_ 0x887601C2UL
+#define DDERR_WASSTILLDRAWING_ 0x8876021CUL
+#define DDERR_NOTLOCKED_ 0x88760248UL
+
 // Cooperative levels used by DX7Screen::Capture / Release (the values are the SDK's).
 #define DDSCL_NORMAL 0x00000008UL
 #define DDSCL_SETFOCUSWINDOW 0x00000080UL
 
 struct IDirectDraw7;
+struct IDirectDrawSurface7;
+struct IDirect3DDevice7;
 typedef int(__attribute__((stdcall)) * EnumModesCallback)(DDSURFACEDESC2_*, void*);
 
 struct IDirectDraw7Vtbl {
@@ -56,7 +76,7 @@ struct IDirectDraw7Vtbl {
     void* compact;                                                                                              // 3
     void* createClipper;                                                                                        // 4
     void* createPalette;                                                                                        // 5
-    void* createSurface;                                                                                        // 6
+    HRESULT_(__attribute__((stdcall)) * CreateSurface)(IDirectDraw7*, DDSURFACEDESC2_*, IDirectDrawSurface7**, void*);  // 6
     void* duplicateSurface;                                                                                     // 7
     HRESULT_(__attribute__((stdcall)) * EnumDisplayModes)(IDirectDraw7*, DWORD_, DDSURFACEDESC2_*, void*, EnumModesCallback);  // 8
     void* enumSurfaces;                                                                                         // 9
@@ -87,7 +107,7 @@ struct IDirectDraw7 {
     const IDirectDraw7Vtbl* vtbl;
 };
 
-// IDirect3D7: only EnumDevices (slot 3) and Release (slot 2).
+// IDirect3D7: EnumDevices (slot 3), CreateDevice (slot 4) and Release (slot 2).
 struct IDirect3D7;
 typedef long(__attribute__((stdcall)) * EnumDevicesCallback)(char*, char*, void* deviceDesc7, void*);
 struct IDirect3D7Vtbl {
@@ -95,6 +115,7 @@ struct IDirect3D7Vtbl {
     void* addRef;                                                                            // 1
     DWORD_(__attribute__((stdcall)) * Release)(IDirect3D7*);                                 // 2
     HRESULT_(__attribute__((stdcall)) * EnumDevices)(IDirect3D7*, EnumDevicesCallback, void*);  // 3
+    HRESULT_(__attribute__((stdcall)) * CreateDevice)(IDirect3D7*, const GUID_*, IDirectDrawSurface7*, IDirect3DDevice7**);  // 4
 };
 struct IDirect3D7 {
     const IDirect3D7Vtbl* vtbl;
@@ -103,6 +124,56 @@ struct IDirect3D7 {
 // D3DDEVICEDESC7 starts with dwDevCaps.
 #define D3DDEVCAPS_HWTRANSFORMANDLIGHT 0x00010000UL
 #define D3DDEVCAPS_HWRASTERIZATION 0x00080000UL
+
+// IDirectDrawSurface7: the methods DX7Surface calls are typed, every other slot only keeps the order.
+struct IDirectDrawSurface7;
+struct IDirectDrawSurface7Vtbl {
+    void* queryInterface;                                                                                       // 0
+    void* addRef;                                                                                               // 1
+    DWORD_(__attribute__((stdcall)) * Release)(IDirectDrawSurface7*);                                           // 2
+    HRESULT_(__attribute__((stdcall)) * AddAttachedSurface)(IDirectDrawSurface7*, IDirectDrawSurface7*);        // 3
+    void* addOverlayDirtyRect;                                                                                  // 4
+    HRESULT_(__attribute__((stdcall)) * Blt)(IDirectDrawSurface7*, RECT_*, IDirectDrawSurface7*, RECT_*, DWORD_, DDBLTFX_*);  // 5
+    void* bltBatch;                                                                                             // 6
+    void* bltFast;                                                                                              // 7
+    HRESULT_(__attribute__((stdcall)) * DeleteAttachedSurface)(IDirectDrawSurface7*, DWORD_, IDirectDrawSurface7*);  // 8
+    void* enumAttachedSurfaces;                                                                                 // 9
+    void* enumOverlayZOrders;                                                                                   // 10
+    HRESULT_(__attribute__((stdcall)) * Flip)(IDirectDrawSurface7*, IDirectDrawSurface7*, DWORD_);              // 11
+    HRESULT_(__attribute__((stdcall)) * GetAttachedSurface)(IDirectDrawSurface7*, DDSCAPS2_*, IDirectDrawSurface7**);  // 12
+    void* slots13to16[4];                                                                                       // 13 GetBltStatus, 14 GetCaps, 15 GetClipper, 16 GetColorKey
+    HRESULT_(__attribute__((stdcall)) * GetDC)(IDirectDrawSurface7*, void**);                                   // 17
+    void* slots18to24[7];                                                                                       // 18 GetFlipStatus .. 24 IsLost
+    HRESULT_(__attribute__((stdcall)) * Lock)(IDirectDrawSurface7*, RECT_*, DDSURFACEDESC2_*, DWORD_, void*);   // 25
+    HRESULT_(__attribute__((stdcall)) * ReleaseDC)(IDirectDrawSurface7*, void*);                                // 26
+    HRESULT_(__attribute__((stdcall)) * Restore)(IDirectDrawSurface7*);                                         // 27
+    void* setClipper;                                                                                           // 28
+    HRESULT_(__attribute__((stdcall)) * SetColorKey)(IDirectDrawSurface7*, DWORD_, DDCOLORKEY_*);               // 29
+    void* slots30to31[2];                                                                                       // 30 SetOverlayPosition, 31 SetPalette
+    HRESULT_(__attribute__((stdcall)) * Unlock)(IDirectDrawSurface7*, RECT_*);                                  // 32
+    void* slots33to48[16];                                                                                      // 33 UpdateOverlay .. 48 GetLOD
+};
+static_assert(sizeof(IDirectDrawSurface7Vtbl) == 49 * 4, "IDirectDrawSurface7 has 49 methods");
+static_assert(__builtin_offsetof(IDirectDrawSurface7Vtbl, Blt) == 0x14, "Blt is slot 5");
+static_assert(__builtin_offsetof(IDirectDrawSurface7Vtbl, Lock) == 0x64, "Lock is slot 25");
+static_assert(__builtin_offsetof(IDirectDrawSurface7Vtbl, Unlock) == 0x80, "Unlock is slot 32");
+
+struct IDirectDrawSurface7 {
+    const IDirectDrawSurface7Vtbl* vtbl;
+};
+
+// The two methods of IDirect3DDevice7 the 32-bit probe calls.
+typedef long(__attribute__((stdcall)) * EnumTextureFormatsCallback)(DDPIXELFORMAT_*, void*);
+struct IDirect3DDevice7Vtbl {
+    void* queryInterface;                                                                                        // 0
+    void* addRef;                                                                                                // 1
+    DWORD_(__attribute__((stdcall)) * Release)(IDirect3DDevice7*);                                               // 2
+    HRESULT_(__attribute__((stdcall)) * GetCaps)(IDirect3DDevice7*, void* deviceDesc7);                          // 3
+    HRESULT_(__attribute__((stdcall)) * EnumTextureFormats)(IDirect3DDevice7*, EnumTextureFormatsCallback, void*);  // 4
+};
+struct IDirect3DDevice7 {
+    const IDirect3DDevice7Vtbl* vtbl;
+};
 
 typedef int(__attribute__((stdcall)) * DDEnumCallbackExA)(GUID_*, char* description, char* name, void* context, void* monitor);
 

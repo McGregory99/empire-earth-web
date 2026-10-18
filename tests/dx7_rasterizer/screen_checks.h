@@ -24,18 +24,34 @@
 typedef struct FakeDD FakeDD;
 struct FakeDD {
     const void *const *vtbl; /* must stay first: this is the COM object */
-    char log[8192];
+    char log[32768];
     unsigned long refs;
     long fail_coop_calls; /* the next n SetCooperativeLevel calls fail */
     long test_coop_result; /* what TestCooperativeLevel returns */
     int hw_tnl;            /* what the fake IDirect3D7 reports: a hardware T&L device or not */
     const void *const *d3d_vtbl;
+    const void *const *device_vtbl;
+    const void *const *surface_vtbl;
+    /* surfaces (surface_checks.h) */
+    int surface_count;                  /* ids handed out so far */
+    void *by_id[64];                    /* the fake surfaces by id */
+    long create_results[8];             /* scripted results of the next CreateSurface calls (0 = success) */
+    int create_result_count, create_result_pos;
+    long create_device_result;          /* what IDirect3D7::CreateDevice returns */
+    unsigned long device_depth_mask;    /* dwDeviceRenderBitDepth of the fake device */
+    unsigned long texture_formats[4][5]; /* {bit count, r, g, b, a} of the formats EnumTextureFormats offers */
+    int texture_format_count;
 };
 
 typedef struct FakeD3D {
     const void *const *vtbl;
     FakeDD *dd;
 } FakeD3D;
+
+typedef struct FakeDevice {
+    const void *const *vtbl;
+    FakeDD *dd;
+} FakeDevice;
 
 static void fake_log(FakeDD *dd, const char *fmt, ...)
 {
@@ -154,13 +170,191 @@ static long FAKE_DD_STDCALL fake_set_display_mode(FakeDD *dd, DWORD w, DWORD h, 
     return 0;
 }
 
-static long FAKE_DD_STDCALL fake_create_surface(FakeDD *dd, void *desc, void **out, void *outer)
+/* ---- surfaces ------------------------------------------------------------------------------------
+ * A scripted IDirectDrawSurface7.  Every call is logged with its arguments ("s<id>.<Method>(...)"), results
+ * can be scripted per method (a result is returned `times` times, then the call succeeds again), and Lock
+ * hands out a buffer the tests fill and read. */
+enum { FS_ADD, FS_BLT, FS_DEL, FS_FLIP, FS_GETATT, FS_GETDC, FS_RELDC, FS_LOCK, FS_UNLOCK, FS_RESTORE, FS_SETCK, FS_METHODS };
+
+typedef struct FakeSurface {
+    const void *const *vtbl; /* must stay first */
+    FakeDD *dd;
+    int id;
+    unsigned long refs;
+    unsigned char *mem;
+    unsigned long pitch;
+    struct {
+        long code;
+        int times;
+    } script[FS_METHODS];
+} FakeSurface;
+
+static void fake_dump_rect(char *out, size_t size, const long *r)
 {
-    (void)desc;
+    if (!r) {
+        snprintf(out, size, "null");
+    } else {
+        snprintf(out, size, "[%ld,%ld,%ld,%ld]", r[0], r[1], r[2], r[3]);
+    }
+}
+
+static long fake_surface_result(FakeSurface *s, int method)
+{
+    if (s->script[method].times > 0) {
+        s->script[method].times--;
+        return s->script[method].code;
+    }
+    return 0;
+}
+
+static FakeSurface *fake_surface_new(FakeDD *dd, const DWORD *desc)
+{
+    FakeSurface *s = (FakeSurface *)calloc(1, sizeof *s);
+    s->vtbl = dd->surface_vtbl;
+    s->dd = dd;
+    s->id = ++dd->surface_count;
+    if (s->id < 64) {
+        dd->by_id[s->id] = s;
+    }
+    s->refs = 1;
+    unsigned long bits = desc[0x54 / 4] ? desc[0x54 / 4] : 32;
+    unsigned long width = desc[3] ? desc[3] : 16;
+    unsigned long height = desc[2] ? desc[2] : 16;
+    s->pitch = (width * bits / 8 + 3) & ~3UL;
+    s->mem = (unsigned char *)calloc(1, s->pitch * (height + 2) + 64);
+    return s;
+}
+
+static long FAKE_DD_STDCALL fake_create_surface(FakeDD *dd, DWORD *desc, void **out, void *outer)
+{
     (void)outer;
-    fake_log(dd, "dd.CreateSurface");
-    *out = NULL;
-    return (long)0x80004001; /* the fake cannot create surfaces */
+    char text[1024] = "";
+    for (unsigned i = 0; i < 0x7c / 4; i++) {
+        if (desc[i]) {
+            char item[40];
+            snprintf(item, sizeof item, "%s+0x%x=0x%lx", text[0] ? "," : "", i * 4, (unsigned long)desc[i]);
+            strncat(text, item, sizeof text - strlen(text) - 1);
+        }
+    }
+    long result = 0;
+    if (dd->create_result_pos < dd->create_result_count) {
+        result = dd->create_results[dd->create_result_pos++];
+    }
+    if (result != 0) {
+        fake_log(dd, "dd.CreateSurface(%s) -> error 0x%lx", text, (unsigned long)result);
+        *out = NULL;
+        return result;
+    }
+    FakeSurface *s = fake_surface_new(dd, desc);
+    fake_log(dd, "dd.CreateSurface(%s) -> s%d", text, s->id);
+    *out = s;
+    return 0;
+}
+
+static unsigned long FAKE_DD_STDCALL fake_surf_release(FakeSurface *s)
+{
+    fake_log(s->dd, "s%d.Release", s->id);
+    return --s->refs;
+}
+
+static long FAKE_DD_STDCALL fake_surf_add_attached(FakeSurface *s, FakeSurface *other)
+{
+    fake_log(s->dd, "s%d.AddAttachedSurface(s%d)", s->id, other->id);
+    return fake_surface_result(s, FS_ADD);
+}
+
+static long FAKE_DD_STDCALL fake_surf_blt(FakeSurface *s, long *dst, FakeSurface *src, long *src_rect, DWORD flags, DWORD *fx)
+{
+    char d[64], r[64], f[64] = "null", sn[16] = "null";
+    fake_dump_rect(d, sizeof d, dst);
+    fake_dump_rect(r, sizeof r, src_rect);
+    if (fx) {
+        snprintf(f, sizeof f, "{size=%lu,fill=0x%lx}", (unsigned long)fx[0], (unsigned long)fx[0x50 / 4]);
+    }
+    if (src) {
+        snprintf(sn, sizeof sn, "s%d", src->id);
+    }
+    fake_log(s->dd, "s%d.Blt(dst=%s,src=%s,srcrect=%s,flags=0x%lx,fx=%s)", s->id, d, sn, r, (unsigned long)flags, f);
+    return fake_surface_result(s, FS_BLT);
+}
+
+static long FAKE_DD_STDCALL fake_surf_delete_attached(FakeSurface *s, DWORD flags, FakeSurface *other)
+{
+    fake_log(s->dd, "s%d.DeleteAttachedSurface(flags=%lu,s%d)", s->id, (unsigned long)flags, other ? other->id : 0);
+    return fake_surface_result(s, FS_DEL);
+}
+
+static long FAKE_DD_STDCALL fake_surf_flip(FakeSurface *s, FakeSurface *target, DWORD flags)
+{
+    fake_log(s->dd, "s%d.Flip(target=%s,flags=0x%lx)", s->id, target ? "set" : "null", (unsigned long)flags);
+    return fake_surface_result(s, FS_FLIP);
+}
+
+static long FAKE_DD_STDCALL fake_surf_get_attached(FakeSurface *s, DWORD *caps, FakeSurface **out)
+{
+    long result = fake_surface_result(s, FS_GETATT);
+    if (result != 0) {
+        fake_log(s->dd, "s%d.GetAttachedSurface(caps=0x%lx) -> error 0x%lx", s->id, (unsigned long)caps[0], (unsigned long)result);
+        return result;
+    }
+    DWORD desc[0x7c / 4];
+    memset(desc, 0, sizeof desc);
+    desc[3] = 16;
+    desc[2] = 16;
+    FakeSurface *child = fake_surface_new(s->dd, desc);
+    fake_log(s->dd, "s%d.GetAttachedSurface(caps=0x%lx) -> s%d", s->id, (unsigned long)caps[0], child->id);
+    *out = child;
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_surf_get_dc(FakeSurface *s, void **out)
+{
+    long result = fake_surface_result(s, FS_GETDC);
+    fake_log(s->dd, "s%d.GetDC", s->id);
+    if (result == 0) {
+        *out = (void *)(0xDC0000UL + (unsigned long)s->id);
+    }
+    return result;
+}
+
+static long FAKE_DD_STDCALL fake_surf_release_dc(FakeSurface *s, void *dc)
+{
+    fake_log(s->dd, "s%d.ReleaseDC(0x%lx)", s->id, (unsigned long)dc);
+    return fake_surface_result(s, FS_RELDC);
+}
+
+static long FAKE_DD_STDCALL fake_surf_lock(FakeSurface *s, long *rect, DWORD *desc, DWORD flags, void *event)
+{
+    char r[64];
+    fake_dump_rect(r, sizeof r, rect);
+    fake_log(s->dd, "s%d.Lock(rect=%s,desc.size=%lu,flags=0x%lx,event=0x%lx)", s->id, r, (unsigned long)desc[0], (unsigned long)flags,
+             (unsigned long)event);
+    long result = fake_surface_result(s, FS_LOCK);
+    if (result == 0) {
+        desc[0x10 / 4] = s->pitch;
+        desc[0x24 / 4] = (DWORD)(uintptr_t)s->mem;
+    }
+    return result;
+}
+
+static long FAKE_DD_STDCALL fake_surf_unlock(FakeSurface *s, long *rect)
+{
+    char r[64];
+    fake_dump_rect(r, sizeof r, rect);
+    fake_log(s->dd, "s%d.Unlock(rect=%s)", s->id, r);
+    return fake_surface_result(s, FS_UNLOCK);
+}
+
+static long FAKE_DD_STDCALL fake_surf_restore(FakeSurface *s)
+{
+    fake_log(s->dd, "s%d.Restore", s->id);
+    return fake_surface_result(s, FS_RESTORE);
+}
+
+static long FAKE_DD_STDCALL fake_surf_set_color_key(FakeSurface *s, DWORD flags, DWORD *key)
+{
+    fake_log(s->dd, "s%d.SetColorKey(flags=0x%lx,low=0x%lx,high=0x%lx)", s->id, (unsigned long)flags, (unsigned long)key[0], (unsigned long)key[1]);
+    return fake_surface_result(s, FS_SETCK);
 }
 
 static long FAKE_DD_STDCALL fake_get_avail_vid_mem(FakeDD *dd, DWORD *caps, DWORD *total, DWORD *avail)
@@ -212,10 +406,62 @@ static unsigned long FAKE_DD_STDCALL fake_d3d_release(FakeD3D *d3d)
     return 0;
 }
 
+static long FAKE_DD_STDCALL fake_d3d_create_device(FakeD3D *d3d, const unsigned char *iid, FakeSurface *surface, FakeDevice **out)
+{
+    static const unsigned char kIidHal[16] = {0xe0, 0x3d, 0xe6, 0x84, 0xaa, 0x46, 0xcf, 0x11,
+                                              0x81, 0x6f, 0x00, 0x00, 0xc0, 0x20, 0x15, 0x6e};
+    fake_log(d3d->dd, "d3d.CreateDevice(%s,s%d)", memcmp(iid, kIidHal, 16) == 0 ? "HAL" : "other", surface ? surface->id : 0);
+    if (d3d->dd->create_device_result != 0) {
+        *out = NULL;
+        return d3d->dd->create_device_result;
+    }
+    FakeDevice *device = (FakeDevice *)calloc(1, sizeof *device);
+    device->vtbl = d3d->dd->device_vtbl;
+    device->dd = d3d->dd;
+    *out = device;
+    return 0;
+}
+
+static unsigned long FAKE_DD_STDCALL fake_device_release(FakeDevice *device)
+{
+    fake_log(device->dd, "dev.Release");
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_device_get_caps(FakeDevice *device, DWORD *desc7)
+{
+    fake_log(device->dd, "dev.GetCaps");
+    memset(desc7, 0, 0xec);
+    desc7[0x74 / 4] = (DWORD)device->dd->device_depth_mask;
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_device_enum_texture_formats(FakeDevice *device, long(FAKE_DD_STDCALL *cb)(void *, void *), void *ctx)
+{
+    fake_log(device->dd, "dev.EnumTextureFormats");
+    for (int i = 0; i < device->dd->texture_format_count; i++) {
+        DWORD pf[8];
+        memset(pf, 0, sizeof pf);
+        pf[0] = 32;
+        pf[1] = 0x40;
+        pf[3] = (DWORD)device->dd->texture_formats[i][0];
+        pf[4] = (DWORD)device->dd->texture_formats[i][1];
+        pf[5] = (DWORD)device->dd->texture_formats[i][2];
+        pf[6] = (DWORD)device->dd->texture_formats[i][3];
+        pf[7] = (DWORD)device->dd->texture_formats[i][4];
+        if (cb(pf, ctx) == 0) {
+            break;
+        }
+    }
+    return 0;
+}
+
 static void fake_dd_init(FakeDD *dd)
 {
     static const void *vtbl[30];
-    static const void *d3d_vtbl[4];
+    static const void *d3d_vtbl[5];
+    static const void *device_vtbl[5];
+    static const void *surface_vtbl[49];
     for (int i = 0; i < 30; i++) {
         vtbl[i] = (const void *)fake_unexpected;
     }
@@ -231,15 +477,49 @@ static void fake_dd_init(FakeDD *dd)
     vtbl[23] = (const void *)fake_get_avail_vid_mem;
     vtbl[25] = (const void *)fake_restore_all;
     vtbl[26] = (const void *)fake_test_coop;
-    /* The original's Test32BitSupport also calls CreateSurface (slot 6); the fake fails it, so the 32-bit
-     * flags of the original are false here (P2.6.2 and P2.6.3 own that behaviour in our plugin). */
     d3d_vtbl[0] = (const void *)fake_unexpected;
     d3d_vtbl[1] = (const void *)fake_unexpected;
     d3d_vtbl[2] = (const void *)fake_d3d_release;
     d3d_vtbl[3] = (const void *)fake_enum_devices;
+    d3d_vtbl[4] = (const void *)fake_d3d_create_device;
+    for (int i = 0; i < 5; i++) {
+        device_vtbl[i] = (const void *)fake_unexpected;
+    }
+    device_vtbl[2] = (const void *)fake_device_release;
+    device_vtbl[3] = (const void *)fake_device_get_caps;
+    device_vtbl[4] = (const void *)fake_device_enum_texture_formats;
+    for (int i = 0; i < 49; i++) {
+        surface_vtbl[i] = (const void *)fake_unexpected;
+    }
+    surface_vtbl[2] = (const void *)fake_surf_release;
+    surface_vtbl[3] = (const void *)fake_surf_add_attached;
+    surface_vtbl[5] = (const void *)fake_surf_blt;
+    surface_vtbl[8] = (const void *)fake_surf_delete_attached;
+    surface_vtbl[11] = (const void *)fake_surf_flip;
+    surface_vtbl[12] = (const void *)fake_surf_get_attached;
+    surface_vtbl[17] = (const void *)fake_surf_get_dc;
+    surface_vtbl[25] = (const void *)fake_surf_lock;
+    surface_vtbl[26] = (const void *)fake_surf_release_dc;
+    surface_vtbl[27] = (const void *)fake_surf_restore;
+    surface_vtbl[29] = (const void *)fake_surf_set_color_key;
+    surface_vtbl[32] = (const void *)fake_surf_unlock;
     memset(dd, 0, sizeof *dd);
     dd->vtbl = vtbl;
     dd->d3d_vtbl = d3d_vtbl;
+    dd->device_vtbl = device_vtbl;
+    dd->surface_vtbl = surface_vtbl;
+    /* A device with 16- and 32-bit render targets and an ARGB texture format: the probe finds 32-bit support. */
+    dd->device_depth_mask = 0x400 | 0x100 | 0x800;
+    dd->texture_format_count = 2;
+    dd->texture_formats[0][0] = 16;
+    dd->texture_formats[0][1] = 0xf800;
+    dd->texture_formats[0][2] = 0x07e0;
+    dd->texture_formats[0][3] = 0x001f;
+    dd->texture_formats[1][0] = 32;
+    dd->texture_formats[1][1] = 0x00ff0000;
+    dd->texture_formats[1][2] = 0x0000ff00;
+    dd->texture_formats[1][3] = 0x000000ff;
+    dd->texture_formats[1][4] = 0xff000000u;
     dd->refs = 1;
     dd->test_coop_result = 0;
     dd->hw_tnl = 1;
@@ -384,8 +664,8 @@ static void check_screen_object(const struct Expect *e, HMODULE h, const ScreenA
     /* Known defect of the original, kept: the capability tests OR the bits instead of ANDing them, so both are always true. */
     CHECK(SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_GetCanMagFilterSurfaces) == 1 && SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_GetCanMinFilterSurfaces) == 1,
           "%s: GetCanMagFilterSurfaces() and GetCanMinFilterSurfaces() are true whatever the caps (original defect kept)", e->label);
-    CHECK(SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitDeviceSupport) == 0 && SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitTextureSupport) == 0,
-          "%s: Get32BitDeviceSupport() and Get32BitTextureSupport() are false when no surface can be created", e->label);
+    CHECK(SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitDeviceSupport) == 1 && SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitTextureSupport) == 1,
+          "%s: Get32BitDeviceSupport() and Get32BitTextureSupport() are true when the fake device renders in 32 bits and offers an ARGB texture format", e->label);
     const float *rect = (const float *)((ScreenPtr)screen_slot(screen, EEWEB_SLOT_GEScreen_GetDesktopRectangle))(screen);
     CHECK(rect[0] == 768.0f && rect[1] == 0.0f && rect[2] == 1024.0f && rect[3] == 0.0f,
           "%s: GetDesktopRectangle() without a monitor is the current mode (bottom 768, left 0, right 1024, top 0; got %g %g %g %g)", e->label,
@@ -550,8 +830,8 @@ static void check_real_screens(const struct Expect *e, void *obj, const ScreenAp
         }
         const float *rect = (const float *)((ScreenPtr)screen_slot(screen, EEWEB_SLOT_GEScreen_GetDesktopRectangle))(screen);
         OBS("real: screen %lu desktop rectangle bottom %g left %g right %g top %g", s, rect[0], rect[1], rect[2], rect[3]);
-        INFO("%s: screen %lu Get32BitDeviceSupport %d Get32BitTextureSupport %d (need surfaces: P2.6.2/P2.6.3)", e->label, s,
-             SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitDeviceSupport), SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitTextureSupport));
+        OBS("real: screen %lu Get32BitDeviceSupport %d Get32BitTextureSupport %d", s, SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitDeviceSupport),
+            SCREEN_BOOL(screen, EEWEB_SLOT_GEScreen_Get32BitTextureSupport));
     }
     typedef long (THISCALL *Deactivate)(void *self);
     CHECK(((Deactivate)slot(rvtable, EEWEB_SLOT_GERasterizer_Deactivate))(obj) == 0, "%s: Deactivate() releases the real screens", e->label);
@@ -573,6 +853,8 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
     return api->construct && api->screen_count && api->get_screen;
 }
 
+#include "surface_checks.h" /* the surface object, CreateSurface, CreateAWindow and the 32-bit probe (P2.6.2) */
+
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
  * the real devices.  Creating screens and enumerating real devices leaves driver and runtime state behind
@@ -592,6 +874,7 @@ static int probe_screens(const struct Expect *e, const char *path)
     ScreenApi api;
     if (raw && load_screen_api(e, h, &api)) {
         check_screen_object(e, h, &api);
+        check_surfaces(e, h, &api);
         check_real_screens(e, get_rasterizer(), &api);
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);

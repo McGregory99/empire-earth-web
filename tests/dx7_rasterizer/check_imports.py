@@ -4,8 +4,8 @@ Usage: python3 -I check_imports.py <dll> [--require NAME ...]
 
 The plugin must run on the VC6-era runtime the game ships against:
 
-* only DLLs on ALLOWED_DLLS may be imported (msvcrt.dll, the engine itself, kernel32.dll, and ddraw.dll, which the original
-  imports too);
+* only DLLs on ALLOWED_DLLS may be imported (msvcrt.dll, the engine itself, kernel32.dll, ddraw.dll, user32.dll and gdi32.dll, which the
+  original imports too);
 * nothing from the UCRT / VC++ redistributables (api-ms-win-crt-*, ucrtbase, vcruntime*,
   msvcp*, msvcr*) may appear, whatever the DLL it comes from;
 * every name given with --require must be imported from msvcrt.dll, which proves that the
@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "re"))
 from pe_imports import read  # noqa: E402
 
-ALLOWED_DLLS = {"msvcrt.dll", "low-level engine.dll", "kernel32.dll", "ddraw.dll"}
+ALLOWED_DLLS = {"msvcrt.dll", "low-level engine.dll", "kernel32.dll", "ddraw.dll", "user32.dll", "gdi32.dll"}
 FORBIDDEN = re.compile(r"^(api-ms-win-|ucrtbase|vcruntime|msvcp|msvcr\d|concrt)", re.IGNORECASE)
 
 
@@ -47,7 +47,7 @@ def main(argv):
     for failure in failures:
         print(f"FAIL: {failure}")
     if not failures:
-        print("PASS: imports are limited to msvcrt.dll, the engine, kernel32.dll and ddraw.dll")
+        print("PASS: imports are limited to msvcrt.dll, the engine, kernel32.dll, ddraw.dll, user32.dll and gdi32.dll")
     return 1 if failures else 0
 
 

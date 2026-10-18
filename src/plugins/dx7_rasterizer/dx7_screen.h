@@ -9,8 +9,8 @@
 //   offset 0x4  textureManager  (GEScreenLayout.textureManager: the engine's GEScreen::SetTextureManager writes it)
 //   offset 0x8  rasterizerIndex (GEScreenLayout.rasterizerIndex: GEScreen::SetRasterizerIndex writes it)
 //
-// Left for later tasks (they need surfaces): CreateSurface, CreateAWindow, and the Test32BitSupport probe the
-// original runs at the end of its constructor, so Get32BitDeviceSupport / Get32BitTextureSupport are false.
+// CreateSurface, CreateAWindow and the Test32BitSupport probe the constructor ends with (task P2.6.2) build
+// DX7Surface objects (dx7_surface.h); the pixel and texture formats beyond the table's entries are P2.6.3.
 #ifndef EEWEB_DX7_SCREEN_H
 #define EEWEB_DX7_SCREEN_H
 
@@ -73,7 +73,10 @@ private:
     ~DX7Screen() override;                                                                              // 19
 
     static int __attribute__((stdcall)) EnumVideoModeCallback(DDSURFACEDESC2_*, void*);
+    static long __attribute__((stdcall)) TestWindowProc(void*, unsigned int, unsigned int, long);
+    static long __attribute__((stdcall)) EnumTextureFormatCallback(DDPIXELFORMAT_*, void*);
     void AddMode(const EEWebVideoMode&);
+    void Test32BitSupport();
 
     // Offsets 0x4 and 0x8 are the engine's (see the file comment).
     void* m_textureManager;

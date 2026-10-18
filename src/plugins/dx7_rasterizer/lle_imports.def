@@ -7,3 +7,11 @@ EXPORTS
     ??1UString@@UAE@XZ
     ??0UString@@QAE@ABV0@@Z
     ?ESRecordNativeError@@YAKK@Z
+    ?GEPackColor@@YAKKABVGEColor@@M@Z
+    ?GEPackColor@@YAKKKKKK@Z
+    ?GEUnpackRed@@YAEKK@Z
+    ?GEUnpackGreen@@YAEKK@Z
+    ?GEUnpackBlue@@YAEKK@Z
+    ?GEUnpackAlpha@@YAEKK@Z
+    ?Dereference@UReferenceCounter@@QAEXXZ
+    ??1GEWindow@@QAE@XZ

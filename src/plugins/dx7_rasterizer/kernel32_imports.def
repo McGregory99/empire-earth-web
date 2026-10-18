@@ -1,6 +1,6 @@
 ; The kernel32.dll functions the plugin needs: a readability probe and the debugger log (layout_canaries.cpp), a
-; short sleep (DX7Screen::RestoreAllSurfaces) and the lookup of user32's GetMonitorInfoA (dx7_screen.cpp,
-; which the original also resolves at run time).  All exist in every Windows (and in Wine); all are stdcall.
+; short sleep (DX7Screen::RestoreAllSurfaces, the surfaces' retry loops), the lookup of user32's GetMonitorInfoA
+; (dx7_screen.cpp, which the original also resolves at run time) and GetLastError (DX7Screen::CreateAWindow).  All exist in every Windows (and in Wine); all are stdcall.
 LIBRARY kernel32.dll
 EXPORTS
     IsBadReadPtr@8
@@ -8,3 +8,4 @@ EXPORTS
     Sleep@4
     GetModuleHandleA@4
     GetProcAddress@8
+    GetLastError@0
