@@ -6,10 +6,16 @@
 # It drops the DLL next to the real game in the Wine game copy, starts the game through the
 # project's launcher until its first frame, and reads the Wine log (+loaddll, +snoop) to prove:
 #   - the engine's PIMModule::GetModule loaded the DLL and called PIMGetType (== 'rast');
-#   - GEInitialize asked PIMIsValid, got false in AL, and the engine freed the module again;
-#   - RPIMGetRasterizer was therefore never called;
-#   - the original DX7HRTnLDisplay.dll stayed loaded and the game rendered (BeginScene);
+#   - GEInitialize asked PIMIsValid and got true in AL (since P2.6.1 the plugin builds DX7Screens over the real
+#     DirectDraw devices and is valid when one has a hardware T&L Direct3D 7 device), so the engine went on and
+#     called RPIMGetRasterizer;
+#   - the original DX7HRTnLDisplay.dll was loaded too, and the number of frames the game drew is reported;
 #   - nothing crashed (no err:seh, no Wine Program Error).
+# NOT VERIFIED AGAINST THE REAL GAME since the revision for P2.6.2: it was written from the P2.6.1 results (the
+# plugin is valid, its rasterizer is a null renderer without the engine's base-class fields until P2.7), without
+# running the game.  The expectations that the engine unloads the module and keeps rendering with the original
+# TnL renderer, which held while PIMIsValid was false, are gone; whether the engine survives with our object
+# selected is what the first real run is for.
 # Then it stops the game with the prefix's own wineserver, removes the DLL and the registry value it added,
 # and verifies the sha256 manifest of the game directory against the one taken before.
 #
@@ -148,30 +154,28 @@ t_ret=$(first_line "RET +$mod_re\\.PIMGetType\\(\\) retval=72617374 ")
 has "CALL +$mod_re\\.PIMGetName" && pass "PIMGetName() was called" || fail "PIMGetName was never called"
 
 v_call=$(first_line "CALL +$mod_re\\.PIMIsValid")
-v_ret=$(first_line "RET +$mod_re\\.PIMIsValid\\(\\) retval=[0-9a-f]{6}00 ")
-[ -n "$v_call" ] && [ -n "$v_ret" ] && pass "PIMIsValid() was called and returned false in AL" ||
-  fail "PIMIsValid was not called or returned true"
-if has "RET +$mod_re\\.PIMIsValid\\(\\) retval=[0-9a-f]{6}(0[1-9a-f]|[1-9a-f][0-9a-f]) "; then
-  fail "PIMIsValid returned true at least once"
+v_ret=$(first_line "RET +$mod_re\\.PIMIsValid\\(\\) retval=[0-9a-f]{6}(0[1-9a-f]|[1-9a-f][0-9a-f]) ")
+[ -n "$v_call" ] && [ -n "$v_ret" ] && pass "PIMIsValid() was called and returned true in AL" ||
+  fail "PIMIsValid was not called or returned false"
+if has "RET +$mod_re\\.PIMIsValid\\(\\) retval=[0-9a-f]{6}00 "; then
+  fail "PIMIsValid returned false at least once"
 fi
 
-has "CALL +$mod_re\\.RPIMGetRasterizer" && fail "RPIMGetRasterizer was called although PIMIsValid is false" ||
-  pass "RPIMGetRasterizer was never called"
-
-u_line=$(first_line "free_modref Unloaded module L\"[^\"]*\\\\$dll_re\"")
-[ -n "$u_line" ] && pass "the engine freed $DLL_NAME again" || fail "no 'Unloaded module ... $DLL_NAME' line"
-if [ -n "$t_call" ] && [ -n "$v_ret" ] && [ -n "$u_line" ] && [ "$t_call" -lt "$v_call" ] && [ "$v_ret" -lt "$u_line" ]; then
-  pass "order: PIMGetType, then PIMIsValid, then unload"
+r_call=$(first_line "CALL +$mod_re\\.RPIMGetRasterizer")
+[ -n "$r_call" ] && pass "RPIMGetRasterizer() was called (PIMIsValid is true)" ||
+  fail "RPIMGetRasterizer was not called although PIMIsValid is true"
+if [ -n "$t_call" ] && [ -n "$v_ret" ] && [ -n "$r_call" ] && [ "$t_call" -lt "$v_call" ] && [ "$v_ret" -lt "$r_call" ]; then
+  pass "order: PIMGetType, then PIMIsValid, then RPIMGetRasterizer"
 else
-  fail "unexpected order of PIMGetType ($t_call) / PIMIsValid ($v_call..$v_ret) / unload ($u_line)"
+  fail "unexpected order of PIMGetType ($t_call) / PIMIsValid ($v_call..$v_ret) / RPIMGetRasterizer ($r_call)"
 fi
 
-has 'Loaded L"[^"]*\\DX7HRTnLDisplay\.dll" at' && ! has 'Unloaded module L"[^"]*\\DX7HRTnLDisplay\.dll"' &&
-  pass "the original DX7HRTnLDisplay.dll was loaded and kept (the TnL renderer is still selected)" ||
-  fail "DX7HRTnLDisplay.dll was not loaded, or was freed"
+has 'Loaded L"[^"]*\\DX7HRTnLDisplay\.dll" at' &&
+  pass "the original DX7HRTnLDisplay.dll was loaded too" ||
+  fail "DX7HRTnLDisplay.dll was not loaded"
+# Informational: which renderer draws is decided by the engine once both are valid (P2.7), so frames are not required.
 frames=$(grep -c 'BeginScene ENTER' "$OUT/ee-ddraw.log")
-[ "$frames" -ge 10 ] && pass "the game rendered frames with it (ee-ddraw.log: $frames x BeginScene)" ||
-  fail "ee-ddraw.log shows only $frames BeginScene calls"
+say "info: ee-ddraw.log shows $frames x BeginScene (not asserted: our rasterizer is a null renderer until P2.7)"
 
 if grep -qE 'err:seh|Program Error|Unhandled (exception|page fault)|Game process (crashed|exited|stalled)' "$LOG"; then
   fail "the log shows a crash:"; grep -nE 'err:seh|Program Error|Unhandled (exception|page fault)|Game process (crashed|exited|stalled)' "$LOG" | head -5
@@ -224,7 +228,7 @@ GR_KEEP_LOCK=0
 gr_lock_release
 
 if [ "$failures" -eq 0 ]; then
-  say "PASS: the engine loads $DLL_NAME, calls PIMGetType and PIMIsValid (false), frees it, and keeps the original TnL renderer"
+  say "PASS: the engine loads $DLL_NAME, calls PIMGetType, PIMIsValid (true) and RPIMGetRasterizer, and nothing crashes"
   exit 0
 fi
 say "FAIL: $failures check(s) failed; evidence in $OUT/"
