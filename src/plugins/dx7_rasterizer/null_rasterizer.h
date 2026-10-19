@@ -109,11 +109,11 @@ public:
 protected:
     long ActivateRasterizer() override;  // 70
     long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override;  // 71
-    long slot72(GETexture *) override { return 0; }  // 72 (CreateTextureHandle): the original returns 0 and does nothing
-    long slot73(GETexture *) override { return 0; }  // 73 (DemoteTexture): same code
+    long CreateTextureHandle(GETexture *) override { return 0; }  // 72: the original returns 0 and does nothing (the engine calls it when a texture gets a surface)
+    long DemoteTexture(GETexture *) override { return 0; }  // 73: same code
     void DestroyTextureHandle(GETexture *) override {}  // 74
     long DrawModelHierarchy(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 75
-    long slot76(GETexture *) override { return 0; }  // 76 (PromoteTexture): same code
+    long PromoteTexture(GETexture *) override { return 0; }  // 76: same code
     void SetRenderTarget(GESurface *, unsigned long) override;  // 77
 public:
     bool GetIsScreenValid(DX7Screen *) override;  // 78

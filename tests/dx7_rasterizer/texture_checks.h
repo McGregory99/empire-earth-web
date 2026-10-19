@@ -14,10 +14,10 @@
  * under test, made over the fake DirectDraw, so the DirectDraw surface the device is handed is one of the fake's (named fs<id>).
  */
 
-#define TEX_SLOT_CREATE_HANDLE 72  /* one of CreateTextureHandle / DemoteTexture / PromoteTexture: same code in the original (return 0) */
-#define TEX_SLOT_DEMOTE 73
-#define TEX_SLOT_DESTROY_HANDLE 74
-#define TEX_SLOT_PROMOTE 76
+#define TEX_SLOT_CREATE_HANDLE EEWEB_SLOT_GERasterizer_CreateTextureHandle /* 72, 73 and 76 are one function in the original (return 0) */
+#define TEX_SLOT_DEMOTE EEWEB_SLOT_GERasterizer_DemoteTexture
+#define TEX_SLOT_DESTROY_HANDLE EEWEB_SLOT_GERasterizer_DestroyTextureHandle
+#define TEX_SLOT_PROMOTE EEWEB_SLOT_GERasterizer_PromoteTexture
 
 typedef struct TexSpec {
     unsigned color, alpha, addressing, minFilter, magFilter, mipFilter;

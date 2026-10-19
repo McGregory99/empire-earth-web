@@ -129,11 +129,11 @@ protected:
     virtual ~GERasterizer() {}  // slot 69
     virtual long ActivateRasterizer() = 0;  // slot 70
     virtual long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) = 0;  // slot 71
-    virtual long slot72(GETexture *) = 0;  // slot 72: one of CreateTextureHandle, DemoteTexture, PromoteTexture (identical code in the original)
-    virtual long slot73(GETexture *) = 0;  // slot 73: one of CreateTextureHandle, DemoteTexture, PromoteTexture (identical code in the original)
+    virtual long CreateTextureHandle(GETexture *) = 0;  // slot 72 (named by the alphabetical vtable order; the engine calls it when a texture gets a surface: see DECIDED_SLOTS)
+    virtual long DemoteTexture(GETexture *) = 0;  // slot 73 (named by the alphabetical vtable order only, nothing calls it: see DECIDED_SLOTS)
     virtual void DestroyTextureHandle(GETexture *) = 0;  // slot 74
     virtual long DrawModelHierarchy(GEModel *, unsigned long, float, bool) = 0;  // slot 75
-    virtual long slot76(GETexture *) = 0;  // slot 76: one of CreateTextureHandle, DemoteTexture, PromoteTexture (identical code in the original)
+    virtual long PromoteTexture(GETexture *) = 0;  // slot 76 (named by the alphabetical vtable order only, nothing calls it: see DECIDED_SLOTS)
     virtual void SetRenderTarget(GESurface *, unsigned long) = 0;  // slot 77
 };
 

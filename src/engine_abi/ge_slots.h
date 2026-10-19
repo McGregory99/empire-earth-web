@@ -79,11 +79,11 @@ enum {
     EEWEB_SLOT_GERasterizer_Destructor = 69,
     EEWEB_SLOT_GERasterizer_ActivateRasterizer = 70,
     EEWEB_SLOT_GERasterizer_ActivateTheScreen = 71,
-    EEWEB_SLOT_GERasterizer_slot72 = 72,
-    EEWEB_SLOT_GERasterizer_slot73 = 73,
+    EEWEB_SLOT_GERasterizer_CreateTextureHandle = 72,
+    EEWEB_SLOT_GERasterizer_DemoteTexture = 73,
     EEWEB_SLOT_GERasterizer_DestroyTextureHandle = 74,
     EEWEB_SLOT_GERasterizer_DrawModelHierarchy = 75,
-    EEWEB_SLOT_GERasterizer_slot76 = 76,
+    EEWEB_SLOT_GERasterizer_PromoteTexture = 76,
     EEWEB_SLOT_GERasterizer_SetRenderTarget = 77,
 };
 

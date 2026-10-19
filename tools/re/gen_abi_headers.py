@@ -70,6 +70,7 @@ class ResolvedSlot:
     kind: str          # method | destructor | ambiguous | unknown
     method: object     # Method, or None when no signature is known
     alternatives: tuple = ()
+    note: str = ""     # why a decided (ambiguous in the inventories) slot has the name it has
 
 
 @dataclasses.dataclass(frozen=True)
@@ -265,6 +266,15 @@ def resolve_interface(spec, lle_tables, tnl_tables, destructors, parent=None):
     for index in range(first, count):
         kind, method, alternatives = _resolve_slot(spec, index, base, impls)
         slots.append(ResolvedSlot(index, kind, method, alternatives))
+    for position, slot in enumerate(slots):
+        decided = DECIDED_SLOTS.get((spec.name, slot.index))
+        if decided is None:
+            continue
+        name, note = decided
+        if slot.kind != "ambiguous" or slot.method is None or name not in slot.alternatives:
+            raise GenError(f"{spec.name} slot {slot.index}: DECIDED_SLOTS names it {name}, but the inventories say {slot.kind} {slot.alternatives}")
+        first = slot.method
+        slots[position] = ResolvedSlot(slot.index, "method", Method(first.access, first.ret, name, first.params, first.const), (), note)
     unnamed = [s for s in slots if s.kind == "unnamed"]
     access = destructors.get(spec.engine) if spec.engine else None
     if access is not None:
@@ -292,6 +302,25 @@ INTERFACES = (
     InterfaceSpec("GEVertexArray", "GEVertexArray", None, ("DX7StandardVertexArray", "DX7StdColorVertexArray")),
     InterfaceSpec("GEPolygonArray", "GEPolygonArray", None, ("DX7PolygonArray",)),
 )
+
+# Slots the inventories cannot name because identical code was folded into one function (the same address under several names).
+# A decision here names the slot among its candidates; the header says it was decided, and why.  (spec name, slot) -> (name, note).
+#
+# GERasterizer slots 72, 73 and 76 are CreateTextureHandle, DemoteTexture and PromoteTexture (task P2.6.6).  All three are
+# `xor eax, eax; ret 4` at 0x1000a3a6 in the original (DestroyTextureHandle, slot 74, is a bare `ret 4` next to it), so no
+# behaviour tells them apart.  What the engine does: "Low-Level Engine.dll" calls slot 72 (`call [vtable + 0x120]` on the global
+# rasterizer) from GETexture::GETexture (0x100448f6) and from GETexture::SetSurface (0x10045547) when a texture gets its surface,
+# and slot 74 (+0x128) from ~GETexture and SetSurface when it loses it: 72 is the creation hook, 74 the destruction one.  Nothing in
+# the engine, the executable or the other plugins calls +0x124 or +0x130 (slots 73 and 76).  The names of 73 and 76 come from the vtable
+# order alone: the protected virtuals of GERasterizer, from slot 70, are in alphabetical order (ActivateRasterizer, ActivateTheScreen,
+# [72], [73], DestroyTextureHandle, DrawModelHierarchy, [76], SetRenderTarget), which puts CreateTextureHandle and DemoteTexture before
+# DestroyTextureHandle and PromoteTexture between DrawModelHierarchy and SetRenderTarget.  The order of 72 and 73 and the names of 73
+# and 76 are therefore an inference, not an observation.
+DECIDED_SLOTS = {
+    ("GERasterizer", 72): ("CreateTextureHandle", "named by the alphabetical vtable order; the engine calls it when a texture gets a surface: see DECIDED_SLOTS"),
+    ("GERasterizer", 73): ("DemoteTexture", "named by the alphabetical vtable order only, nothing calls it: see DECIDED_SLOTS"),
+    ("GERasterizer", 76): ("PromoteTexture", "named by the alphabetical vtable order only, nothing calls it: see DECIDED_SLOTS"),
+}
 
 INTERFACES_HEADER = "ge_interfaces.h"
 SLOTS_HEADER = "ge_slots.h"
@@ -404,6 +433,8 @@ def _slot_declaration(iface, slot):
         note += f": one of {candidates} (identical code in the original)"
         if slot.method is None:
             return f"virtual void slot{slot.index}() = 0;  // slot {slot.index}: signature unknown, one of {candidates} (identical code in the original)"
+    if slot.note:
+        note += f" ({slot.note})"
     return f"virtual {_plain_signature(slot.method)} = 0;  // {note}"
 
 
