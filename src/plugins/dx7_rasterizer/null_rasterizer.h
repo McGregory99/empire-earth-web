@@ -11,7 +11,8 @@
 //
 // Behind its vptr the object has the layout of the original's DX7Rasterizer (DX7RasterizerLayout, task P2.5):
 // the engine's GERasterizer fields, built by the engine's own constructor, and the plugin's list of screen
-// records with the Direct3D device each screen renders with.  The state setters (task P2.6.4, dx7_state.cpp)
+// records with the Direct3D device each screen renders with.  The device and scene lifecycle (task P2.6.5, dx7_scene.cpp)
+// creates and releases that device, binds the render target and presents.  The state setters (task P2.6.4, dx7_state.cpp)
 // call the engine's own GERasterizer::SetX like the original does, so the engine's per-screen state, which
 // it reads through its non-virtual accessors, is what the plugin keeps.
 #ifndef EEWEB_NULL_RASTERIZER_H
@@ -36,14 +37,14 @@ public:
 
     // The vtable, in the declaration order of the generated header (the comment is the slot): overload
     // sets are declared in reverse slot order, which is how MSVC lays them out.
-    long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 0
+    long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override;  // 0
     long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 1
     long AddLight(GELight &light, unsigned long, unsigned long &) override;  // 2
     long AddValidScreen(GEScreen *) override;  // 3
-    long BeginScene(GESurface *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 4
+    long BeginScene(GESurface *, unsigned long) override;  // 4
     bool CanDoCurrentState(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); return false; }  // 5
-    long Clear(GEColor const &, GERectangle const &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 6
-    long ClearZBuffer(float, GERectangle const &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 7
+    long Clear(GEColor const &, GERectangle const &, unsigned long) override;  // 6
+    long ClearZBuffer(float, GERectangle const &, unsigned long) override;  // 7
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override { return 0; }  // 9
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long, GERectangle const &, bool) override { return 0; }  // 8
     GEPolygonArray * CreatePolygonArray(unsigned long) override { return 0; }  // 10
@@ -64,7 +65,7 @@ public:
     long DrawTerrainGrid(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 25
     long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
     long DrawWater(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 27
-    long EndScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 28
+    long EndScene(unsigned long) override;  // 28
     long GetAvailableVideoMemory(unsigned long, unsigned long &) override;  // 29
     long GetTotalVideoMemory(unsigned long, unsigned long &) override;  // 30
     unsigned long GetCaps(unsigned long, unsigned long) override;  // 31
@@ -102,22 +103,22 @@ public:
     void SetWaitForVSync(bool, unsigned long) override;  // 63
     void SetZBuffer(unsigned long, unsigned long) override;  // 64
     void SetZCompare(unsigned long, unsigned long) override;  // 65
-    long ShowScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 66
+    long ShowScene(unsigned long) override;  // 66
     void TransformToCamera(GETerrainMesh &mesh, GEViewport &viewport, float, bool, bool) override { if (Note(EEWebCheckTerrainMesh(&mesh)) == EEWEB_LAYOUT_OK) Note(EEWebCheckViewport(&viewport)); }  // 67
     long UpdateLight(unsigned long, GELight &, unsigned long) override;  // 68
 protected:
     long ActivateRasterizer() override;  // 70
-    long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override { return EEWEB_NOT_SUPPORTED; }  // 71
+    long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override;  // 71
     long slot72(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 72
     long slot73(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 73
     void DestroyTextureHandle(GETexture *) override {}  // 74
     long DrawModelHierarchy(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 75
     long slot76(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 76
-    void SetRenderTarget(GESurface *, unsigned long) override {}  // 77
+    void SetRenderTarget(GESurface *, unsigned long) override;  // 77
 public:
     bool GetIsScreenValid(DX7Screen *) override;  // 78
 protected:
-    long CreateVertexBuffers(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 79
+    long CreateVertexBuffers(unsigned long) override;  // 79
     long DrawTerrainMaterial(GEViewport *, std::vector<GETerrainMesh::GETMPolygon *, std::allocator<GETerrainMesh::GETMPolygon *>> &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 80
     long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override;  // 81
 

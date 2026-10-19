@@ -107,8 +107,9 @@ struct IDirectDraw7 {
     const IDirectDraw7Vtbl* vtbl;
 };
 
-// IDirect3D7: EnumDevices (slot 3), CreateDevice (slot 4) and Release (slot 2).
+// IDirect3D7: EnumDevices (slot 3), CreateDevice (slot 4), CreateVertexBuffer (slot 5) and Release (slot 2).
 struct IDirect3D7;
+struct IDirect3DVertexBuffer7;
 typedef long(__attribute__((stdcall)) * EnumDevicesCallback)(char*, char*, void* deviceDesc7, void*);
 struct IDirect3D7Vtbl {
     void* queryInterface;                                                                    // 0
@@ -116,9 +117,20 @@ struct IDirect3D7Vtbl {
     DWORD_(__attribute__((stdcall)) * Release)(IDirect3D7*);                                 // 2
     HRESULT_(__attribute__((stdcall)) * EnumDevices)(IDirect3D7*, EnumDevicesCallback, void*);  // 3
     HRESULT_(__attribute__((stdcall)) * CreateDevice)(IDirect3D7*, const GUID_*, IDirectDrawSurface7*, IDirect3DDevice7**);  // 4
+    HRESULT_(__attribute__((stdcall)) * CreateVertexBuffer)(IDirect3D7*, const void* vertexBufferDesc, IDirect3DVertexBuffer7**, DWORD_ flags);  // 5
 };
 struct IDirect3D7 {
     const IDirect3D7Vtbl* vtbl;
+};
+
+// IDirect3DVertexBuffer7: only Release (slot 2) is called.
+struct IDirect3DVertexBuffer7Vtbl {
+    void* queryInterface;                                                      // 0
+    void* addRef;                                                              // 1
+    DWORD_(__attribute__((stdcall)) * Release)(IDirect3DVertexBuffer7*);       // 2
+};
+struct IDirect3DVertexBuffer7 {
+    const IDirect3DVertexBuffer7Vtbl* vtbl;
 };
 
 // D3DDEVICEDESC7 starts with dwDevCaps.
@@ -170,7 +182,12 @@ struct IDirect3DDevice7Vtbl {
     DWORD_(__attribute__((stdcall)) * Release)(IDirect3DDevice7*);                                               // 2
     HRESULT_(__attribute__((stdcall)) * GetCaps)(IDirect3DDevice7*, void* deviceDesc7);                          // 3
     HRESULT_(__attribute__((stdcall)) * EnumTextureFormats)(IDirect3DDevice7*, EnumTextureFormatsCallback, void*);  // 4
-    void* slots5to10[6];                                                                                         // 5 BeginScene .. 10 Clear
+    HRESULT_(__attribute__((stdcall)) * BeginScene)(IDirect3DDevice7*);                                          // 5
+    HRESULT_(__attribute__((stdcall)) * EndScene)(IDirect3DDevice7*);                                            // 6
+    void* getDirect3D;                                                                                           // 7
+    HRESULT_(__attribute__((stdcall)) * SetRenderTarget)(IDirect3DDevice7*, IDirectDrawSurface7*, DWORD_ flags);  // 8
+    void* getRenderTarget;                                                                                       // 9
+    HRESULT_(__attribute__((stdcall)) * Clear)(IDirect3DDevice7*, DWORD_ count, const void* rects, DWORD_ flags, DWORD_ color, DWORD_ z, DWORD_ stencil);  // 10
     HRESULT_(__attribute__((stdcall)) * SetTransform)(IDirect3DDevice7*, DWORD_ state, const void* matrix);      // 11
     void* getTransform;                                                                                          // 12
     HRESULT_(__attribute__((stdcall)) * SetViewport)(IDirect3DDevice7*, const void* viewport7);                  // 13
@@ -180,9 +197,15 @@ struct IDirect3DDevice7Vtbl {
     HRESULT_(__attribute__((stdcall)) * SetLight)(IDirect3DDevice7*, DWORD_ index, const void* light7);          // 18
     void* getLight;                                                                                              // 19
     HRESULT_(__attribute__((stdcall)) * SetRenderState)(IDirect3DDevice7*, DWORD_ state, DWORD_ value);          // 20
-    void* slots21to43[23];                                                                                       // 21 GetRenderState .. 43 Load
+    void* slots21to36[16];                                                                                       // 21 GetRenderState .. 36 GetTextureStageState
+    HRESULT_(__attribute__((stdcall)) * SetTextureStageState)(IDirect3DDevice7*, DWORD_ stage, DWORD_ type, DWORD_ value);  // 37
+    void* slots38to43[6];                                                                                        // 38 ValidateDevice .. 43 Load
     HRESULT_(__attribute__((stdcall)) * LightEnable)(IDirect3DDevice7*, DWORD_ index, DWORD_ enable);            // 44
 };
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, BeginScene) == 0x14, "BeginScene is slot 5");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetRenderTarget) == 0x20, "SetRenderTarget is slot 8");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, Clear) == 0x28, "Clear is slot 10");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetTextureStageState) == 0x94, "SetTextureStageState is slot 37");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetTransform) == 0x2c, "SetTransform is slot 11");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetViewport) == 0x34, "SetViewport is slot 13");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetMaterial) == 0x40, "SetMaterial is slot 16");

@@ -1036,10 +1036,10 @@ EEL_SIZE(GETerrainMeshLayout, 0x181694);
 /* @class DX7ScreenRecord size=0x74 size-confidence=confirmed | plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen (which leaves everything but 0x18-0x28 and 0x6d unset) */
 typedef struct DX7ScreenRecordLayout {
     uint32_t viewport[6]; /* @0x0 plugin-only | a D3DVIEWPORT7 (x, y, width, height, minZ, maxZ); P SetViewport fills it and passes the record itself to IDirect3DDevice7::SetViewport, Set2DMode/Set3DMode read the width and height */
-    void * direct3d; /* @0x18 plugin-only | P Deactivate releases it */
-    void * device; /* @0x1c plugin-only | an IDirect3DDevice7; P everywhere through DX7Rasterizer.screenRecords */
+    void * direct3d; /* @0x18 plugin-only | an IDirect3D7; P ActivateTheScreen stores it (a refused CreateDevice leaves it unreleased and unstored), Deactivate releases it */
+    void * device; /* @0x1c plugin-only | an IDirect3DDevice7; P ActivateTheScreen creates it on the render target, Deactivate releases it, everywhere else through DX7Rasterizer.screenRecords */
     struct GEScreenLayout *screen; /* @0x20 plugin-only | P AddValidScreen stores the GEScreen; Deactivate calls its virtual slot 19 */
-    void * vertexBuffer; /* @0x24 plugin-only | an IDirect3DVertexBuffer7 (FVF 0x152, 0x10000 bytes); P CreateVertexBuffers */
+    void * vertexBuffer; /* @0x24 plugin-only | an IDirect3DVertexBuffer7 (write-only, FVF 0x152, 0x98a vertices); P CreateVertexBuffers (TnL), Deactivate releases it */
     uint32_t vertexCursor; /* @0x28 plugin-only | P LockVB/UnlockVB advance it by the vertices written */
     uint32_t textureStateDirty; /* @0x2c plugin-only | P SetTexture sets it */
     uint32_t stageCache[12]; /* @0x30 plugin-only | P SetTexture mirrors the GETStage words it last sent to the device */

@@ -14,6 +14,8 @@
 //   ??1GERasterizer@@MAE@XZ                       (run on the first 0x68 bytes of the plugin's object), and the virtual methods
 //   ?SetX@GERasterizer@@UAE...                    the plugin hands on to (GERasterizer::SetAlphaTesting(...) etc., which the
 //                                                 abstract class of ge_interfaces.h declares pure, so a qualified call links to them)
+//   ?TMGetTime@@YAKXZ                             the engine's millisecond clock
+//   ?GetClientOrigin@GEWindow@@QAEABVGE2DPoint@@XZ the origin of a window's client area on the desktop
 //   ?RoundToNearest@GERectangle@@QAEXXZ           rounds the four floats of a rectangle in place
 //   ??0GETransformation@@QAE@XZ                   builds an identity transformation (16 floats)
 //   ?Apply@GETransformation@@QBEXABV1@AAV1@@Z     output = this applied to input (the product of two transformations)
@@ -24,6 +26,7 @@
 #include "ge_interfaces.h"
 
 unsigned long ESRecordNativeError(unsigned long error);
+unsigned long TMGetTime();
 unsigned long GEPackColor(unsigned long format, GEColor const& color, float alpha);
 unsigned long GEPackColor(unsigned long format, unsigned long red, unsigned long green, unsigned long blue, unsigned long alpha);
 unsigned char GEUnpackRed(unsigned long format, unsigned long pixel);
@@ -43,6 +46,7 @@ public:
 class GEWindow {
 public:
     ~GEWindow();
+    GE2DPoint const& GetClientOrigin(); // the window's client area origin on the desktop (two floats)
 
 private:
     char m_engineOwned[0x1c];

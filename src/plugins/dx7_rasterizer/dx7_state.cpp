@@ -11,14 +11,17 @@
 // compares with the alpha-testing field, SetBlending's destination factor keeps the source's value when it is not one
 // of the 13 known modes, the colours are packed without clamping.
 //
-// Where the original would dereference a device that the screen's activation has not created yet, this build does
-// nothing (the original would crash): the activation is a later task.
+// Where the original would dereference a device that the screen's activation (dx7_scene.cpp) has not created yet, this build
+// does nothing (the original would crash).
 #include "null_rasterizer.h"
 
 #include "engine_imports.h"
+#include "dx7_math.h"
 #include "rasterizer_abi.h"
 
 typedef unsigned long ulong;
+
+using namespace dx7math;
 
 namespace {
 
@@ -78,27 +81,12 @@ ulong CompareFunction(ulong mode)
     return mode < 8 ? kFunctions[mode] : 0;
 }
 
-// The x87 conversion with the control word's rounding (to nearest even): what the original's /QIfist code does (and what the
-// run-time's lrintf would, which this DLL does not link).
-long RoundToNearest(float value)
-{
-    long rounded;
-    __asm__ volatile("flds %1\n\tfistpl %0" : "=m"(rounded) : "m"(value) : "st");
-    return rounded;
-}
-
 // A channel in 0..1 as the original's /QIfist code converts it: scaled by 255 in single precision and rounded to
 // nearest even; nothing clamps it, so a value above 1 spills into the next channel of the packed colour.
 ulong RoundedChannel(float channel)
 {
     volatile float scaled = channel * 255.0f;
     return static_cast<ulong>(RoundToNearest(scaled));
-}
-
-// The same through the C run-time's truncating conversion, which sees the exact product.
-ulong TruncatedChannel(float channel)
-{
-    return static_cast<ulong>(static_cast<long>(static_cast<double>(channel) * 255.0));
 }
 
 // 0xAARRGGBB with alpha 255, three rounded channels: the packing of the ambient and the debug colour.
@@ -111,17 +99,6 @@ ulong PackRounded(float red, float green, float blue)
     return packed;
 }
 
-// floor() the way the original's SetViewport computes it: the value rounded to nearest, then one less when the rounding went
-// up.  The comparison treats the rounded integer as unsigned (the original loads it as a 64-bit value with a zero high
-// word), so a negative value is always taken one lower.
-long FloorLikeOriginal(float value)
-{
-    long rounded = RoundToNearest(value);
-    if (static_cast<double>(static_cast<unsigned long>(rounded)) > static_cast<double>(value)) {
-        --rounded;
-    }
-    return rounded;
-}
 
 // Eight lights shared by every screen (the original's table at 0x10017d2c): 1 = taken by AddLight.
 unsigned char g_lightTaken[8];

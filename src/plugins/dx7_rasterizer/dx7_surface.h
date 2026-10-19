@@ -56,6 +56,9 @@ public:
     long TextUnlock() override;                                                       // 30
     long Unlock() override;                                                           // 31
 
+    // The DirectDraw surface behind it: what the rasterizer hands to Direct3D (CreateDevice, SetRenderTarget) and blits.
+    IDirectDrawSurface7* GetDirectDrawSurface() const { return m_surface; }
+
 private:
     friend class DX7Screen;
 

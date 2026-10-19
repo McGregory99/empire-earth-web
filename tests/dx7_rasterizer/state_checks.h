@@ -13,8 +13,8 @@
  * argument values, which calls are skipped as redundant, and what a failing device call leaves behind.
  *
  * The device is installed by the test: the record's `device` field is set to a fake IDirect3DDevice7
- * (ActivateScreen, which creates the real one, belongs to a later task); it is removed again before
- * Deactivate.  The record's caches are set explicitly where a step depends on them.
+ * (the real activation, which creates the device itself, is tested by lifecycle_checks.h); it is removed again before
+ * Deactivate, which would release it.  The record's caches are set explicitly where a step depends on them.
  */
 #include <math.h>
 

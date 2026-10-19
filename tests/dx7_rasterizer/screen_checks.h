@@ -36,6 +36,7 @@ struct FakeDD {
     const void *const *d3d_vtbl;
     const void *const *device_vtbl;
     const void *const *surface_vtbl;
+    const void *const *vb_vtbl;
     /* surfaces (surface_checks.h) */
     int surface_count;                  /* ids handed out so far */
     void *by_id[64];                    /* the fake surfaces by id */
@@ -52,7 +53,24 @@ struct FakeDD {
     long rs_fail;                        /* the next n SetRenderState calls fail (and are still logged) */
     long set_light_result;               /* what SetLight returns */
     long enable_result;                  /* what LightEnable returns */
+    /* the device and scene lifecycle (lifecycle_checks.h, P2.6.5) */
+    long qi_d3d_result;                  /* what QueryInterface(IDirect3D7) returns (non-zero: no interface) */
+    long add_attached_code;              /* the next `add_attached_times` AddAttachedSurface calls (of any surface) return this */
+    int add_attached_times;
+    long create_vb_result;               /* what IDirect3D7::CreateVertexBuffer returns */
+    struct {
+        long code;
+        int times;
+    } dev_script[8];                     /* scripted results of BeginScene/EndScene/Clear/SetRenderTarget: `code` is returned `times` times */
+    void *devices[8];                    /* what the fake IDirect3D7 handed out, in order (named by the tests) */
+    int device_count;
+    void *d3ds[8];
+    int d3d_count;
+    void *vbs[8];
+    int vb_count;
 };
+
+enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT };
 
 typedef struct FakeD3D {
     const void *const *vtbl;
@@ -115,9 +133,16 @@ static long FAKE_DD_STDCALL fake_qi(FakeDD *dd, const void *iid, void **out)
         *out = NULL;
         return (long)0x80004002; /* E_NOINTERFACE */
     }
+    if (dd->qi_d3d_result != 0) {
+        *out = NULL;
+        return dd->qi_d3d_result;
+    }
     FakeD3D *d3d = (FakeD3D *)calloc(1, sizeof *d3d);
     d3d->vtbl = dd->d3d_vtbl;
     d3d->dd = dd;
+    if (dd->d3d_count < 8) {
+        dd->d3ds[dd->d3d_count++] = d3d;
+    }
     *out = d3d;
     return 0;
 }
@@ -270,6 +295,10 @@ static unsigned long FAKE_DD_STDCALL fake_surf_release(FakeSurface *s)
 static long FAKE_DD_STDCALL fake_surf_add_attached(FakeSurface *s, FakeSurface *other)
 {
     fake_log(s->dd, "s%d.AddAttachedSurface(s%d)", s->id, other->id);
+    if (s->dd->add_attached_times > 0) {
+        s->dd->add_attached_times--;
+        return s->dd->add_attached_code;
+    }
     return fake_surface_result(s, FS_ADD);
 }
 
@@ -420,7 +449,10 @@ static long FAKE_DD_STDCALL fake_d3d_create_device(FakeD3D *d3d, const unsigned 
 {
     static const unsigned char kIidHal[16] = {0xe0, 0x3d, 0xe6, 0x84, 0xaa, 0x46, 0xcf, 0x11,
                                               0x81, 0x6f, 0x00, 0x00, 0xc0, 0x20, 0x15, 0x6e};
-    fake_log(d3d->dd, "d3d.CreateDevice(%s,s%d)", memcmp(iid, kIidHal, 16) == 0 ? "HAL" : "other", surface ? surface->id : 0);
+    static const unsigned char kIidTnLHal[16] = {0x78, 0x9e, 0x04, 0xf5, 0x61, 0x48, 0xd2, 0x11,
+                                                 0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8};
+    fake_log(d3d->dd, "d3d.CreateDevice(%s,s%d)", memcmp(iid, kIidHal, 16) == 0 ? "HAL" : memcmp(iid, kIidTnLHal, 16) == 0 ? "TnLHAL" : "other",
+             surface ? surface->id : 0);
     if (d3d->dd->create_device_result != 0) {
         *out = NULL;
         return d3d->dd->create_device_result;
@@ -428,13 +460,56 @@ static long FAKE_DD_STDCALL fake_d3d_create_device(FakeD3D *d3d, const unsigned 
     FakeDevice *device = (FakeDevice *)calloc(1, sizeof *device);
     device->vtbl = d3d->dd->device_vtbl;
     device->dd = d3d->dd;
+    device->id = d3d->dd->device_count; /* the logs of the devices after the first carry "d<id>." */
+    if (d3d->dd->device_count < 8) {
+        d3d->dd->devices[d3d->dd->device_count++] = device;
+    }
     *out = device;
+    return 0;
+}
+
+/* IDirect3D7::CreateVertexBuffer (P2.6.5): logs the D3DVERTEXBUFFERDESC (size, caps, FVF, vertex count) and the flags. */
+typedef struct FakeVB {
+    const void *const *vtbl;
+    FakeDD *dd;
+    int id;
+} FakeVB;
+
+static long FAKE_DD_STDCALL fake_d3d_create_vb(FakeD3D *d3d, const DWORD *desc, FakeVB **out, DWORD flags)
+{
+    fake_log(d3d->dd, "d3d.CreateVertexBuffer(%lx,%lx,%lx,%lx,flags=%lx)", (unsigned long)desc[0], (unsigned long)desc[1], (unsigned long)desc[2],
+             (unsigned long)desc[3], (unsigned long)flags);
+    if (d3d->dd->create_vb_result != 0) {
+        return d3d->dd->create_vb_result;
+    }
+    FakeVB *vb = (FakeVB *)calloc(1, sizeof *vb);
+    vb->vtbl = d3d->dd->vb_vtbl;
+    vb->dd = d3d->dd;
+    vb->id = d3d->dd->vb_count;
+    if (d3d->dd->vb_count < 8) {
+        d3d->dd->vbs[d3d->dd->vb_count++] = vb;
+    }
+    *out = vb;
+    return 0;
+}
+
+static unsigned long FAKE_DD_STDCALL fake_vb_release(FakeVB *vb)
+{
+    char prefix[16] = "";
+    if (vb->id) {
+        snprintf(prefix, sizeof prefix, "v%d.", vb->id);
+    }
+    fake_log(vb->dd, "%svb.Release", prefix);
     return 0;
 }
 
 static unsigned long FAKE_DD_STDCALL fake_device_release(FakeDevice *device)
 {
-    fake_log(device->dd, "dev.Release");
+    char prefix[16] = "";
+    if (device->id) {
+        snprintf(prefix, sizeof prefix, "d%d.", device->id);
+    }
+    fake_log(device->dd, "%sdev.Release", prefix);
     return 0;
 }
 
@@ -541,10 +616,57 @@ static long FAKE_DD_STDCALL fake_dev_light_enable(FakeDevice *device, DWORD inde
     return device->dd->enable_result;
 }
 
+/* The scene methods of IDirect3DDevice7 (P2.6.5). */
+static long fake_dev_scripted(FakeDevice *device, int method)
+{
+    if (device->dd->dev_script[method].times > 0) {
+        device->dd->dev_script[method].times--;
+        return device->dd->dev_script[method].code;
+    }
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_begin_scene(FakeDevice *device)
+{
+    fake_dev_log(device, "BEGIN");
+    return fake_dev_scripted(device, FD_BEGIN);
+}
+
+static long FAKE_DD_STDCALL fake_dev_end_scene(FakeDevice *device)
+{
+    fake_dev_log(device, "END");
+    return fake_dev_scripted(device, FD_END);
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_render_target(FakeDevice *device, FakeSurface *surface, DWORD flags)
+{
+    fake_dev_log(device, "SRT(%s%d,%lx)", surface ? "s" : "null", surface ? surface->id : 0, (unsigned long)flags);
+    return fake_dev_scripted(device, FD_SRT);
+}
+
+static long FAKE_DD_STDCALL fake_dev_clear(FakeDevice *device, DWORD count, const long *rects, DWORD flags, DWORD color, DWORD z, DWORD stencil)
+{
+    char text[256] = "";
+    for (DWORD i = 0; i < count && i < 4; i++) {
+        size_t used = strlen(text);
+        snprintf(text + used, sizeof text - used, "%s[%ld,%ld,%ld,%ld]", i ? "," : "", rects[4 * i], rects[4 * i + 1], rects[4 * i + 2], rects[4 * i + 3]);
+    }
+    fake_dev_log(device, "CLEAR(%lu,%s,%lx,%lx,%lx,%lx)", (unsigned long)count, text, (unsigned long)flags, (unsigned long)color, (unsigned long)z,
+                 (unsigned long)stencil);
+    return fake_dev_scripted(device, FD_CLEAR);
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_texture_stage_state(FakeDevice *device, DWORD stage, DWORD type, DWORD value)
+{
+    fake_dev_log(device, "TSS(%lx,%lx,%lx)", (unsigned long)stage, (unsigned long)type, (unsigned long)value);
+    return 0;
+}
+
 static void fake_dd_init(FakeDD *dd)
 {
     static const void *vtbl[30];
-    static const void *d3d_vtbl[5];
+    static const void *d3d_vtbl[8];
+    static const void *vb_vtbl[8];
     static const void *device_vtbl[48];
     static const void *surface_vtbl[49];
     for (int i = 0; i < 30; i++) {
@@ -562,17 +684,26 @@ static void fake_dd_init(FakeDD *dd)
     vtbl[23] = (const void *)fake_get_avail_vid_mem;
     vtbl[25] = (const void *)fake_restore_all;
     vtbl[26] = (const void *)fake_test_coop;
-    d3d_vtbl[0] = (const void *)fake_unexpected;
-    d3d_vtbl[1] = (const void *)fake_unexpected;
+    for (int i = 0; i < 8; i++) {
+        d3d_vtbl[i] = (const void *)fake_unexpected;
+        vb_vtbl[i] = (const void *)fake_unexpected;
+    }
     d3d_vtbl[2] = (const void *)fake_d3d_release;
     d3d_vtbl[3] = (const void *)fake_enum_devices;
     d3d_vtbl[4] = (const void *)fake_d3d_create_device;
+    d3d_vtbl[5] = (const void *)fake_d3d_create_vb;
+    vb_vtbl[2] = (const void *)fake_vb_release;
     for (int i = 0; i < 48; i++) {
         device_vtbl[i] = (const void *)fake_unexpected;
     }
     device_vtbl[2] = (const void *)fake_device_release;
     device_vtbl[3] = (const void *)fake_device_get_caps;
     device_vtbl[4] = (const void *)fake_device_enum_texture_formats;
+    device_vtbl[5] = (const void *)fake_dev_begin_scene;
+    device_vtbl[6] = (const void *)fake_dev_end_scene;
+    device_vtbl[8] = (const void *)fake_dev_set_render_target;
+    device_vtbl[10] = (const void *)fake_dev_clear;
+    device_vtbl[37] = (const void *)fake_dev_set_texture_stage_state;
     device_vtbl[11] = (const void *)fake_dev_set_transform;
     device_vtbl[13] = (const void *)fake_dev_set_viewport;
     device_vtbl[16] = (const void *)fake_dev_set_material;
@@ -599,6 +730,7 @@ static void fake_dd_init(FakeDD *dd)
     dd->d3d_vtbl = d3d_vtbl;
     dd->device_vtbl = device_vtbl;
     dd->surface_vtbl = surface_vtbl;
+    dd->vb_vtbl = vb_vtbl;
     /* A device with 16- and 32-bit render targets and an ARGB texture format: the probe finds 32-bit support. */
     dd->device_depth_mask = 0x400 | 0x100 | 0x800;
     dd->texture_format_count = 2;
@@ -947,6 +1079,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "surface_checks.h" /* the surface object, CreateSurface, CreateAWindow and the 32-bit probe (P2.6.2) */
 #include "format_checks.h"  /* the pixel format table in every consumer, texture format enumeration (P2.6.3) */
 #include "state_checks.h"   /* the render state, light and viewport setters on a fake Direct3D device (P2.6.4) */
+#include "lifecycle_checks.h" /* ActivateScreen, Deactivate and the scene calls on the fake DirectDraw and Direct3D (P2.6.5) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -971,6 +1104,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_pixel_formats(e, &api);
         check_real_screens(e, get_rasterizer(), &api);
         check_state_setters(e, h, &api, get_rasterizer());
+        check_lifecycle(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

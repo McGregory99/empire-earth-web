@@ -14,6 +14,8 @@ EXPORTS
     ?GEUnpackBlue@@YAEKK@Z
     ?GEUnpackAlpha@@YAEKK@Z
     ?Dereference@UReferenceCounter@@QAEXXZ
+    ?TMGetTime@@YAKXZ
+    ?GetClientOrigin@GEWindow@@QAEABVGE2DPoint@@XZ
     ??1GEWindow@@QAE@XZ
     ??0GERasterizer@@IAE@ABVUString@@@Z
     ??1GERasterizer@@MAE@XZ
