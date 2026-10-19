@@ -20,6 +20,8 @@
 #include "rasterizer_abi.h"
 
 long EEWebCheckTexture(const void *object);
+// True when `object` is readable and its vftable's RTTI names `mangledClassName` (e.g. ".?AVDX7Surface@@"): a guard before a dynamic_cast.
+bool EEWebObjectIsClass(const void *object, const char *mangledClassName);
 long EEWebCheckMaterial(const void *object);
 long EEWebCheckModel(const void *object);
 long EEWebCheckLight(const void *object);

@@ -42,7 +42,7 @@ public:
     long AddLight(GELight &light, unsigned long, unsigned long &) override;  // 2
     long AddValidScreen(GEScreen *) override;  // 3
     long BeginScene(GESurface *, unsigned long) override;  // 4
-    bool CanDoCurrentState(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); return false; }  // 5
+    bool CanDoCurrentState(GETexture *, unsigned long) override;  // 5
     long Clear(GEColor const &, GERectangle const &, unsigned long) override;  // 6
     long ClearZBuffer(float, GERectangle const &, unsigned long) override;  // 7
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override { return 0; }  // 9
@@ -98,7 +98,7 @@ public:
     void SetShading(unsigned long, unsigned long) override;  // 58
     void SetShadingColorSource(unsigned long, unsigned long) override;  // 59
     void SetSpecular(unsigned long, unsigned long) override;  // 60
-    void SetTexture(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); }  // 61
+    void SetTexture(GETexture *, unsigned long) override;  // 61
     void SetViewport(GEViewport const &, unsigned long) override;  // 62
     void SetWaitForVSync(bool, unsigned long) override;  // 63
     void SetZBuffer(unsigned long, unsigned long) override;  // 64
@@ -109,11 +109,11 @@ public:
 protected:
     long ActivateRasterizer() override;  // 70
     long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override;  // 71
-    long slot72(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 72
-    long slot73(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 73
+    long slot72(GETexture *) override { return 0; }  // 72 (CreateTextureHandle): the original returns 0 and does nothing
+    long slot73(GETexture *) override { return 0; }  // 73 (DemoteTexture): same code
     void DestroyTextureHandle(GETexture *) override {}  // 74
     long DrawModelHierarchy(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 75
-    long slot76(GETexture *) override { return EEWEB_NOT_SUPPORTED; }  // 76
+    long slot76(GETexture *) override { return 0; }  // 76 (PromoteTexture): same code
     void SetRenderTarget(GESurface *, unsigned long) override;  // 77
 public:
     bool GetIsScreenValid(DX7Screen *) override;  // 78
@@ -125,6 +125,7 @@ protected:
 private:
     // The layout canaries' bookkeeping: Note counts a refusal (and returns the canary's status); Verdict
     // turns a refusal into the status EEWEB_LAYOUT_VIOLATION and otherwise returns `result`.
+    bool BindTexture(GETexture *texture, unsigned long screen);  // SetTexture's body (dx7_texture.cpp); false when nothing could be done
     long Note(long canaryStatus);
     long Verdict(long canaryStatus, long result);
 

@@ -17,6 +17,8 @@
 //   ?TMGetTime@@YAKXZ                             the engine's millisecond clock
 //   ?GetClientOrigin@GEWindow@@QAEABVGE2DPoint@@XZ the origin of a window's client area on the desktop
 //   ?RoundToNearest@GERectangle@@QAEXXZ           rounds the four floats of a rectangle in place
+//   ?Dereference@GETexture@@QAEXXZ                the engine's texture reference drop (the bound texture SetTexture lets go of)
+//   ?Promote@GETexture@@QAEJXZ                    marks a texture promoted (its manager's PromoteTexture sets the flag)
 //   ??0GETransformation@@QAE@XZ                   builds an identity transformation (16 floats)
 //   ?Apply@GETransformation@@QBEXABV1@AAV1@@Z     output = this applied to input (the product of two transformations)
 #ifndef EEWEB_ENGINE_IMPORTS_H
@@ -57,6 +59,8 @@ private:
 extern "C" {
 void __attribute__((thiscall)) EEWebGERasterizerConstruct(void* self, const UString& name) __asm__("??0GERasterizer@@IAE@ABVUString@@@Z");
 void __attribute__((thiscall)) EEWebGERasterizerDestruct(void* self) __asm__("??1GERasterizer@@MAE@XZ");
+void __attribute__((thiscall)) EEWebTextureDereference(void* self) __asm__("?Dereference@GETexture@@QAEXXZ");
+long __attribute__((thiscall)) EEWebTexturePromote(void* self) __asm__("?Promote@GETexture@@QAEJXZ");
 void __attribute__((thiscall)) EEWebRoundRectangle(float* rectangle) __asm__("?RoundToNearest@GERectangle@@QAEXXZ");
 void __attribute__((thiscall)) EEWebTransformationConstruct(void* self) __asm__("??0GETransformation@@QAE@XZ");
 void __attribute__((thiscall)) EEWebTransformationApply(const void* self, const void* input, void* output) __asm__("?Apply@GETransformation@@QBEXABV1@AAV1@@Z");

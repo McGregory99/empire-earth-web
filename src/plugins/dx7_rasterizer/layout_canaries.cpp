@@ -115,6 +115,11 @@ bool IsFlag(uint8_t b) { return b <= 1; }
 
 } // namespace
 
+bool EEWebObjectIsClass(const void *object, const char *mangledClassName)
+{
+    return ObjectProblem(object, 8) == EEWEB_LAYOUT_OK && IsClass(object, mangledClassName);
+}
+
 long EEWebCheckTexture(const void *object)
 {
     long problem = Begin(object, sizeof(GETextureLayout), "GETexture", ".?AVGETexture@@");

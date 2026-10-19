@@ -69,9 +69,19 @@ struct FakeDD {
     void *vbs[8];
     int vb_count;
     int d3d_released, device_released, vb_released; /* Release calls seen, to tell what an activation left unreleased */
+    /* textures and the vertex-buffer ring (texture_checks.h, P2.6.6) */
+    long tex_fail;                       /* the next n SetTexture / SetTextureStageState calls of any device fail (and are still logged) */
+    long validate_result;                /* what ValidateDevice returns */
+    unsigned long validate_passes;       /* what it stores in the pass count */
+    struct {
+        long code;
+        int times;
+    } vb_script[2];                      /* scripted results of the vertex buffer's Lock (0) and Unlock (1): `code` is returned `times` times */
+    int vb_null_lock_times;              /* the next n Lock calls succeed without storing a pointer */
 };
 
 enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT };
+enum { FV_LOCK, FV_UNLOCK };
 
 typedef struct FakeD3D {
     const void *const *vtbl;
@@ -475,6 +485,7 @@ typedef struct FakeVB {
     const void *const *vtbl;
     FakeDD *dd;
     int id;
+    unsigned char *memory;               /* what Lock hands out: 0x98a vertices of 0x24 bytes */
 } FakeVB;
 
 static long FAKE_DD_STDCALL fake_d3d_create_vb(FakeD3D *d3d, const DWORD *desc, FakeVB **out, DWORD flags)
@@ -488,6 +499,7 @@ static long FAKE_DD_STDCALL fake_d3d_create_vb(FakeD3D *d3d, const DWORD *desc, 
     vb->vtbl = d3d->dd->vb_vtbl;
     vb->dd = d3d->dd;
     vb->id = d3d->dd->vb_count;
+    vb->memory = (unsigned char *)calloc(0x98a, 0x24);
     if (d3d->dd->vb_count < 8) {
         d3d->dd->vbs[d3d->dd->vb_count++] = vb;
     }
@@ -503,6 +515,40 @@ static unsigned long FAKE_DD_STDCALL fake_vb_release(FakeVB *vb)
     }
     fake_log(vb->dd, "%svb.Release", prefix);
     vb->dd->vb_released++;
+    return 0;
+}
+
+/* IDirect3DVertexBuffer7::Lock / Unlock (P2.6.6): the log shows the flags and the size argument; the pointer is the buffer's memory. */
+static long FAKE_DD_STDCALL fake_vb_lock(FakeVB *vb, DWORD flags, void **data, DWORD *size)
+{
+    char prefix[16] = "";
+    if (vb->id) {
+        snprintf(prefix, sizeof prefix, "v%d.", vb->id);
+    }
+    fake_log(vb->dd, "%svb.Lock(%lx,%lx)", prefix, (unsigned long)flags, (unsigned long)(uintptr_t)size);
+    if (vb->dd->vb_script[FV_LOCK].times > 0) {
+        vb->dd->vb_script[FV_LOCK].times--;
+        return vb->dd->vb_script[FV_LOCK].code; /* a refused call stores nothing */
+    }
+    if (vb->dd->vb_null_lock_times > 0) {
+        vb->dd->vb_null_lock_times--;
+        return 0;
+    }
+    *data = vb->memory;
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_vb_unlock(FakeVB *vb)
+{
+    char prefix[16] = "";
+    if (vb->id) {
+        snprintf(prefix, sizeof prefix, "v%d.", vb->id);
+    }
+    fake_log(vb->dd, "%svb.Unlock", prefix);
+    if (vb->dd->vb_script[FV_UNLOCK].times > 0) {
+        vb->dd->vb_script[FV_UNLOCK].times--;
+        return vb->dd->vb_script[FV_UNLOCK].code;
+    }
     return 0;
 }
 
@@ -663,7 +709,33 @@ static long FAKE_DD_STDCALL fake_dev_clear(FakeDevice *device, DWORD count, cons
 static long FAKE_DD_STDCALL fake_dev_set_texture_stage_state(FakeDevice *device, DWORD stage, DWORD type, DWORD value)
 {
     fake_dev_log(device, "TSS(%lx,%lx,%lx)", (unsigned long)stage, (unsigned long)type, (unsigned long)value);
+    if (device->dd->tex_fail > 0) {
+        device->dd->tex_fail--;
+        return (long)0x80004005;
+    }
     return 0;
+}
+
+/* IDirect3DDevice7::SetTexture and ValidateDevice (P2.6.6). */
+static long FAKE_DD_STDCALL fake_dev_set_texture(FakeDevice *device, DWORD stage, FakeSurface *surface)
+{
+    if (surface) {
+        fake_dev_log(device, "TEX(%lx,s%d)", (unsigned long)stage, surface->id);
+    } else {
+        fake_dev_log(device, "TEX(%lx,null)", (unsigned long)stage);
+    }
+    if (device->dd->tex_fail > 0) {
+        device->dd->tex_fail--;
+        return (long)0x80004005;
+    }
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_validate(FakeDevice *device, DWORD *passes)
+{
+    fake_dev_log(device, "VALIDATE(in=%lx)", (unsigned long)*passes);
+    *passes = (DWORD)device->dd->validate_passes;
+    return device->dd->validate_result;
 }
 
 static void fake_dd_init(FakeDD *dd)
@@ -697,6 +769,8 @@ static void fake_dd_init(FakeDD *dd)
     d3d_vtbl[4] = (const void *)fake_d3d_create_device;
     d3d_vtbl[5] = (const void *)fake_d3d_create_vb;
     vb_vtbl[2] = (const void *)fake_vb_release;
+    vb_vtbl[3] = (const void *)fake_vb_lock;
+    vb_vtbl[4] = (const void *)fake_vb_unlock;
     for (int i = 0; i < 48; i++) {
         device_vtbl[i] = (const void *)fake_unexpected;
     }
@@ -707,7 +781,9 @@ static void fake_dd_init(FakeDD *dd)
     device_vtbl[6] = (const void *)fake_dev_end_scene;
     device_vtbl[8] = (const void *)fake_dev_set_render_target;
     device_vtbl[10] = (const void *)fake_dev_clear;
+    device_vtbl[35] = (const void *)fake_dev_set_texture;
     device_vtbl[37] = (const void *)fake_dev_set_texture_stage_state;
+    device_vtbl[38] = (const void *)fake_dev_validate;
     device_vtbl[11] = (const void *)fake_dev_set_transform;
     device_vtbl[13] = (const void *)fake_dev_set_viewport;
     device_vtbl[16] = (const void *)fake_dev_set_material;
@@ -1084,6 +1160,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "format_checks.h"  /* the pixel format table in every consumer, texture format enumeration (P2.6.3) */
 #include "state_checks.h"   /* the render state, light and viewport setters on a fake Direct3D device (P2.6.4) */
 #include "lifecycle_checks.h" /* ActivateScreen, Deactivate and the scene calls on the fake DirectDraw and Direct3D (P2.6.5) */
+#include "texture_checks.h"   /* SetTexture, CanDoCurrentState, the texture handle slots and the vertex-buffer ring (P2.6.6) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1109,6 +1186,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_real_screens(e, get_rasterizer(), &api);
         check_state_setters(e, h, &api, get_rasterizer());
         check_lifecycle(e, h, &api, get_rasterizer());
+        check_textures(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

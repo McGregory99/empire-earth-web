@@ -19,7 +19,7 @@
 
 typedef struct LifeSnap {
     uint32_t base[0x7c / 4], state[sizeof(GERScreenStateLayout) / 4], record[sizeof(DX7ScreenRecordLayout) / 4], tm[0x1c / 4], scr[2];
-    unsigned long refs[16];
+    unsigned long refs[48];
 } LifeSnap;
 
 #define LIFE_DIFF 1
@@ -39,10 +39,10 @@ static struct {
     int check_leaks; /* life_end asserts that our build leaves nothing created unreleased (the original leaks on its failure paths) */
     int recording;
     int fullscreen;
-    void *named[64];
-    char names[64][12];
+    void *named[128];
+    char names[128][12];
     int named_count;
-    void *ge[16]; /* the surfaces of the engine's per-screen state and the ones the tests make, in order of appearance */
+    void *ge[48]; /* the surfaces of the engine's per-screen state and the ones the tests make, in order of appearance */
     int ge_count;
     char extra[512];
     char label[96];
@@ -70,7 +70,7 @@ static GERScreenStateLayout *life_state(int i)
 
 static void life_add_name(void *p, const char *fmt, int n)
 {
-    if (p && g_life.named_count < 64) {
+    if (p && g_life.named_count < 128) {
         g_life.named[g_life.named_count] = p;
         snprintf(g_life.names[g_life.named_count], sizeof g_life.names[0], fmt, n);
         g_life.named_count++;
@@ -87,7 +87,7 @@ static void life_add_ge(void *p)
             return;
         }
     }
-    if (g_life.ge_count < 16) {
+    if (g_life.ge_count < 48) {
         g_life.ge[g_life.ge_count++] = p;
     }
 }
@@ -119,6 +119,10 @@ static void life_names_refresh(void)
     }
     for (int i = 0; i < g_life.ge_count; i++) {
         life_add_name(g_life.ge[i], "ge%d", i);
+    }
+    /* the DirectDraw surfaces behind the engine's surfaces: what a texture bind hands to the device (stage cache word 0) */
+    for (int id = 1; id <= g_life.dd->surface_count && id < 64; id++) {
+        life_add_name(g_life.dd->by_id[id], "fs%d", id);
     }
 }
 
@@ -182,6 +186,7 @@ static const struct {
     const char *expect;
 } kLifeExpected[] = {
 #include "lifecycle_expected.inc"
+#include "texture_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -191,6 +196,7 @@ static const struct {
     const char *expect;
 } kLifeExpectedOurs[] = {
 #include "lifecycle_expected_ours.inc"
+#include "texture_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)
