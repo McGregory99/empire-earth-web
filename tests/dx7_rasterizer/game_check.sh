@@ -11,11 +11,11 @@
 #     called RPIMGetRasterizer;
 #   - the original DX7HRTnLDisplay.dll was loaded too, and the number of frames the game drew is reported;
 #   - nothing crashed (no err:seh, no Wine Program Error).
-# NOT VERIFIED AGAINST THE REAL GAME since the revision for P2.6.2: it was written from the P2.6.1 results (the
-# plugin is valid, its rasterizer is a null renderer without the engine's base-class fields until P2.7), without
-# running the game.  The expectations that the engine unloads the module and keeps rendering with the original
-# TnL renderer, which held while PIMIsValid was false, are gone; whether the engine survives with our object
-# selected is what the first real run is for.
+# VERIFIED AGAINST THE REAL GAME at 50be472 (P2.6.4): with PIMIsValid true the engine registers our rasterizer, which
+# embeds the engine's own GERasterizer base, goes on with GEInitialize and draws its first frames, all assertions
+# pass and the game directory is restored exactly.  (At bb9c4ce, before the base class was embedded, the engine
+# crashed in GERasterizer::GetScreen reading this+0x20 of the object.)  Wine snoop only traces the exported PIM
+# entry points, so this check cannot say whether the frames were drawn by our rasterizer or by the original one.
 # Then it stops the game with the prefix's own wineserver, removes the DLL and the registry value it added,
 # and verifies the sha256 manifest of the game directory against the one taken before.
 #
