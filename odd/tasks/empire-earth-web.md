@@ -187,6 +187,10 @@ Clean C++ clone built with clang `--target=i686-pc-windows-msvc` (MSVC vtable la
 - P2.8 In-game drop-in: A/B traces + screenshots.
 - P2.9 Extract the `Dx7Device` seam; trace diff unchanged.
 - P2.10 WebGL2 backend driven by recorded traces, compared to reference frames.
+  - User decision 2026-10-19: "sigue con la reproduccion". Goal: see something in the browser sooner, as a REPLAY of a recorded original-game run drawn with WebGL2 (not the game running). It does not wait for P2.6.7+: the trace proxy records the ORIGINAL game's calls.
+  - [ ] P2.10.1 Data capture in `tools/ddraw_trace`: optional side file with the data the golden only hashes (vertex-buffer bytes at Unlock/draw time, index data, surface/texture pixels at Unlock/Blt/GetDC release, with their pixel formats), referenced from the text trace by offset; format documented; offline tests with the mock ddraw. Route: delegated (sonnet). Commit: pending.
+  - [ ] P2.10.2 Capture the startup-to-menu scenario with data through `tools/game_run` (real runs, budget 2) plus reference screenshots of the same frames. Commit: pending.
+  - [ ] P2.10.3 Web replay viewer (`web/`): static WebGL2 page that loads trace + data and replays the frames (FVF 0x152 vertices, indexed lists, texture formats 555/565/4444/ARGB/888A, fixed-function fog/lighting/texture-stage state as shaders, 2D surface blits); tests run headless against reference frames. Commit: pending.
 Estimate (not measured): ~3–4 weeks to a verified drop-in clone. Risks: silent corruption from wrong engine layouts, scenario determinism (FPS counters, time-based animation), x87 vs SSE 1-ULP differences in culling, unproven link path.
 
 ## Runtime Win32 inventory (emulation route)
