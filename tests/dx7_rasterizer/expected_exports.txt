@@ -8,3 +8,5 @@
 8 ?Set2DMode@DX7Rasterizer@@IAEJK@Z
 9 ?Set3DMode@DX7Rasterizer@@IAEJK@Z
 10 ?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z
+11 ?LockVB@DX7Rasterizer@@IAEJKKAAPAUD3DVERTEX_STD_COLOR@@@Z
+12 ?UnlockVB@DX7Rasterizer@@IAEJK@Z

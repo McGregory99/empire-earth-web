@@ -187,6 +187,7 @@ static const struct {
 } kLifeExpected[] = {
 #include "lifecycle_expected.inc"
 #include "texture_expected.inc"
+#include "ring_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -197,6 +198,7 @@ static const struct {
 } kLifeExpectedOurs[] = {
 #include "lifecycle_expected_ours.inc"
 #include "texture_expected_ours.inc"
+#include "ring_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)

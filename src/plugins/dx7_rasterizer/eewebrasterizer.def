@@ -18,3 +18,6 @@ EXPORTS
     ?Set2DMode@DX7Rasterizer@@IAEJK@Z=?Set2DMode@EEWebNullRasterizer@@AAEJK@Z                                                                  @8
     ?Set3DMode@DX7Rasterizer@@IAEJK@Z=?Set3DMode@EEWebNullRasterizer@@AAEJK@Z                                                                  @9
     ?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z=?ConvertToD3DMatrix@EEWebNullRasterizer@@AAEXABUGETransformationLayout@@PAM@Z   @10
+; The ring vertex buffer's lock and unlock helpers (protected members there), for the harness.
+    ?LockVB@DX7Rasterizer@@IAEJKKAAPAUD3DVERTEX_STD_COLOR@@@Z=?LockVB@EEWebNullRasterizer@@AAEJKKAAPAX@Z                                       @11
+    ?UnlockVB@DX7Rasterizer@@IAEJK@Z=?UnlockVB@EEWebNullRasterizer@@AAEJK@Z                                                                     @12

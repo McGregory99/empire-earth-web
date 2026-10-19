@@ -150,6 +150,11 @@ private:
     long Set3DMode(unsigned long screen);
     void ConvertToD3DMatrix(const GETransformationLayout &transformation, float *matrix);
 
+    // The ring vertex buffer's helpers the draws use (dx7_vertex_ring.cpp): lock `count` vertices of the screen's buffer, hand back the
+    // buffer's start (the caller adds cursor * 0x24); the DLL exports them under the original's names for the harness.
+    long LockVB(unsigned long count, unsigned long screen, void *&vertices);
+    long UnlockVB(unsigned long screen);
+
     // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose
     // bytes are the engine's and the layouts' to define; nothing of this class touches them directly.
     unsigned char m_engineFields[EEWEB_COUNTERS_OFFSET - 4];

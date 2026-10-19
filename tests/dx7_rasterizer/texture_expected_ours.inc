@@ -1,0 +1,1 @@
+/* Steps where our build intentionally differs from the original: none.  What the original dereferences without looking (a texture whose surface is not a DX7Surface, a screen that does not exist) is checked directly by tex_ours_only in texture_checks.h. */
