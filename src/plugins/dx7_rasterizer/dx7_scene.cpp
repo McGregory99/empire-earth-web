@@ -61,6 +61,18 @@ void Dereference(GESurface* surface)
     reinterpret_cast<UReferenceCounter*>(surface)->Dereference();
 }
 
+// What a failed activation gives back: the surfaces it made (a flip chain's back buffer belongs to the primary surface; the depth
+// buffer to the target it is attached to).  The original leaves them all.
+void ReleaseSurfaces(GESurface* primary, GESurface* target, bool madeTarget)
+{
+    if (primary) {
+        Dereference(primary);
+    }
+    if (madeTarget && target) {
+        Dereference(target);
+    }
+}
+
 // The status of BeginScene / EndScene: 0, 9 for a lost surface, 1 for any other error (which the engine records).
 long SceneStatus(long error)
 {
@@ -87,6 +99,9 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
     const EEWebVideoMode mode = reinterpret_cast<const EEWebVideoMode&>(owner->GetCurrentMode());
     const GEWindowLayout* frame = reinterpret_cast<const GEWindowLayout*>(window);
     const ulong depthBits = zFormat == 9 ? 0x20 : 0x10;
+    if (!owner->GetIsFullScreen() && backBuffers == 1 && !frame) {
+        return EEWEB_NOT_SUPPORTED; // checked before anything is created, so there is nothing to give back
+    }
 
     GESurface* primary = 0;
     GESurface* target = 0; // the surface the scene is rendered to; becomes the secondary surface of the screen's state
@@ -101,9 +116,6 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
         description = MakeDescription(0, mode.pixelFormat, mode.width, mode.height, 0, mode.bitsPerPixel);
         result = owner->CreateSurface(reinterpret_cast<GESurfaceDescription&>(description), &primary);
         if (backBuffers == 1) {
-            if (!frame) {
-                return EEWEB_NOT_SUPPORTED;
-            }
             description = MakeDescription(1, mode.pixelFormat, frame->width, frame->height, 0, mode.bitsPerPixel);
             result = owner->CreateSurface(reinterpret_cast<GESurfaceDescription&>(description), &target);
             madeTarget = true;
@@ -136,10 +148,12 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
         }
     }
     if (result != 0) {
+        ReleaseSurfaces(primary, target, madeTarget);
         return result;
     }
     result = ActivateTheScreen(screen, primary, target, textureManager, window);
     if (result != 0) {
+        ReleaseSurfaces(primary, target, madeTarget);
         return result;
     }
 
@@ -218,6 +232,9 @@ long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface*
     }
     if (error != 0) {
         ESRecordNativeError(static_cast<ulong>(error));
+        if (direct3d) {
+            direct3d->vtbl->Release(direct3d); // the original keeps asking for it and never gives it back
+        }
         return 1;
     }
     record->direct3d = direct3d;

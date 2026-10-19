@@ -36,6 +36,7 @@ static struct {
     void *tm[2];
     void *win[2];
     int cur; /* the screen whose records the diff follows */
+    int check_leaks; /* life_end asserts that our build leaves nothing created unreleased (the original leaks on its failure paths) */
     int recording;
     int fullscreen;
     void *named[64];
@@ -183,6 +184,15 @@ static const struct {
 #include "lifecycle_expected.inc"
 };
 
+/* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
+ * failed activation unreleased, ours gives them back (the extra Release calls below); and the steps the original cannot run at all. */
+static const struct {
+    const char *name;
+    const char *expect;
+} kLifeExpectedOurs[] = {
+#include "lifecycle_expected_ours.inc"
+    {NULL, NULL}};
+
 static void life_compare(const char *name, const char *actual)
 {
     if (g_life.recording) {
@@ -193,6 +203,11 @@ static void life_compare(const char *name, const char *actual)
     for (unsigned i = 0; i < sizeof kLifeExpected / sizeof kLifeExpected[0]; i++) {
         if (strcmp(kLifeExpected[i].name, name) == 0) {
             expect = kLifeExpected[i].expect;
+        }
+    }
+    for (unsigned i = 0; g_life.e->ours && kLifeExpectedOurs[i].name; i++) {
+        if (strcmp(kLifeExpectedOurs[i].name, name) == 0) {
+            expect = kLifeExpectedOurs[i].expect;
         }
     }
     int same = expect != NULL && strcmp(actual, expect) == 0;
@@ -313,6 +328,7 @@ static int life_begin(const struct Expect *e, const ScreenApi *api, void *obj, i
     memset(g_life.dd->by_id, 0, sizeof g_life.dd->by_id);
     g_life.dd->surface_count = 0;
     g_life.dd->device_count = g_life.dd->d3d_count = g_life.dd->vb_count = 0;
+    g_life.dd->d3d_released = g_life.dd->device_released = g_life.dd->vb_released = 0;
     log_clear(g_life.dd);
     return 1;
 }
@@ -339,6 +355,18 @@ static long life_activate(int screen, unsigned back_buffers, int zbuffer, unsign
                                                       (unsigned char)zbuffer, zformat);
 }
 
+/* What the fakes created and nobody released: surfaces with a reference left, Direct3D objects, devices and vertex buffers. */
+static int life_leaks(void)
+{
+    const FakeDD *dd = g_life.dd;
+    int leaks = (dd->d3d_count - dd->d3d_released) + (dd->device_count - dd->device_released) + (dd->vb_count - dd->vb_released);
+    for (int id = 1; id <= dd->surface_count && id < 64; id++) {
+        const FakeSurface *surface = (const FakeSurface *)dd->by_id[id];
+        leaks += surface && surface->refs > 0;
+    }
+    return leaks;
+}
+
 /* Last, and without a diff: the screens and their records are gone afterwards. */
 static void life_end(void)
 {
@@ -355,6 +383,10 @@ static void life_end(void)
     char name[160];
     snprintf(name, sizeof name, "Deactivate after: %s", g_life.label);
     LS(name, LIFE_NODIFF, ret = ((LifeNoArg)LIFE_SLOT(Deactivate))(g_life.obj));
+    if (g_life.check_leaks && g_life.e->ours) {
+        int leaks = life_leaks();
+        CHECK(leaks == 0, "%s: lifecycle: nothing is left unreleased after Deactivate: %s (%d leaked)", g_life.e->label, g_life.label, leaks);
+    }
     free(g_life.dd);
 }
 
@@ -479,6 +511,7 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
 {
     /* The off-screen render target is refused: the activation answers with the screen's status and stops. */
     if (life_begin(e, api, obj, 1, 0, "the off-screen target is refused")) {
+        g_life.check_leaks = 1;
         g_life.dd->create_results[0] = 0;
         g_life.dd->create_results[1] = (long)0x8876000a;
         g_life.dd->create_result_count = 2;
@@ -487,6 +520,7 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
     }
     /* The depth buffer cannot be attached to the render target: its status is the activation's. */
     if (life_begin(e, api, obj, 1, 0, "the depth buffer cannot be attached")) {
+        g_life.check_leaks = 1;
         g_life.dd->add_attached_code = (long)0x88760104;
         g_life.dd->add_attached_times = 1;
         LS("ActivateScreen: AddAttachedSurface of the depth buffer fails", LIFE_DIFF, ret = life_activate(0, 1, 1, 10));
@@ -494,6 +528,7 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
     }
     /* The primary surface is refused but the off-screen target is made: the later status hides the failure. */
     if (life_begin(e, api, obj, 1, 0, "the primary surface is refused")) {
+        g_life.check_leaks = 1;
         g_life.dd->create_results[0] = (long)0x8876000a;
         g_life.dd->create_results[1] = 0;
         g_life.dd->create_result_count = 2;
@@ -503,20 +538,34 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
     /* (A refused depth buffer is not tested: the original attaches and releases a null surface and crashes.) */
     /* QueryInterface(IDirect3D7) fails. */
     if (life_begin(e, api, obj, 1, 0, "no IDirect3D7")) {
+        g_life.check_leaks = 1;
         g_life.dd->qi_d3d_result = (long)0x80004002;
         LS("ActivateScreen: no IDirect3D7", LIFE_DIFF, ret = life_activate(0, 1, 1, 10));
         life_end();
     }
     /* CreateDevice fails: nothing of the device is kept, and the Direct3D object is not released. */
     if (life_begin(e, api, obj, 1, 0, "CreateDevice refused")) {
+        g_life.check_leaks = 1;
         g_life.dd->create_device_result = (long)0x887600a2;
         LS("ActivateScreen: CreateDevice refused", LIFE_DIFF, ret = life_activate(0, 1, 1, 10));
         life_end();
     }
     /* CreateVertexBuffer fails: the device is kept (and released by Deactivate), the vertex buffer is not. */
     if (life_begin(e, api, obj, 1, 0, "CreateVertexBuffer refused")) {
+        g_life.check_leaks = 1;
         g_life.dd->create_vb_result = (long)0x8876017c;
         LS("ActivateScreen: CreateVertexBuffer refused", LIFE_DIFF, ret = life_activate(0, 1, 1, 10));
+        life_end();
+    }
+    /* Our build only (the original crashes on a window that is not there): no window for the off-screen target, and an activation of
+     * a screen that is already active.  Both must leave nothing unreleased. */
+    if (e->ours && life_begin(e, api, obj, 1, 0, "no window")) {
+        g_life.check_leaks = 1;
+        typedef long(THISCALL * Activate)(void *self, unsigned long screen, void *tm, void *window, unsigned long backBuffers, unsigned char zbuffer,
+                                          unsigned long zformat);
+        long ret = ((Activate)LIFE_SLOT(ActivateScreen))(g_life.obj, 0, g_life.tm[0], NULL, 1, 1, 10);
+        CHECK(ret == EEWEB_NOT_SUPPORTED, "%s: lifecycle: ActivateScreen without a window is refused (got %ld)", e->label, ret);
+        CHECK(g_life.dd->surface_count == 0, "%s: lifecycle: ActivateScreen without a window creates no surface (got %d)", e->label, g_life.dd->surface_count);
         life_end();
     }
 }

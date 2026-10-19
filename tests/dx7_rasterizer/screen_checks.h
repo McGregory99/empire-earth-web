@@ -68,6 +68,7 @@ struct FakeDD {
     int d3d_count;
     void *vbs[8];
     int vb_count;
+    int d3d_released, device_released, vb_released; /* Release calls seen, to tell what an activation left unreleased */
 };
 
 enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT };
@@ -442,6 +443,7 @@ static long FAKE_DD_STDCALL fake_enum_devices(FakeD3D *d3d, long(FAKE_DD_STDCALL
 static unsigned long FAKE_DD_STDCALL fake_d3d_release(FakeD3D *d3d)
 {
     fake_log(d3d->dd, "d3d.Release");
+    d3d->dd->d3d_released++;
     return 0;
 }
 
@@ -500,6 +502,7 @@ static unsigned long FAKE_DD_STDCALL fake_vb_release(FakeVB *vb)
         snprintf(prefix, sizeof prefix, "v%d.", vb->id);
     }
     fake_log(vb->dd, "%svb.Release", prefix);
+    vb->dd->vb_released++;
     return 0;
 }
 
@@ -510,6 +513,7 @@ static unsigned long FAKE_DD_STDCALL fake_device_release(FakeDevice *device)
         snprintf(prefix, sizeof prefix, "d%d.", device->id);
     }
     fake_log(device->dd, "%sdev.Release", prefix);
+    device->dd->device_released++;
     return 0;
 }
 
