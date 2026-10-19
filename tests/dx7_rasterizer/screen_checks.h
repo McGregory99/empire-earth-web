@@ -970,7 +970,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_surfaces(e, h, &api);
         check_pixel_formats(e, &api);
         check_real_screens(e, get_rasterizer(), &api);
-        check_state_setters(e, &api, get_rasterizer());
+        check_state_setters(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

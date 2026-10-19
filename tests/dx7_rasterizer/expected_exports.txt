@@ -5,3 +5,6 @@
 5 ??0DX7Screen@@AAE@PAUHMONITOR__@@PAUIDirectDraw7@@ABVUString@@_N3@Z
 6 ?GetScreen@DX7Screen@@SAPAV1@K@Z
 7 ?GetScreenCount@DX7Screen@@SAKXZ
+8 ?Set2DMode@DX7Rasterizer@@IAEJK@Z
+9 ?Set3DMode@DX7Rasterizer@@IAEJK@Z
+10 ?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z

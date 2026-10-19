@@ -592,7 +592,87 @@ static void state_getters(void)
     CHECK(modulate(g_se.obj, 1) == 1 && modulate(g_se.obj, 0) == 0, "%s: state: the getters index the screen records by screen", g_se.e->label);
 }
 
-static void check_state_setters(const struct Expect *e, const ScreenApi *api, void *obj)
+/* ---- the projection set-up ------------------------------------------------------------------------------ */
+
+typedef long(THISCALL *ModeFn)(void *self, unsigned long screen);
+typedef void(THISCALL *ConvertFn)(void *self, const float *transformation, float *matrix);
+
+/* The transformations of the engine's screen state that Set3DMode reads, set to distinct values: the camera's inverse, and the
+ * orthographic and perspective projections. */
+static void state_fill_matrices(void)
+{
+    GERScreenStateLayout *state = state_state(0);
+    for (int i = 0; i < 16; i++) {
+        state->viewport.cameraInverse.m[i] = 0.5f + 0.25f * (float)i;
+        state->viewport.orthographicProjection.m[i] = 100.0f + (float)i;
+        state->viewport.perspectiveProjection.m[i] = 200.0f + (float)i;
+    }
+}
+
+static void state_set_flags(unsigned mode_3d_current, unsigned scene_drawn)
+{
+    DX7ScreenRecordLayout *record = state_record(0);
+    record->unknown6c = (uint8_t)mode_3d_current;
+    record->sceneDrawn = (uint8_t)scene_drawn;
+}
+
+static void state_transforms(HMODULE h)
+{
+    ModeFn set2d = (ModeFn)proc_address(h, "?Set2DMode@DX7Rasterizer@@IAEJK@Z");
+    ModeFn set3d = (ModeFn)proc_address(h, "?Set3DMode@DX7Rasterizer@@IAEJK@Z");
+    ConvertFn convert = (ConvertFn)proc_address(h, "?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z");
+    CHECK(set2d != NULL && set3d != NULL && convert != NULL, "%s: state: exports Set2DMode, Set3DMode and ConvertToD3DMatrix", g_se.e->label);
+    if (!set2d || !set3d || !convert) {
+        return;
+    }
+    float in[16], out[16];
+    for (int i = 0; i < 16; i++) {
+        in[i] = 1.5f + (float)i;
+        out[i] = -1.0f;
+    }
+    convert(g_se.obj, in, out);
+    int transposed = 1;
+    for (int row = 0; row < 4; row++) {
+        for (int col = 0; col < 4; col++) {
+            transposed &= out[row * 4 + col] == in[col * 4 + row];
+        }
+    }
+    CHECK(transposed, "%s: state: ConvertToD3DMatrix writes the transpose of the engine's row-major transformation", g_se.e->label);
+
+    long result = -1;
+    state_fill_matrices();
+    state_set_flags(0, 0);
+    S("Set3DMode, 3D not current", result = set3d(g_se.obj, 0));
+    CHECK(result == 0, "%s: state: Set3DMode returns 0 (got %ld)", g_se.e->label, result);
+    S("Set3DMode again: nothing to do", result = set3d(g_se.obj, 0));
+    state_set_flags(1, 1);
+    state_state(0)->projectionMode = 0;
+    S("Set3DMode, orthographic, scene drawn since", result = set3d(g_se.obj, 0));
+    state_state(0)->projectionMode = 1;
+    state_set_flags(0, 1);
+    S("Set3DMode, perspective, 3D not current and scene drawn", result = set3d(g_se.obj, 0));
+    state_state(0)->projectionMode = 7;
+    state_set_flags(0, 0);
+    S("Set3DMode, projection mode 7 takes the orthographic matrix", result = set3d(g_se.obj, 0));
+
+    state_set_flags(0, 0);
+    S("Set2DMode when both flags are clear: nothing to do", result = set2d(g_se.obj, 0));
+    CHECK(result == 0, "%s: state: Set2DMode returns 0 (got %ld)", g_se.e->label, result);
+    state_record(0)->viewport[2] = 640;
+    state_record(0)->viewport[3] = 480;
+    state_set_flags(1, 0);
+    S("Set2DMode 640x480 after the 3D set-up", result = set2d(g_se.obj, 0));
+    state_record(0)->viewport[2] = 3;
+    state_record(0)->viewport[3] = 7;
+    state_set_flags(0, 1);
+    S("Set2DMode 3x7 after a drawn scene", result = set2d(g_se.obj, 0));
+    state_record(0)->viewport[2] = 1024;
+    state_record(0)->viewport[3] = 768;
+    state_set_flags(1, 1);
+    S("Set2DMode 1024x768 with both flags set", result = set2d(g_se.obj, 0));
+}
+
+static void check_state_setters(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     if (!state_begin(e, api, obj, 2)) {
         return;
@@ -604,5 +684,6 @@ static void check_state_setters(const struct Expect *e, const ScreenApi *api, vo
     state_viewport();
     state_lights();
     state_getters();
+    state_transforms(h);
     state_end();
 }

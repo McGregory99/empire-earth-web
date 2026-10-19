@@ -15,6 +15,8 @@
 //   ?SetX@GERasterizer@@UAE...                    the plugin hands on to (GERasterizer::SetAlphaTesting(...) etc., which the
 //                                                 abstract class of ge_interfaces.h declares pure, so a qualified call links to them)
 //   ?RoundToNearest@GERectangle@@QAEXXZ           rounds the four floats of a rectangle in place
+//   ??0GETransformation@@QAE@XZ                   builds an identity transformation (16 floats)
+//   ?Apply@GETransformation@@QBEXABV1@AAV1@@Z     output = this applied to input (the product of two transformations)
 #ifndef EEWEB_ENGINE_IMPORTS_H
 #define EEWEB_ENGINE_IMPORTS_H
 
@@ -52,6 +54,8 @@ extern "C" {
 void __attribute__((thiscall)) EEWebGERasterizerConstruct(void* self, const UString& name) __asm__("??0GERasterizer@@IAE@ABVUString@@@Z");
 void __attribute__((thiscall)) EEWebGERasterizerDestruct(void* self) __asm__("??1GERasterizer@@MAE@XZ");
 void __attribute__((thiscall)) EEWebRoundRectangle(float* rectangle) __asm__("?RoundToNearest@GERectangle@@QAEXXZ");
+void __attribute__((thiscall)) EEWebTransformationConstruct(void* self) __asm__("??0GETransformation@@QAE@XZ");
+void __attribute__((thiscall)) EEWebTransformationApply(const void* self, const void* input, void* output) __asm__("?Apply@GETransformation@@QBEXABV1@AAV1@@Z");
 }
 
 #endif

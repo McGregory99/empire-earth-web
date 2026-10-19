@@ -14,3 +14,7 @@ EXPORTS
     ??0DX7Screen@@AAE@PAUHMONITOR__@@PAUIDirectDraw7@@ABVUString@@_N3@Z   @5
     ?GetScreen@DX7Screen@@SAPAV1@K@Z                                       @6
     ?GetScreenCount@DX7Screen@@SAKXZ                                       @7
+; The projection set-up helpers of DX7Rasterizer (protected members there), under the original's decorated names, for the harness.
+    ?Set2DMode@DX7Rasterizer@@IAEJK@Z=?Set2DMode@EEWebNullRasterizer@@AAEJK@Z                                                                  @8
+    ?Set3DMode@DX7Rasterizer@@IAEJK@Z=?Set3DMode@EEWebNullRasterizer@@AAEJK@Z                                                                  @9
+    ?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z=?ConvertToD3DMatrix@EEWebNullRasterizer@@AAEXABUGETransformationLayout@@PAM@Z   @10

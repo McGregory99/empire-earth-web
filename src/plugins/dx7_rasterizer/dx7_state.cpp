@@ -41,6 +41,7 @@ enum {
     kFogEnable = 0x1c,
     kSpecularEnable = 0x1d,
     kFogColor = 0x22,
+    kClipping = 0x88,
     kFogStart = 0x24,
     kFogEnd = 0x25,
     kColorKeyEnable = 0x29,
@@ -49,6 +50,13 @@ enum {
     kColorVertex = 0x8d,
     kSpecularMaterialSource = 0x91,
     kDiffuseMaterialSource = 0x93,
+};
+
+// D3DTRANSFORMSTATETYPE.
+enum {
+    kWorldTransform = 1,
+    kViewTransform = 2,
+    kProjectionTransform = 3,
 };
 
 long SetState(IDirect3DDevice7* device, ulong state, ulong value)
@@ -437,6 +445,75 @@ void EEWebNullRasterizer::SetViewport(GEViewport const& viewport, ulong screen)
     __builtin_memcpy(&record->viewport[5], &v->depthFar, sizeof(float));
     device->vtbl->SetViewport(device, record);
     record->sceneDrawn = 1;
+}
+
+// ---- the transformations the draws set up ------------------------------------------------------------------------
+
+// The engine keeps a transformation as 4x4 floats with the translation in the last column (m[3], m[7], m[11]); Direct3D wants the
+// transpose.
+void EEWebNullRasterizer::ConvertToD3DMatrix(const GETransformationLayout& transformation, float* matrix)
+{
+    for (int row = 0; row < 4; ++row) {
+        for (int column = 0; column < 4; ++column) {
+            matrix[row * 4 + column] = transformation.m[column * 4 + row];
+        }
+    }
+}
+
+// Pixel coordinates: no clipping by Direct3D, an identity world and view, and a projection that maps the screen's
+// width x height to -1..1 with y down.  Runs when either flag of the record says the last set-up was not this one.
+long EEWebNullRasterizer::Set2DMode(ulong screen)
+{
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    DX7ScreenRecordLayout* record = Record(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !device) return 0;
+    if (record->unknown6c || record->sceneDrawn) {
+        SetState(device, kClipping, 1);
+        float matrix[16];
+        ConvertToD3DMatrix(transformation, matrix);
+        device->vtbl->SetTransform(device, kWorldTransform, matrix);
+        device->vtbl->SetTransform(device, kViewTransform, matrix);
+        transformation.m[3] = -1.0f;
+        transformation.m[0] = static_cast<float>(2.0L / static_cast<long double>(record->viewport[2]));
+        transformation.m[5] = static_cast<float>(-2.0L / static_cast<long double>(record->viewport[3]));
+        transformation.m[7] = 1.0f;
+        ConvertToD3DMatrix(transformation, matrix);
+        device->vtbl->SetTransform(device, kProjectionTransform, matrix);
+        record->unknown6c = 0;
+        record->sceneDrawn = 0;
+    }
+    return 0;
+}
+
+// The engine's camera: the view is the camera's inverse with Y and Z swapped (the engine's up axis is Z), the projection
+// the viewport's perspective or orthographic matrix by the screen's projection mode.  Runs when the 3D set-up is not the
+// current one or a scene was drawn since.
+long EEWebNullRasterizer::Set3DMode(ulong screen)
+{
+    GETransformationLayout swap;
+    EEWebTransformationConstruct(&swap);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device) return 0;
+    if (!record->unknown6c || record->sceneDrawn) {
+        swap.m[5] = 0.0f;
+        swap.m[6] = 1.0f;
+        swap.m[9] = 1.0f;
+        swap.m[10] = 0.0f;
+        GETransformationLayout view;
+        EEWebTransformationApply(&swap, &state->viewport.cameraInverse, &view);
+        float matrix[16];
+        ConvertToD3DMatrix(view, matrix);
+        device->vtbl->SetTransform(device, kViewTransform, matrix);
+        ConvertToD3DMatrix(state->projectionMode == 1 ? state->viewport.perspectiveProjection : state->viewport.orthographicProjection, matrix);
+        device->vtbl->SetTransform(device, kProjectionTransform, matrix);
+        record->unknown6c = 1;
+        record->sceneDrawn = 0;
+    }
+    return 0;
 }
 
 // ---- lights ----------------------------------------------------------------------------------------------------

@@ -141,6 +141,12 @@ private:
     DX7Screen *ScreenOf(unsigned long screen);
     void AddRecord(DX7ScreenRecordLayout *record);
 
+    // The projection set-up the draws call before drawing (dx7_state.cpp): the original's protected Set2DMode, Set3DMode and
+    // ConvertToD3DMatrix, which the DLL also exports under their original names for the test harness (eewebrasterizer.def).
+    long Set2DMode(unsigned long screen);
+    long Set3DMode(unsigned long screen);
+    void ConvertToD3DMatrix(const GETransformationLayout &transformation, float *matrix);
+
     // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose
     // bytes are the engine's and the layouts' to define; nothing of this class touches them directly.
     unsigned char m_engineFields[EEWEB_COUNTERS_OFFSET - 4];

@@ -45,3 +45,5 @@ EXPORTS
     ?SetZBuffer@GERasterizer@@UAEXKK@Z
     ?SetZCompare@GERasterizer@@UAEXKK@Z
     ?RoundToNearest@GERectangle@@QAEXXZ
+    ??0GETransformation@@QAE@XZ
+    ?Apply@GETransformation@@QBEXABV1@AAV1@@Z
