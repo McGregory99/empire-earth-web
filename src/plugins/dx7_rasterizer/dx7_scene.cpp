@@ -103,6 +103,25 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
         return EEWEB_NOT_SUPPORTED; // checked before anything is created, so there is nothing to give back
     }
 
+    if (state->activated) {
+        // Activating a screen that is active: what the previous activation created is given back first (the original overwrites the
+        // record and the state and leaks it all).
+        ReleaseDeviceObjects(record, screen);
+        if (state->primarySurface) {
+            Dereference(reinterpret_cast<GESurface*>(state->primarySurface));
+        }
+        if (state->secondarySurface) {
+            Dereference(reinterpret_cast<GESurface*>(state->secondarySurface));
+        }
+        if (state->renderTarget) {
+            Dereference(reinterpret_cast<GESurface*>(state->renderTarget));
+        }
+        state->primarySurface = 0;
+        state->secondarySurface = 0;
+        state->renderTarget = 0;
+        state->activated = 0;
+    }
+
     GESurface* primary = 0;
     GESurface* target = 0; // the surface the scene is rendered to; becomes the secondary surface of the screen's state
     GESurface* depth = 0;

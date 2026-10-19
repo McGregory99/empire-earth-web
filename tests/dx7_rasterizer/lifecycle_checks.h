@@ -568,6 +568,13 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
         CHECK(g_life.dd->surface_count == 0, "%s: lifecycle: ActivateScreen without a window creates no surface (got %d)", e->label, g_life.dd->surface_count);
         life_end();
     }
+    if (e->ours && life_begin(e, api, obj, 1, 0, "activated twice")) {
+        g_life.check_leaks = 1;
+        long first = life_activate(0, 1, 1, 10);
+        long second = life_activate(0, 1, 1, 10);
+        CHECK(first == 0 && second == 0, "%s: lifecycle: a screen can be activated again (got %ld, %ld)", e->label, first, second);
+        life_end();
+    }
 }
 
 /* ---- the scene calls, on the two windowed screens activated above ------------------------------------------------- */

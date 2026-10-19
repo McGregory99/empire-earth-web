@@ -131,6 +131,7 @@ private:
     // Called for each DirectDraw device ActivateRasterizer finds (see null_rasterizer.cpp).
     static int __attribute__((stdcall)) EnumerateDevice(GUID_ *, char *, char *, void *, void *);
     void ClearScreens();
+    void ReleaseDeviceObjects(DX7ScreenRecordLayout* record, unsigned long index); // texture, vertex buffer, lights, device, Direct3D
 
     // The object's two views of itself (ge_layouts.h): the engine's base class and the plugin's own fields.
     GERasterizerLayout *Base() { return reinterpret_cast<GERasterizerLayout *>(this); }

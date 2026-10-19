@@ -263,28 +263,33 @@ bool EEWebNullRasterizer::GetIsScreenValid(DX7Screen* screen)
 // What the original's Deactivate does for each screen record, in its order: unbind the texture, release the vertex buffer, take
 // the lights off the device and release it, release Direct3D, delete the screen (which releases its DirectDraw object and
 // unregisters it) and the record.  Whatever the activation did not create is skipped.
+void EEWebNullRasterizer::ReleaseDeviceObjects(DX7ScreenRecordLayout* record, unsigned long index)
+{
+    SetTexture(static_cast<GETexture*>(0), index);
+    if (record->vertexBuffer) {
+        IDirect3DVertexBuffer7* buffer = static_cast<IDirect3DVertexBuffer7*>(record->vertexBuffer);
+        buffer->vtbl->Release(buffer);
+        record->vertexBuffer = 0;
+    }
+    if (record->device) {
+        RemoveAllLights(index);
+        IDirect3DDevice7* device = static_cast<IDirect3DDevice7*>(record->device);
+        device->vtbl->Release(device);
+        record->device = 0;
+    }
+    if (record->direct3d) {
+        IDirect3D7* direct3d = static_cast<IDirect3D7*>(record->direct3d);
+        direct3d->vtbl->Release(direct3d);
+        record->direct3d = 0;
+    }
+}
+
 void EEWebNullRasterizer::ClearScreens()
 {
     StdVectorLayout& records = Own()->screenRecords;
     for (unsigned long i = 0; i < RecordCount(); ++i) {
         DX7ScreenRecordLayout* record = static_cast<DX7ScreenRecordLayout**>(records.first)[i];
-        SetTexture(static_cast<GETexture*>(0), i);
-        if (record->vertexBuffer) {
-            IDirect3DVertexBuffer7* buffer = static_cast<IDirect3DVertexBuffer7*>(record->vertexBuffer);
-            buffer->vtbl->Release(buffer);
-            record->vertexBuffer = 0;
-        }
-        if (record->device) {
-            RemoveAllLights(i);
-            IDirect3DDevice7* device = static_cast<IDirect3DDevice7*>(record->device);
-            device->vtbl->Release(device);
-            record->device = 0;
-        }
-        if (record->direct3d) {
-            IDirect3D7* direct3d = static_cast<IDirect3D7*>(record->direct3d);
-            direct3d->vtbl->Release(direct3d);
-            record->direct3d = 0;
-        }
+        ReleaseDeviceObjects(record, i);
         delete reinterpret_cast<DX7Screen*>(record->screen);
         ::operator delete(record);
     }

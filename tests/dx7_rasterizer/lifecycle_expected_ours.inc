@@ -12,3 +12,6 @@
 /* Our build only: the original crashes on a missing window.  (The native error is the one the previous scenario left.) */
 {"Deactivate after: no window",
  "dd.Release; | ret=0 ne=8876017c"},
+/* Our build only: the objects of the first activation were given back by the second one, so Deactivate releases only the second's. */
+{"Deactivate after: activated twice",
+ "v1.vb.Release;d1.dev.Release;d3d.Release;dd.Release;s4.Release;s6.Release;s5.Release; | ret=0 ne=8876017c"},
