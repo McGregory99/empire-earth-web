@@ -1,0 +1,6 @@
+{
+  "name": "ee-web-replay-viewer",
+  "private": true,
+  "type": "module",
+  "description": "Static WebGL2 replay viewer for recorded Empire Earth renderer runs. No dependencies, no bundler."
+}
