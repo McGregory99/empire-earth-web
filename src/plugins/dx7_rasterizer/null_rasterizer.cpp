@@ -1,5 +1,6 @@
 #include "null_rasterizer.h"
 
+#include "engine_imports.h"
 #include "rasterizer_abi.h"
 
 unsigned long ESRecordNativeError(unsigned long error); // ?ESRecordNativeError@@YAKK@Z
@@ -26,23 +27,42 @@ DX7RasterizerAbi* (*volatile g_factory)() = &MakeNullRasterizer;
 
 EEWebNullRasterizer::EEWebNullRasterizer()
 {
-    // The harness reads the counters at this offset, behind the vptr.
+    // The harness reads the counters at this offset, behind the original's DX7Rasterizer fields.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
+    static_assert(__builtin_offsetof(EEWebNullRasterizer, m_engineFields) == 4, "the engine's fields start behind the vptr");
     static_assert(__builtin_offsetof(EEWebNullRasterizer, m_counters) == EEWEB_COUNTERS_OFFSET,
-                  "the counters must sit right behind the vptr");
+                  "the counters must sit right behind the fields of DX7Rasterizer");
+    static_assert(EEWEB_COUNTERS_OFFSET == sizeof(DX7RasterizerLayout), "... which end at the size of DX7RasterizerLayout");
 #pragma clang diagnostic pop
     for (int k = 0; k < EEWEB_COUNTER_COUNT; ++k) {
         m_counters[k] = 0;
     }
-    m_screens = 0;
-    m_screenCount = 0;
-    m_screenCapacity = 0;
+    // The original builds the engine's base class with the rasterizer's name, then its own fields.  The engine's
+    // constructor sets the vptr of GERasterizer: put ours back.
+    void* const vptr = *reinterpret_cast<void* volatile*>(this);
+    UString name("EEWeb Null Rasterizer");
+    EEWebGERasterizerConstruct(this, name);
+    *reinterpret_cast<void* volatile*>(this) = vptr;
+    m_engineBaseAlive = 1;
+    DX7RasterizerLayout* own = Own();
+    own->screenRecords.allocator = 0;
+    own->screenRecords.first = 0;
+    own->screenRecords.last = 0;
+    own->screenRecords.end = 0;
+    own->debugColor = 0xff000040;
 }
 
 EEWebNullRasterizer::~EEWebNullRasterizer()
 {
-    ::operator delete(m_screens); // the screens themselves belong to Deactivate
+    ::operator delete(Own()->screenRecords.first); // the records and screens themselves belong to Deactivate
+    Own()->screenRecords.first = Own()->screenRecords.last = Own()->screenRecords.end = 0;
+    // The engine's destructor frees what its constructor made, once: the harness destroys the shared object through the
+    // vtable and the DLL's unload destroys it again.
+    if (m_engineBaseAlive) {
+        m_engineBaseAlive = 0;
+        EEWebGERasterizerDestruct(this);
+    }
     ++g_destroyed;
     ++m_counters[EEWEB_COUNTER_DESTROYED];
 }
@@ -68,7 +88,61 @@ long EEWebNullRasterizer::Activate()
 
 unsigned long EEWebNullRasterizer::GetScreenCount() const
 {
-    return m_screenCount;
+    return const_cast<EEWebNullRasterizer*>(this)->RecordCount();
+}
+
+// ---- the lists the original keeps: the plugin's screen records (0x68) and the engine's screen states (0x1c) ----
+
+unsigned long EEWebNullRasterizer::RecordCount()
+{
+    const StdVectorLayout& records = Own()->screenRecords;
+    return records.first ? static_cast<unsigned long>((static_cast<char*>(records.last) - static_cast<char*>(records.first)) / sizeof(void*)) : 0;
+}
+
+DX7ScreenRecordLayout* EEWebNullRasterizer::Record(unsigned long screen)
+{
+    return screen < RecordCount() ? static_cast<DX7ScreenRecordLayout**>(Own()->screenRecords.first)[screen] : 0;
+}
+
+GERScreenStateLayout* EEWebNullRasterizer::State(unsigned long screen)
+{
+    const StdVectorLayout& states = Base()->screens;
+    if (!states.first || screen >= static_cast<unsigned long>((static_cast<char*>(states.last) - static_cast<char*>(states.first)) / sizeof(void*))) {
+        return 0;
+    }
+    return static_cast<GERScreenStateLayout**>(states.first)[screen];
+}
+
+IDirect3DDevice7* EEWebNullRasterizer::Device(unsigned long screen)
+{
+    DX7ScreenRecordLayout* record = Record(screen);
+    return record ? static_cast<IDirect3DDevice7*>(record->device) : 0;
+}
+
+DX7Screen* EEWebNullRasterizer::ScreenOf(unsigned long screen)
+{
+    DX7ScreenRecordLayout* record = Record(screen);
+    return record ? reinterpret_cast<DX7Screen*>(record->screen) : 0;
+}
+
+// std::vector<DX7ScreenRecord*>::push_back on the MSVC 6 layout: grows the array by doubling.
+void EEWebNullRasterizer::AddRecord(DX7ScreenRecordLayout* record)
+{
+    StdVectorLayout& records = Own()->screenRecords;
+    const unsigned long count = RecordCount();
+    const unsigned long capacity = records.first ? static_cast<unsigned long>((static_cast<char*>(records.end) - static_cast<char*>(records.first)) / sizeof(void*)) : 0;
+    if (count == capacity) {
+        const unsigned long grown = capacity ? capacity * 2 : 4;
+        DX7ScreenRecordLayout** array = static_cast<DX7ScreenRecordLayout**>(::operator new(grown * sizeof(void*)));
+        for (unsigned long i = 0; i < count; ++i) {
+            array[i] = static_cast<DX7ScreenRecordLayout**>(records.first)[i];
+        }
+        ::operator delete(records.first);
+        records.first = array;
+        records.end = array + grown;
+    }
+    static_cast<DX7ScreenRecordLayout**>(records.first)[count] = record;
+    records.last = static_cast<DX7ScreenRecordLayout**>(records.first) + count + 1;
 }
 
 void EEWebNullRasterizer::NoteSelfCheck(bool passed)
@@ -138,19 +212,17 @@ long EEWebNullRasterizer::ActivateRasterizer()
 
 long EEWebNullRasterizer::AddValidScreen(GEScreen* screen)
 {
-    if (m_screenCount == m_screenCapacity) {
-        const unsigned long capacity = m_screenCapacity ? m_screenCapacity * 2 : 4;
-        DX7Screen** grown = static_cast<DX7Screen**>(::operator new(capacity * sizeof(DX7Screen*)));
-        for (unsigned long i = 0; i < m_screenCount; ++i) {
-            grown[i] = m_screens[i];
-        }
-        ::operator delete(m_screens);
-        m_screens = grown;
-        m_screenCapacity = capacity;
+    // The original allocates a 0x74-byte record per screen and keeps only the screen, a null device and the scene flag
+    // in it; the other fields are the screen's activation to set (and are zero here).
+    DX7ScreenRecordLayout* record = static_cast<DX7ScreenRecordLayout*>(::operator new(sizeof(DX7ScreenRecordLayout)));
+    if (record) {
+        __builtin_memset(record, 0, sizeof *record);
+        record->screen = reinterpret_cast<GEScreenLayout*>(screen);
+        record->sceneDrawn = 1;
+        AddRecord(record);
     }
-    m_screens[m_screenCount++] = static_cast<DX7Screen*>(screen);
-    m_counters[EEWEB_COUNTER_SCREENS] = static_cast<long>(m_screenCount);
-    return 0;
+    m_counters[EEWEB_COUNTER_SCREENS] = static_cast<long>(RecordCount());
+    return GERasterizer::AddValidScreen(screen); // the engine's record of the screen (GERScreenState)
 }
 
 // A screen is valid for the hardware T&L rasterizer when its Direct3D 7 offers a hardware-rasterizing device
@@ -188,12 +260,17 @@ bool EEWebNullRasterizer::GetIsScreenValid(DX7Screen* screen)
     return found;
 }
 
+// What the original's Deactivate does for each screen record that the screens' activation (a later task) has not given
+// a device: delete the screen (which releases its DirectDraw object and unregisters it) and the record.
 void EEWebNullRasterizer::ClearScreens()
 {
-    for (unsigned long i = 0; i < m_screenCount; ++i) {
-        delete m_screens[i]; // releases the screen's DirectDraw object and unregisters it
+    StdVectorLayout& records = Own()->screenRecords;
+    for (unsigned long i = 0; i < RecordCount(); ++i) {
+        DX7ScreenRecordLayout* record = static_cast<DX7ScreenRecordLayout**>(records.first)[i];
+        delete reinterpret_cast<DX7Screen*>(record->screen);
+        ::operator delete(record);
     }
-    m_screenCount = 0;
+    records.last = records.first;
     m_counters[EEWEB_COUNTER_SCREENS] = 0;
 }
 
@@ -201,7 +278,7 @@ long EEWebNullRasterizer::Deactivate()
 {
     ++m_counters[EEWEB_COUNTER_DEACTIVATIONS];
     ClearScreens();
-    return 0;
+    return GERasterizer::Deactivate(); // the engine forgets its screen states
 }
 
 // ---- video memory of a screen's DirectDraw device ------------------------------------------------------------
@@ -211,7 +288,11 @@ long EEWebNullRasterizer::GetVideoMemory(unsigned long screen, unsigned long& to
     DDSCAPS2_ caps = {DDSCAPS_VIDEOMEMORY, 0, 0, 0};
     unsigned long totalMemory = 0;
     unsigned long freeMemory = 0;
-    IDirectDraw7* directDraw = m_screens[screen]->GetDirectDraw();
+    DX7Screen* owner = ScreenOf(screen);
+    if (owner == 0) {
+        return 0xd;
+    }
+    IDirectDraw7* directDraw = owner->GetDirectDraw();
     const long error = directDraw->vtbl->GetAvailableVidMem(directDraw, &caps, &totalMemory, &freeMemory);
     if (error == 0 && totalMemory != 0) {
         total = totalMemory;

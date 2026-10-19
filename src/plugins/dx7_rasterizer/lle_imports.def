@@ -15,3 +15,33 @@ EXPORTS
     ?GEUnpackAlpha@@YAEKK@Z
     ?Dereference@UReferenceCounter@@QAEXXZ
     ??1GEWindow@@QAE@XZ
+    ??0GERasterizer@@IAE@ABVUString@@@Z
+    ??1GERasterizer@@MAE@XZ
+    ?AddValidScreen@GERasterizer@@UAEJPAVGEScreen@@@Z
+    ?Deactivate@GERasterizer@@UAEJXZ
+    ?SetAlphaTesting@GERasterizer@@UAEXKK@Z
+    ?SetAlphaTestingCompareState@GERasterizer@@UAEXKK@Z
+    ?SetAlphaTestingRefValue@GERasterizer@@UAEXMK@Z
+    ?SetAntiAliasing@GERasterizer@@UAEXKK@Z
+    ?SetBlending@GERasterizer@@UAEXKKK@Z
+    ?SetColorKeying@GERasterizer@@UAEXKK@Z
+    ?SetCulling@GERasterizer@@UAEXK@Z
+    ?SetDisplayNoTextureMode@GERasterizer@@UAEX_NK@Z
+    ?SetDisplayOverdrawMode@GERasterizer@@UAEX_NK@Z
+    ?SetDithering@GERasterizer@@UAEXKK@Z
+    ?SetDrawStyle@GERasterizer@@UAEXKK@Z
+    ?SetFog@GERasterizer@@UAEXKK@Z
+    ?SetFogColor@GERasterizer@@UAEXABVGEColor@@K@Z
+    ?SetFogRange@GERasterizer@@UAEXMMK@Z
+    ?SetFogType@GERasterizer@@UAEXKK@Z
+    ?SetFogValue@GERasterizer@@UAEXMK@Z
+    ?SetLighting@GERasterizer@@UAEXKK@Z
+    ?SetProjectionMode@GERasterizer@@UAEXKK@Z
+    ?SetShading@GERasterizer@@UAEXKK@Z
+    ?SetShadingColorSource@GERasterizer@@UAEXKK@Z
+    ?SetSpecular@GERasterizer@@UAEXKK@Z
+    ?SetViewport@GERasterizer@@UAEXABVGEViewport@@K@Z
+    ?SetWaitForVSync@GERasterizer@@UAEX_NK@Z
+    ?SetZBuffer@GERasterizer@@UAEXKK@Z
+    ?SetZCompare@GERasterizer@@UAEXKK@Z
+    ?RoundToNearest@GERectangle@@QAEXXZ

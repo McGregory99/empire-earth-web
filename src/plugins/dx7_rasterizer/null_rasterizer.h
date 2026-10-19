@@ -9,13 +9,18 @@
 // one.  The drawing operations are still null: operations that return a status say "not supported", the ones
 // that return a pointer return null.
 //
-// This class has no engine fields behind its vptr: the layouts GERasterizer and DX7Rasterizer give the
-// real object are task P2.5.
+// Behind its vptr the object has the layout of the original's DX7Rasterizer (DX7RasterizerLayout, task P2.5):
+// the engine's GERasterizer fields, built by the engine's own constructor, and the plugin's list of screen
+// records with the Direct3D device each screen renders with.  The state setters (task P2.6.4, dx7_state.cpp)
+// call the engine's own GERasterizer::SetX like the original does, so the engine's per-screen state, which
+// it reads through its non-virtual accessors, is what the plugin keeps.
 #ifndef EEWEB_NULL_RASTERIZER_H
 #define EEWEB_NULL_RASTERIZER_H
 
+#include "ddraw7_min.h"
 #include "dx7_screen.h"
 #include "ge_interfaces.h"
+#include "ge_layouts.h"
 #include "layout_canaries.h"
 #include "rasterizer_abi.h"
 
@@ -33,7 +38,7 @@ public:
     // sets are declared in reverse slot order, which is how MSVC lays them out.
     long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 0
     long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 1
-    long AddLight(GELight &light, unsigned long, unsigned long &) override { return Verdict(EEWebCheckLight(&light), EEWEB_NOT_SUPPORTED); }  // 2
+    long AddLight(GELight &light, unsigned long, unsigned long &) override;  // 2
     long AddValidScreen(GEScreen *) override;  // 3
     long BeginScene(GESurface *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 4
     bool CanDoCurrentState(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); return false; }  // 5
@@ -62,44 +67,44 @@ public:
     long EndScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 28
     long GetAvailableVideoMemory(unsigned long, unsigned long &) override;  // 29
     long GetTotalVideoMemory(unsigned long, unsigned long &) override;  // 30
-    unsigned long GetCaps(unsigned long, unsigned long) override { return 0; }  // 31
-    bool GetCanModulateTextureAlpha(unsigned long) override { return false; }  // 32
-    bool GetDirtyRectangleSupport(unsigned long) override { return false; }  // 33
+    unsigned long GetCaps(unsigned long, unsigned long) override;  // 31
+    bool GetCanModulateTextureAlpha(unsigned long) override;  // 32
+    bool GetDirtyRectangleSupport(unsigned long) override;  // 33
     void Light(GETerrainMesh &mesh, unsigned long) override { Note(EEWebCheckTerrainMesh(&mesh)); }  // 34
-    long RemoveAllLights(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 35
-    long RemoveLight(unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 36
-    void SetAlphaTesting(unsigned long, unsigned long) override {}  // 37
-    void SetAlphaTestingCompareState(unsigned long, unsigned long) override {}  // 38
-    void SetAlphaTestingRefValue(float, unsigned long) override {}  // 39
-    void SetAmbientColor(GEColor const &, unsigned long) override {}  // 40
-    void SetAmbientIntensity(float, unsigned long) override {}  // 41
-    void SetAntiAliasing(unsigned long, unsigned long) override {}  // 42
-    void SetBlending(unsigned long, unsigned long, unsigned long) override {}  // 43
-    void SetColorKeying(unsigned long, unsigned long) override {}  // 44
-    void SetCulling(unsigned long) override {}  // 45
-    void SetDebugColor(GEColor const &) override {}  // 46
-    void SetDisplayNoTextureMode(bool, unsigned long) override {}  // 47
-    void SetDisplayOverdrawMode(bool, unsigned long) override {}  // 48
-    void SetDithering(unsigned long, unsigned long) override {}  // 49
-    void SetDrawStyle(unsigned long, unsigned long) override {}  // 50
-    void SetFog(unsigned long, unsigned long) override {}  // 51
-    void SetFogColor(GEColor const &, unsigned long) override {}  // 52
-    void SetFogRange(float, float, unsigned long) override {}  // 53
-    void SetFogType(unsigned long, unsigned long) override {}  // 54
-    void SetFogValue(float, unsigned long) override {}  // 55
-    void SetLighting(unsigned long, unsigned long) override {}  // 56
-    void SetProjectionMode(unsigned long, unsigned long) override {}  // 57
-    void SetShading(unsigned long, unsigned long) override {}  // 58
-    void SetShadingColorSource(unsigned long, unsigned long) override {}  // 59
-    void SetSpecular(unsigned long, unsigned long) override {}  // 60
+    long RemoveAllLights(unsigned long) override;  // 35
+    long RemoveLight(unsigned long, unsigned long) override;  // 36
+    void SetAlphaTesting(unsigned long, unsigned long) override;  // 37
+    void SetAlphaTestingCompareState(unsigned long, unsigned long) override;  // 38
+    void SetAlphaTestingRefValue(float, unsigned long) override;  // 39
+    void SetAmbientColor(GEColor const &, unsigned long) override;  // 40
+    void SetAmbientIntensity(float, unsigned long) override;  // 41
+    void SetAntiAliasing(unsigned long, unsigned long) override;  // 42
+    void SetBlending(unsigned long, unsigned long, unsigned long) override;  // 43
+    void SetColorKeying(unsigned long, unsigned long) override;  // 44
+    void SetCulling(unsigned long) override;  // 45
+    void SetDebugColor(GEColor const &) override;  // 46
+    void SetDisplayNoTextureMode(bool, unsigned long) override;  // 47
+    void SetDisplayOverdrawMode(bool, unsigned long) override;  // 48
+    void SetDithering(unsigned long, unsigned long) override;  // 49
+    void SetDrawStyle(unsigned long, unsigned long) override;  // 50
+    void SetFog(unsigned long, unsigned long) override;  // 51
+    void SetFogColor(GEColor const &, unsigned long) override;  // 52
+    void SetFogRange(float, float, unsigned long) override;  // 53
+    void SetFogType(unsigned long, unsigned long) override;  // 54
+    void SetFogValue(float, unsigned long) override;  // 55
+    void SetLighting(unsigned long, unsigned long) override;  // 56
+    void SetProjectionMode(unsigned long, unsigned long) override;  // 57
+    void SetShading(unsigned long, unsigned long) override;  // 58
+    void SetShadingColorSource(unsigned long, unsigned long) override;  // 59
+    void SetSpecular(unsigned long, unsigned long) override;  // 60
     void SetTexture(GETexture *texture, unsigned long) override { if (texture) Note(EEWebCheckTexture(texture)); }  // 61
-    void SetViewport(GEViewport const &, unsigned long) override {}  // 62
-    void SetWaitForVSync(bool, unsigned long) override {}  // 63
-    void SetZBuffer(unsigned long, unsigned long) override {}  // 64
-    void SetZCompare(unsigned long, unsigned long) override {}  // 65
+    void SetViewport(GEViewport const &, unsigned long) override;  // 62
+    void SetWaitForVSync(bool, unsigned long) override;  // 63
+    void SetZBuffer(unsigned long, unsigned long) override;  // 64
+    void SetZCompare(unsigned long, unsigned long) override;  // 65
     long ShowScene(unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 66
     void TransformToCamera(GETerrainMesh &mesh, GEViewport &viewport, float, bool, bool) override { if (Note(EEWebCheckTerrainMesh(&mesh)) == EEWEB_LAYOUT_OK) Note(EEWebCheckViewport(&viewport)); }  // 67
-    long UpdateLight(unsigned long, GELight &light, unsigned long) override { return Verdict(EEWebCheckLight(&light), EEWEB_NOT_SUPPORTED); }  // 68
+    long UpdateLight(unsigned long, GELight &, unsigned long) override;  // 68
 protected:
     long ActivateRasterizer() override;  // 70
     long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override { return EEWEB_NOT_SUPPORTED; }  // 71
@@ -126,14 +131,23 @@ private:
     static int __attribute__((stdcall)) EnumerateDevice(GUID_ *, char *, char *, void *, void *);
     void ClearScreens();
 
-    // Right behind the vptr: the harness reads them from there (EEWEB_COUNTERS_OFFSET).
-    volatile long m_counters[EEWEB_COUNTER_COUNT];
+    // The object's two views of itself (ge_layouts.h): the engine's base class and the plugin's own fields.
+    GERasterizerLayout *Base() { return reinterpret_cast<GERasterizerLayout *>(this); }
+    DX7RasterizerLayout *Own() { return reinterpret_cast<DX7RasterizerLayout *>(this); }
+    unsigned long RecordCount();
+    DX7ScreenRecordLayout *Record(unsigned long screen);       // null when there is no such screen
+    GERScreenStateLayout *State(unsigned long screen);         // the engine's record of the screen, null when there is none
+    IDirect3DDevice7 *Device(unsigned long screen);            // null until the screen has a device
+    DX7Screen *ScreenOf(unsigned long screen);
+    void AddRecord(DX7ScreenRecordLayout *record);
 
-    // The valid screens, in the order they were added: this class's own list, standing in for the
-    // engine-side vector of the base class (GERasterizerLayout.screens) until the object has the base layout.
-    DX7Screen **m_screens;
-    unsigned long m_screenCount;
-    unsigned long m_screenCapacity;
+    // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose
+    // bytes are the engine's and the layouts' to define; nothing of this class touches them directly.
+    unsigned char m_engineFields[EEWEB_COUNTERS_OFFSET - 4];
+
+    // Right behind them: the harness reads the counters from there (EEWEB_COUNTERS_OFFSET).
+    volatile long m_counters[EEWEB_COUNTER_COUNT];
+    volatile long m_engineBaseAlive; // the engine's constructor ran and its destructor has not
 };
 
 // Exercises the class the way the engine will: allocates a temporary through an opaque factory (so the

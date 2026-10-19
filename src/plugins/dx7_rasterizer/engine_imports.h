@@ -10,9 +10,15 @@
 //   ??1GEWindow@@QAE@XZ                           the destructor of the engine's window object
 //   ?sInstance@GEScreen@@0PAUHINSTANCE__@@A       the HINSTANCE of the executable, a private static data member of GEScreen:
 //                                                 looked up at run time (dx7_screen.cpp), a class cannot name it
+//   ??0GERasterizer@@IAE@ABVUString@@@Z           the engine's rasterizer base class: its protected constructor and destructor
+//   ??1GERasterizer@@MAE@XZ                       (run on the first 0x68 bytes of the plugin's object), and the virtual methods
+//   ?SetX@GERasterizer@@UAE...                    the plugin hands on to (GERasterizer::SetAlphaTesting(...) etc., which the
+//                                                 abstract class of ge_interfaces.h declares pure, so a qualified call links to them)
+//   ?RoundToNearest@GERectangle@@QAEXXZ           rounds the four floats of a rectangle in place
 #ifndef EEWEB_ENGINE_IMPORTS_H
 #define EEWEB_ENGINE_IMPORTS_H
 
+#include "engine_ustring.h"
 #include "ge_interfaces.h"
 
 unsigned long ESRecordNativeError(unsigned long error);
@@ -39,5 +45,13 @@ public:
 private:
     char m_engineOwned[0x1c];
 };
+
+// Bare declarations of the engine entry points a class cannot name (constructors of an incomplete class, a method of a
+// class the plugin does not define); the assembler label is the engine's exported decorated name.
+extern "C" {
+void __attribute__((thiscall)) EEWebGERasterizerConstruct(void* self, const UString& name) __asm__("??0GERasterizer@@IAE@ABVUString@@@Z");
+void __attribute__((thiscall)) EEWebGERasterizerDestruct(void* self) __asm__("??1GERasterizer@@MAE@XZ");
+void __attribute__((thiscall)) EEWebRoundRectangle(float* rectangle) __asm__("?RoundToNearest@GERectangle@@QAEXXZ");
+}
 
 #endif

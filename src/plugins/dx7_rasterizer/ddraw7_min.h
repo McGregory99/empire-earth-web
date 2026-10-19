@@ -162,7 +162,7 @@ struct IDirectDrawSurface7 {
     const IDirectDrawSurface7Vtbl* vtbl;
 };
 
-// The two methods of IDirect3DDevice7 the 32-bit probe calls.
+// IDirect3DDevice7: the methods the plugin calls are typed (the 32-bit probe, the state setters), every other slot only keeps the order.
 typedef long(__attribute__((stdcall)) * EnumTextureFormatsCallback)(DDPIXELFORMAT_*, void*);
 struct IDirect3DDevice7Vtbl {
     void* queryInterface;                                                                                        // 0
@@ -170,7 +170,25 @@ struct IDirect3DDevice7Vtbl {
     DWORD_(__attribute__((stdcall)) * Release)(IDirect3DDevice7*);                                               // 2
     HRESULT_(__attribute__((stdcall)) * GetCaps)(IDirect3DDevice7*, void* deviceDesc7);                          // 3
     HRESULT_(__attribute__((stdcall)) * EnumTextureFormats)(IDirect3DDevice7*, EnumTextureFormatsCallback, void*);  // 4
+    void* slots5to10[6];                                                                                         // 5 BeginScene .. 10 Clear
+    HRESULT_(__attribute__((stdcall)) * SetTransform)(IDirect3DDevice7*, DWORD_ state, const void* matrix);      // 11
+    void* getTransform;                                                                                          // 12
+    HRESULT_(__attribute__((stdcall)) * SetViewport)(IDirect3DDevice7*, const void* viewport7);                  // 13
+    void* slots14to15[2];                                                                                        // 14 MultiplyTransform, 15 GetViewport
+    HRESULT_(__attribute__((stdcall)) * SetMaterial)(IDirect3DDevice7*, const void* material7);                  // 16
+    void* getMaterial;                                                                                           // 17
+    HRESULT_(__attribute__((stdcall)) * SetLight)(IDirect3DDevice7*, DWORD_ index, const void* light7);          // 18
+    void* getLight;                                                                                              // 19
+    HRESULT_(__attribute__((stdcall)) * SetRenderState)(IDirect3DDevice7*, DWORD_ state, DWORD_ value);          // 20
+    void* slots21to43[23];                                                                                       // 21 GetRenderState .. 43 Load
+    HRESULT_(__attribute__((stdcall)) * LightEnable)(IDirect3DDevice7*, DWORD_ index, DWORD_ enable);            // 44
 };
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetTransform) == 0x2c, "SetTransform is slot 11");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetViewport) == 0x34, "SetViewport is slot 13");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetMaterial) == 0x40, "SetMaterial is slot 16");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetLight) == 0x48, "SetLight is slot 18");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetRenderState) == 0x50, "SetRenderState is slot 20");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, LightEnable) == 0xb0, "LightEnable is slot 44");
 struct IDirect3DDevice7 {
     const IDirect3DDevice7Vtbl* vtbl;
 };

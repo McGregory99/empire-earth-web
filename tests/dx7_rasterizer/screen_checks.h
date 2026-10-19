@@ -48,6 +48,10 @@ struct FakeDD {
     int texture_formats_delivered;       /* how many of them the callback saw (it stops the enumeration when it has enough) */
     const FakeMode *modes;               /* the modes EnumDisplayModes offers; null: kFakeModes (P2.6.3) */
     unsigned mode_count;
+    /* the device's state methods (state_checks.h, P2.6.4) */
+    long rs_fail;                        /* the next n SetRenderState calls fail (and are still logged) */
+    long set_light_result;               /* what SetLight returns */
+    long enable_result;                  /* what LightEnable returns */
 };
 
 typedef struct FakeD3D {
@@ -58,6 +62,7 @@ typedef struct FakeD3D {
 typedef struct FakeDevice {
     const void *const *vtbl;
     FakeDD *dd;
+    int id;                              /* 0 for the first screen's device; the log of the others carries "d<id>." */
 } FakeDevice;
 
 static void fake_log(FakeDD *dd, const char *fmt, ...)
@@ -462,11 +467,85 @@ static long FAKE_DD_STDCALL fake_device_enum_texture_formats(FakeDevice *device,
     return 0;
 }
 
+
+/* The state methods of IDirect3DDevice7 (P2.6.4): each one logs its arguments as hex words; the logs of the
+ * devices of later screens carry the prefix "d<id>.". */
+static void fake_dev_log(FakeDevice *device, const char *fmt, ...)
+{
+    char text[1024];
+    char prefix[16] = "";
+    va_list ap;
+    if (device->id) {
+        snprintf(prefix, sizeof prefix, "d%d.", device->id);
+    }
+    va_start(ap, fmt);
+    vsnprintf(text, sizeof text, fmt, ap);
+    va_end(ap);
+    fake_log(device->dd, "%s%s", prefix, text);
+}
+
+static void fake_dev_words(char *out, size_t size, const DWORD *words, unsigned count)
+{
+    out[0] = 0;
+    for (unsigned i = 0; i < count; i++) {
+        size_t used = strlen(out);
+        snprintf(out + used, size - used, i ? ",%lx" : "%lx", (unsigned long)words[i]);
+    }
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_render_state(FakeDevice *device, DWORD state, DWORD value)
+{
+    fake_dev_log(device, "RS(%lx,%lx)", (unsigned long)state, (unsigned long)value);
+    if (device->dd->rs_fail > 0) {
+        device->dd->rs_fail--;
+        return (long)0x80004005;
+    }
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_transform(FakeDevice *device, DWORD state, const DWORD *matrix)
+{
+    char words[512];
+    fake_dev_words(words, sizeof words, matrix, 16);
+    fake_dev_log(device, "TR(%lx,%s)", (unsigned long)state, words);
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_viewport(FakeDevice *device, const DWORD *viewport)
+{
+    char words[128];
+    fake_dev_words(words, sizeof words, viewport, 6);
+    fake_dev_log(device, "VP(%s)", words);
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_material(FakeDevice *device, const DWORD *material)
+{
+    char words[256];
+    fake_dev_words(words, sizeof words, material, 17);
+    fake_dev_log(device, "MAT(%s)", words);
+    return 0;
+}
+
+static long FAKE_DD_STDCALL fake_dev_set_light(FakeDevice *device, DWORD index, const DWORD *light)
+{
+    char words[512];
+    fake_dev_words(words, sizeof words, light, 26);
+    fake_dev_log(device, "LIGHT(%lx,%s)", (unsigned long)index, words);
+    return device->dd->set_light_result;
+}
+
+static long FAKE_DD_STDCALL fake_dev_light_enable(FakeDevice *device, DWORD index, DWORD enable)
+{
+    fake_dev_log(device, "ENABLE(%lx,%lx)", (unsigned long)index, (unsigned long)enable);
+    return device->dd->enable_result;
+}
+
 static void fake_dd_init(FakeDD *dd)
 {
     static const void *vtbl[30];
     static const void *d3d_vtbl[5];
-    static const void *device_vtbl[5];
+    static const void *device_vtbl[48];
     static const void *surface_vtbl[49];
     for (int i = 0; i < 30; i++) {
         vtbl[i] = (const void *)fake_unexpected;
@@ -488,12 +567,18 @@ static void fake_dd_init(FakeDD *dd)
     d3d_vtbl[2] = (const void *)fake_d3d_release;
     d3d_vtbl[3] = (const void *)fake_enum_devices;
     d3d_vtbl[4] = (const void *)fake_d3d_create_device;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 48; i++) {
         device_vtbl[i] = (const void *)fake_unexpected;
     }
     device_vtbl[2] = (const void *)fake_device_release;
     device_vtbl[3] = (const void *)fake_device_get_caps;
     device_vtbl[4] = (const void *)fake_device_enum_texture_formats;
+    device_vtbl[11] = (const void *)fake_dev_set_transform;
+    device_vtbl[13] = (const void *)fake_dev_set_viewport;
+    device_vtbl[16] = (const void *)fake_dev_set_material;
+    device_vtbl[18] = (const void *)fake_dev_set_light;
+    device_vtbl[20] = (const void *)fake_dev_set_render_state;
+    device_vtbl[44] = (const void *)fake_dev_light_enable;
     for (int i = 0; i < 49; i++) {
         surface_vtbl[i] = (const void *)fake_unexpected;
     }
@@ -861,6 +946,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 
 #include "surface_checks.h" /* the surface object, CreateSurface, CreateAWindow and the 32-bit probe (P2.6.2) */
 #include "format_checks.h"  /* the pixel format table in every consumer, texture format enumeration (P2.6.3) */
+#include "state_checks.h"   /* the render state, light and viewport setters on a fake Direct3D device (P2.6.4) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -884,6 +970,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_surfaces(e, h, &api);
         check_pixel_formats(e, &api);
         check_real_screens(e, get_rasterizer(), &api);
+        check_state_setters(e, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

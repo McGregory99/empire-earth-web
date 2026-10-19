@@ -8,14 +8,14 @@ names it but the plugin does not touch it; `guess` = offset certain, type or mea
 
 ## Summary
 
-46 classes and structs, 389 fields.
+46 classes and structs, 397 fields.
 
 | confidence | fields |
 |---|---|
 | confirmed | 191 |
-| plugin-only | 27 |
+| plugin-only | 36 |
 | lle-only | 142 |
-| guess | 29 |
+| guess | 28 |
 
 ### UString (0x10 bytes, size confirmed)
 
@@ -704,10 +704,11 @@ Size evidence: at least 0x181692 (the last byte of waterPointVisibility); rounde
 
 ### DX7ScreenRecord (0x74 bytes, size confirmed)
 
-Size evidence: plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen.
+Size evidence: plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen (which leaves everything but 0x18-0x28 and 0x6d unset).
 
 | offset | width | type | field | confidence | evidence |
 |---|---|---|---|---|---|
+| 0x0 | 24 | `uint32_t[6]` | `viewport` | plugin-only | a D3DVIEWPORT7 (x, y, width, height, minZ, maxZ); P SetViewport fills it and passes the record itself to IDirect3DDevice7::SetViewport, Set2DMode/Set3DMode read the width and height |
 | 0x18 | 4 | `void *` | `direct3d` | plugin-only | P Deactivate releases it |
 | 0x1c | 4 | `void *` | `device` | plugin-only | an IDirect3DDevice7; P everywhere through DX7Rasterizer.screenRecords |
 | 0x20 | 4 | `struct GEScreenLayout *` | `screen` | plugin-only | P AddValidScreen stores the GEScreen; Deactivate calls its virtual slot 19 |
@@ -715,8 +716,15 @@ Size evidence: plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen
 | 0x28 | 4 | `uint32_t` | `vertexCursor` | plugin-only | P LockVB/UnlockVB advance it by the vertices written |
 | 0x2c | 4 | `uint32_t` | `textureStateDirty` | plugin-only | P SetTexture sets it |
 | 0x30 | 48 | `uint32_t[12]` | `stageCache` | plugin-only | P SetTexture mirrors the GETStage words it last sent to the device |
-| 0x6c | 1 | `uint8_t` | `unknown6c` | guess | P DX7Rasterizer constructor |
-| 0x6d | 1 | `uint8_t` | `sceneDrawn` | guess | P AddValidScreen sets it, Draw(GETerrainMesh), DrawWater set it after drawing |
+| 0x60 | 4 | `uint32_t` | `blendSourceCache` | plugin-only | P SetBlending: the D3D source blend factor last sent is remembered by the engine's value (0..12), compared before every send |
+| 0x64 | 4 | `uint32_t` | `blendDestCache` | plugin-only | P SetBlending: the same for the destination factor |
+| 0x68 | 4 | `uint32_t` | `zEnableCache` | plugin-only | P SetZBuffer: the D3DRENDERSTATE_ZENABLE value last sent (0 or 1) |
+| 0x6c | 1 | `uint8_t` | `unknown6c` | guess | P Set2DMode/Set3DMode test it, the DX7Rasterizer constructor path clears it |
+| 0x6d | 1 | `uint8_t` | `sceneDrawn` | guess | P AddValidScreen and SetViewport set it, Draw(GETerrainMesh), DrawWater set it after drawing; Set2DMode/Set3DMode clear it |
+| 0x6e | 1 | `uint8_t` | `zWriteCache` | plugin-only | P SetZBuffer: the D3DRENDERSTATE_ZWRITEENABLE value last sent |
+| 0x6f | 1 | `uint8_t` | `blendEnabledCache` | plugin-only | P SetBlending: the D3DRENDERSTATE_ALPHABLENDENABLE value last sent |
+| 0x70 | 1 | `uint8_t` | `canModulateTextureAlpha` | plugin-only | P GetCanModulateTextureAlpha returns it |
+| 0x71 | 1 | `uint8_t` | `dirtyRectangleSupport` | plugin-only | P GetDirtyRectangleSupport returns it |
 
 ### DX7Rasterizer (0x7c bytes, size guess)
 
@@ -726,7 +734,7 @@ Size evidence: plugin-owned: base GERasterizer (0x68) plus a vector and a dword;
 |---|---|---|---|---|---|
 | 0x0 | 104 | `struct GERasterizerLayout` | `base` | confirmed | the engine base class |
 | 0x68 | 16 | `struct StdVectorLayout` | `screenRecords` | plugin-only | P AddValidScreen, Deactivate, DX7Rasterizer copy constructor; elements are DX7ScreenRecord pointers |
-| 0x78 | 4 | `uint32_t` | `unknown78` | guess | P DX7Rasterizer copy constructor |
+| 0x78 | 4 | `uint32_t` | `debugColor` | plugin-only | P SetDebugColor packs a colour into it (0xAARRGGBB, alpha 255); the constructor starts it at 0xff000040 |
 
 ## Not established
 

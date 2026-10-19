@@ -26,10 +26,10 @@
 
 /*
  * Counters: bookkeeping that makes the DLL's internal exercise observable.  They sit right behind the
- * vptr of the object (a real vtable has no room for a test hook): counter k is the long at byte offset
- * EEWEB_COUNTERS_OFFSET + 4 * k.
+ * fields the original's DX7Rasterizer has (the engine's 0x68 bytes and the plugin's 0x14, ge_layouts.h
+ * DX7RasterizerLayout): counter k is the long at byte offset EEWEB_COUNTERS_OFFSET + 4 * k.
  */
-#define EEWEB_COUNTERS_OFFSET 4
+#define EEWEB_COUNTERS_OFFSET 0x7c
 enum {
     EEWEB_COUNTER_ACTIVATIONS = 0,    /* ActivateRasterizer() calls on this object */
     EEWEB_COUNTER_DEACTIVATIONS = 1,  /* Deactivate() calls on this object */
@@ -38,7 +38,7 @@ enum {
     EEWEB_COUNTER_DESTROYED = 4,      /* destructor runs of this object */
     EEWEB_COUNTER_LAYOUT_VIOLATIONS = 5,  /* engine objects refused by a layout canary (layout_canaries.h) */
     EEWEB_COUNTER_LAST_VIOLATION = 6,     /* the EEWEB_LAYOUT_* code of the latest refusal */
-    EEWEB_COUNTER_SCREENS = 7,            /* screens the rasterizer holds (GetScreenCount): the engine's base-class vector is not ours yet */
+    EEWEB_COUNTER_SCREENS = 7,            /* screens the rasterizer holds (the length of its screen record list) */
     EEWEB_COUNTER_COUNT = 8
 };
 

@@ -1033,9 +1033,9 @@ EEL_AT(GETerrainMeshLayout, pointVisibility, 0x17c6e0);
 EEL_AT(GETerrainMeshLayout, waterPointVisibility, 0x17eeb9);
 EEL_SIZE(GETerrainMeshLayout, 0x181694);
 
-/* @class DX7ScreenRecord size=0x74 size-confidence=confirmed | plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen */
+/* @class DX7ScreenRecord size=0x74 size-confidence=confirmed | plugin-owned: operator new(0x74) in DX7Rasterizer::AddValidScreen (which leaves everything but 0x18-0x28 and 0x6d unset) */
 typedef struct DX7ScreenRecordLayout {
-    uint8_t pad_0x0[0x18];
+    uint32_t viewport[6]; /* @0x0 plugin-only | a D3DVIEWPORT7 (x, y, width, height, minZ, maxZ); P SetViewport fills it and passes the record itself to IDirect3DDevice7::SetViewport, Set2DMode/Set3DMode read the width and height */
     void * direct3d; /* @0x18 plugin-only | P Deactivate releases it */
     void * device; /* @0x1c plugin-only | an IDirect3DDevice7; P everywhere through DX7Rasterizer.screenRecords */
     struct GEScreenLayout *screen; /* @0x20 plugin-only | P AddValidScreen stores the GEScreen; Deactivate calls its virtual slot 19 */
@@ -1043,11 +1043,18 @@ typedef struct DX7ScreenRecordLayout {
     uint32_t vertexCursor; /* @0x28 plugin-only | P LockVB/UnlockVB advance it by the vertices written */
     uint32_t textureStateDirty; /* @0x2c plugin-only | P SetTexture sets it */
     uint32_t stageCache[12]; /* @0x30 plugin-only | P SetTexture mirrors the GETStage words it last sent to the device */
-    uint8_t pad_0x60[0xc];
-    uint8_t unknown6c; /* @0x6c guess | P DX7Rasterizer constructor */
-    uint8_t sceneDrawn; /* @0x6d guess | P AddValidScreen sets it, Draw(GETerrainMesh), DrawWater set it after drawing */
-    uint8_t pad_0x6e[0x6];
+    uint32_t blendSourceCache; /* @0x60 plugin-only | P SetBlending: the D3D source blend factor last sent is remembered by the engine's value (0..12), compared before every send */
+    uint32_t blendDestCache; /* @0x64 plugin-only | P SetBlending: the same for the destination factor */
+    uint32_t zEnableCache; /* @0x68 plugin-only | P SetZBuffer: the D3DRENDERSTATE_ZENABLE value last sent (0 or 1) */
+    uint8_t unknown6c; /* @0x6c guess | P Set2DMode/Set3DMode test it, the DX7Rasterizer constructor path clears it */
+    uint8_t sceneDrawn; /* @0x6d guess | P AddValidScreen and SetViewport set it, Draw(GETerrainMesh), DrawWater set it after drawing; Set2DMode/Set3DMode clear it */
+    uint8_t zWriteCache; /* @0x6e plugin-only | P SetZBuffer: the D3DRENDERSTATE_ZWRITEENABLE value last sent */
+    uint8_t blendEnabledCache; /* @0x6f plugin-only | P SetBlending: the D3DRENDERSTATE_ALPHABLENDENABLE value last sent */
+    uint8_t canModulateTextureAlpha; /* @0x70 plugin-only | P GetCanModulateTextureAlpha returns it */
+    uint8_t dirtyRectangleSupport; /* @0x71 plugin-only | P GetDirtyRectangleSupport returns it */
+    uint8_t pad_0x72[0x2];
 } DX7ScreenRecordLayout;
+EEL_AT(DX7ScreenRecordLayout, viewport, 0x0);
 EEL_AT(DX7ScreenRecordLayout, direct3d, 0x18);
 EEL_AT(DX7ScreenRecordLayout, device, 0x1c);
 EEL_AT(DX7ScreenRecordLayout, screen, 0x20);
@@ -1055,18 +1062,25 @@ EEL_AT(DX7ScreenRecordLayout, vertexBuffer, 0x24);
 EEL_AT(DX7ScreenRecordLayout, vertexCursor, 0x28);
 EEL_AT(DX7ScreenRecordLayout, textureStateDirty, 0x2c);
 EEL_AT(DX7ScreenRecordLayout, stageCache, 0x30);
+EEL_AT(DX7ScreenRecordLayout, blendSourceCache, 0x60);
+EEL_AT(DX7ScreenRecordLayout, blendDestCache, 0x64);
+EEL_AT(DX7ScreenRecordLayout, zEnableCache, 0x68);
 EEL_AT(DX7ScreenRecordLayout, unknown6c, 0x6c);
 EEL_AT(DX7ScreenRecordLayout, sceneDrawn, 0x6d);
+EEL_AT(DX7ScreenRecordLayout, zWriteCache, 0x6e);
+EEL_AT(DX7ScreenRecordLayout, blendEnabledCache, 0x6f);
+EEL_AT(DX7ScreenRecordLayout, canModulateTextureAlpha, 0x70);
+EEL_AT(DX7ScreenRecordLayout, dirtyRectangleSupport, 0x71);
 EEL_SIZE(DX7ScreenRecordLayout, 0x74);
 
 /* @class DX7Rasterizer size=0x7c size-confidence=guess | plugin-owned: base GERasterizer (0x68) plus a vector and a dword; the copy constructor ends at 0x78 */
 typedef struct DX7RasterizerLayout {
     struct GERasterizerLayout base; /* @0x0 confirmed | the engine base class */
     struct StdVectorLayout screenRecords; /* @0x68 plugin-only | P AddValidScreen, Deactivate, DX7Rasterizer copy constructor; elements are DX7ScreenRecord pointers */
-    uint32_t unknown78; /* @0x78 guess | P DX7Rasterizer copy constructor */
+    uint32_t debugColor; /* @0x78 plugin-only | P SetDebugColor packs a colour into it (0xAARRGGBB, alpha 255); the constructor starts it at 0xff000040 */
 } DX7RasterizerLayout;
 EEL_AT(DX7RasterizerLayout, base, 0x0);
 EEL_AT(DX7RasterizerLayout, screenRecords, 0x68);
-EEL_AT(DX7RasterizerLayout, unknown78, 0x78);
+EEL_AT(DX7RasterizerLayout, debugColor, 0x78);
 EEL_SIZE(DX7RasterizerLayout, 0x7c);
 #endif
