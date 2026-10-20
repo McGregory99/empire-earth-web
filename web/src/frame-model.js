@@ -118,6 +118,7 @@ const CHECKS = {
     checkRect(c.dstRect, 'blit2D.dstRect');
     if (c.colorKey !== null && !(isUint32(c.colorKey?.low) && isUint32(c.colorKey?.high))) fail('blit2D: colorKey must be null or {low, high}');
   },
+  resetDeviceState() {},
   present() {},
 };
 
@@ -169,6 +170,8 @@ export const cmd = {
   fillRect: (rect, color) => make({ op: 'fillRect', rect, color }),
   /** Blt from a surface to the render target (nearest neighbour). colorKey drops matching source texels. */
   blit2D: (srcId, srcRect, dstRect, colorKey = null) => make({ op: 'blit2D', srcId, srcRect, dstRect, colorKey }),
+  /** Back to D3D7 default device state and no bound textures: the trace switched to another Direct3D device. */
+  resetDeviceState: () => make({ op: 'resetDeviceState' }),
   /** End of frame. */
   present: () => make({ op: 'present' }),
 };

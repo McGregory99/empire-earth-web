@@ -1,0 +1,61 @@
+# ddraw_trace v1
+# modules: DX7HRTnLDisplay.dll,DX7HRDisplay.dll
+# data: synthetic.data max=536870912
+T1 DirectDrawCreateEx(lpGuid=NULL, lplpDD->dd7#1, iid=IID_IDirectDraw7, pUnkOuter=NULL) = DD_OK
+T1 dd7#1.SetDisplayMode(dwWidth=320, dwHeight=240, dwBPP=32, dwRefreshRate=0, dwFlags=0x0) = DD_OK
+T1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x21, dwBackBufferCount=1, ddsCaps={dwCaps=0x10006218, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}, lplpDDSurface->surf#1, pUnkOuter=NULL) = DD_OK
+T1 surf#1.GetAttachedSurface(lpDDSCaps={dwCaps=0x10, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}, lplpDDAttachedSurface->surf#2) = DD_OK
+T1 d3d7#1.CreateDevice(rclsid=IID_IDirect3DHALDevice, surface=surf#2, device->dev7#1) = DD_OK
+T1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x1007, dwHeight=4, dwWidth=4, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=16, dwRBitMask=0xf800, dwGBitMask=0x7e0, dwBBitMask=0x1f, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x1000, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}, lplpDDSurface->surf#3, pUnkOuter=NULL) = DD_OK
+T1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x11007, dwHeight=4, dwWidth=4, ddckCKSrcBlt={0x0, 0x0}, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x10004040, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}, lplpDDSurface->surf#4, pUnkOuter=NULL) = DD_OK
+T1 surf#4.SetColorKey(dwFlags=0x8, lpDDColorKey={0xff00ff, 0xff00ff}) = DD_OK
+T1 dev7#1.SetViewport(data={dwX=0, dwY=0, dwWidth=320, dwHeight=240, dvMinZ=f32:00000000, dvMaxZ=f32:3f800000}) = DD_OK
+T1 dev7#1.SetTransform(state=WORLD(1), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000}) = DD_OK
+T1 dev7#1.SetTransform(state=VIEW(2), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000}) = DD_OK
+T1 dev7#1.SetTransform(state=PROJECTION(3), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000}) = DD_OK
+T1 dev7#1.SetMaterial(data={diffuse={f32:3f800000, f32:3f800000, f32:3f800000, f32:3f800000}, ambient={f32:3f800000, f32:3f800000, f32:3f800000, f32:3f800000}, specular={f32:00000000, f32:00000000, f32:00000000, f32:00000000}, emissive={f32:00000000, f32:00000000, f32:00000000, f32:00000000}, power=f32:00000000}) = DD_OK
+T1 dev7#1.SetRenderState(dwRenderStateType=LIGHTING(137), dwRenderState=0x0) = DD_OK
+T1 dev7#1.SetRenderState(dwRenderStateType=CULLMODE(22), dwRenderState=0x1) = DD_OK
+T1 dev7#1.SetRenderState(dwRenderStateType=ZENABLE(7), dwRenderState=0x0) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=COLOROP(1), dwState=0x4) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=COLORARG1(2), dwState=0x2) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=COLORARG2(3), dwState=0x0) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=ALPHAOP(4), dwState=0x2) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=ALPHAARG1(5), dwState=0x2) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=MAGFILTER(16), dwState=0x1) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=MINFILTER(17), dwState=0x1) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=0, d3dTexStageStateType=ADDRESS(12), dwState=0x3) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=1, d3dTexStageStateType=COLOROP(1), dwState=0x1) = DD_OK
+T1 dev7#1.SetTextureStageState(dwStage=1, d3dTexStageStateType=ALPHAOP(4), dwState=0x1) = DD_OK
+T1 surf#3.Lock(lpDestRect=NULL, lpDDSurfaceDesc=>{dwSize=124, dwFlags=0x100f, dwHeight=4, dwWidth=4, lPitch=16, lpSurface=P}, dwFlags=0x0, hEvent=NULL) = DD_OK
+T1 surf#3.Unlock(lpSurfaceData=NULL) = DD_OK locked={rect=NULL, bytes=32, hash=fnv1a64:a6ecbd219eeebb3d} blob=@576+128
+T1 surf#4.Lock(lpDestRect=NULL, lpDDSurfaceDesc=>{dwSize=124, dwFlags=0x100f, dwHeight=4, dwWidth=4, lPitch=16, lpSurface=P}, dwFlags=0x0, hEvent=NULL) = DD_OK
+T1 surf#4.Unlock(lpSurfaceData=NULL) = DD_OK locked={rect=NULL, bytes=64, hash=fnv1a64:9f69ef4f0d248825} blob=@704+160
+T1 dev7#1.BeginScene() = DD_OK
+T1 dev7#1.Clear(count=1, rects=[{0,0,320,240}], flags=0x1, color=0xff102030, z=f32:00000000, stencil=0) = DD_OK
+T1 dev7#1.SetTexture(stage=0, surface=surf#3) = DD_OK
+T1 dev7#1.SetTexture(stage=1, surface=NULL) = DD_OK
+T1 dev7#1.DrawIndexedPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=0, vertex_count=4, indices=u16[6]:fnv1a64:39ccf7d8033c06e7, index_count=6, flags=0x0) = DD_OK blob={vertices=@16+240, indices=@256+112}
+T1 dev7#1.SetTransform(state=WORLD(1), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 3f666666 00000000 00000000 3f800000}) = DD_OK
+T1 dev7#1.DrawIndexedPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=4000, vertex_count=4, indices=u16[6]:fnv1a64:39ccf7d8033c06e7, index_count=6, flags=0x0) = DD_OK blob={vertices=@16+240, indices=@256+112}
+T1 dev7#1.SetTransform(state=WORLD(1), matrix={f32[16]=3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000 00000000 00000000 00000000 00000000 3f800000}) = DD_OK
+T1 dev7#1.EndScene() = DD_OK
+T1 surf#2.Blt(lpDestRect={8,130,40,162}, lpDDSrcSurface=surf#4, lpSrcRect={0,0,4,4}, dwFlags=0x8008000, lpDDBltFx=NULL) = DD_OK
+T1 surf#2.Blt(lpDestRect={100,130,140,162}, lpDDSrcSurface=NULL, lpSrcRect=NULL, dwFlags=0x400, lpDDBltFx={dwSize=100, dwDDFX=0x0, dwROP=0x0, dwDDROP=0x0, dwFillColor=0xffffff00, ddckDestColorkey={0x0, 0x0}, ddckSrcColorkey={0x0, 0x0}}) = DD_OK
+T1 surf#1.Flip(lpDDSurfaceTargetOverride=NULL, dwFlags=0x20) = DD_OK
+T1 surf#3.Lock(lpDestRect={1,1,3,3}, lpDDSurfaceDesc=>{dwSize=124, dwFlags=0x100f, dwHeight=4, dwWidth=4, lPitch=16, lpSurface=P}, dwFlags=0x0, hEvent=NULL) = DD_OK
+T1 surf#3.Unlock(lpSurfaceData=NULL) = DD_OK locked={rect={1,1,3,3}, bytes=8, hash=fnv1a64:8cf51a8bfca3883d} blob=@864+104
+T1 surf#4.GetDC(lphDC=P) = DD_OK
+T1 surf#4.ReleaseDC(hDC=P) = DD_OK blob=@968+160
+T1 dev7#1.BeginScene() = DD_OK
+T1 dev7#1.Clear(count=0, rects=NULL, flags=0x2, color=0x0, z=f32:00000000, stencil=0) = D3DERR_ZBUFFER_NOTPRESENT
+T1 dev7#1.Clear(count=0, rects=NULL, flags=0x1, color=0xff102030, z=f32:00000000, stencil=0) = DD_OK
+T1 dev7#1.DrawIndexedPrimitiveVB(primitive_type=TRIANGLELIST(4), vb=vb#1, start_vertex=0, vertex_count=4, indices=u16[6]:fnv1a64:39ccf7d8033c06e7, index_count=6, flags=0x0) = DD_OK blob={vertices=@16+240, indices=@256+112}
+T1 dev7#1.SetTexture(stage=0, surface=NULL) = DD_OK
+T1 dev7#1.DrawPrimitive(primitive_type=TRIANGLELIST(4), fvf=0x152, vertices=P, vertex_count=3, flags=0x0) = DD_OK blob={vertices=@368+208}
+T1 dev7#1.EndScene() = DD_OK
+T1 surf#3.Blt(lpDestRect={0,0,4,4}, lpDDSrcSurface=surf#2, lpSrcRect={8,8,12,12}, dwFlags=0x8000000, lpDDBltFx=NULL) = DD_OK
+T1 surf#2.Blt(lpDestRect={8,130,40,162}, lpDDSrcSurface=surf#4, lpSrcRect={0,0,4,4}, dwFlags=0x8008000, lpDDBltFx=NULL) = DD_OK
+T1 surf#1.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#2, lpSrcRect=NULL, dwFlags=0x8000000, lpDDBltFx=NULL) = DD_OK
+T1 dev7#1.SetRenderState(dwRenderStateType=ZENABLE(7), dwRenderState=0x1) = DD_OK
+# end: 2 presents

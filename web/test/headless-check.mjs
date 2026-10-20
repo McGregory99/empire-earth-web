@@ -14,6 +14,19 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { DEMO_PROBES, DEMO_WIDTH, DEMO_HEIGHT } from '../src/demo.js';
 
+// Hand-computed pixels of test/fixtures/synthetic.trace, per frame: [x, y, [r, g, b], why]. Background 0x102030 = (16, 32, 48).
+const FIXTURE_PROBES = [
+  [[10, 10, [16, 32, 48], 'clear colour'], [32, 24, [255, 0, 0], 'texel (0,0) red'], [112, 36, [0, 255, 0], 'texel (3,0) green'],
+    [48, 84, [0, 0, 255], 'texel (0,3) blue'], [112, 84, [255, 255, 255], 'texel (3,3) white'],
+    [192, 36, [255, 0, 0], 'second draw, shifted by the world matrix'], [256, 84, [255, 255, 255], 'second draw, white texel'],
+    [16, 146, [16, 32, 48], 'colour-keyed sprite: key half skipped'], [32, 146, [0, 255, 0], 'sprite: green half'],
+    [120, 146, [255, 255, 0], 'colour fill']],
+  [[32, 24, [255, 0, 0], 'texel (0,0) still red'], [64, 48, [255, 255, 255], 'partial Unlock: texel (1,1) is now white'],
+    [96, 48, [255, 255, 255], 'partial Unlock: texel (2,1) is now white'], [32, 72, [0, 0, 255], 'texel (0,2) untouched'],
+    [240, 168, [255, 128, 0], 'application-array triangle'], [192, 36, [16, 32, 48], 'cleared: second quad gone'],
+    [16, 146, [0, 255, 0], 'GDI ReleaseDC: left half green now'], [32, 146, [16, 32, 48], 'sprite right half is key now']],
+];
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const expectedPath = path.join(root, 'test/expected/demo-frame3.rgba.gz');
 const update = process.argv.includes('--update');
@@ -117,6 +130,32 @@ try {
     console.log(`regression image: ${exp.length} bytes, worst channel difference ${worst}, ${differing} channels beyond tolerance ${TOLERANCE}`);
     if (differing) fail('rendered frame differs from the stored regression image');
   }
+
+  // the synthetic ddraw_trace fixture through the real loader and renderer, in the page
+  const fx = (n) => fs.readFileSync(path.join(root, 'test/fixtures', n));
+  const fixture = await page.evaluate(async ({ trace, data, probes }) => {
+    const { loadFromFiles } = await import('/src/trace-loader.js');
+    const bin = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const { sequence } = await loadFromFiles([{ name: 'synthetic.trace', bytes: bin(trace) }, { name: 'synthetic.data', bytes: bin(data) }]);
+    window.__ee.load(sequence, 'fixture');
+    const { replayer, renderer } = window.__ee;
+    const out = { frames: replayer.total, error: null, shots: [] };
+    for (let f = 1; f <= replayer.total; f++) {
+      replayer.seek(f);
+      out.error = replayer.error?.message ?? out.error;
+      const px = renderer.readPixels();
+      out.shots.push(probes[f - 1].map(([x, y]) => Array.from(px.subarray((y * renderer.width + x) * 4, (y * renderer.width + x) * 4 + 3))));
+    }
+    return out;
+  }, { trace: fx('synthetic.trace').toString('base64'), data: fx('synthetic.data').toString('base64'), probes: FIXTURE_PROBES.map((f) => f.map((p) => p.slice(0, 2))) });
+  if (fixture.error) fail(`fixture replay error: ${fixture.error}`);
+  if (fixture.frames !== 2) fail(`fixture: expected 2 frames, got ${fixture.frames}`);
+  FIXTURE_PROBES.forEach((frame, f) => frame.forEach(([x, y, rgb, why], i) => {
+    const got = fixture.shots[f]?.[i] ?? [];
+    const bad = rgb.some((v, k) => Math.abs((got[k] ?? -99) - v) > 1);
+    console.log(`${bad ? 'FAIL' : 'ok  '} fixture frame ${f + 1} (${x},${y}) expected ${rgb} got ${got}: ${why}`);
+    if (bad) failures++;
+  }));
 
   // unsupported state must fail loudly, not draw something else
   const loud = await page.evaluate(() => {

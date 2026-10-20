@@ -77,7 +77,17 @@ export class Renderer {
     for (const c of frame.commands) this.execute(c);
   }
 
+  /** Execute one command. Errors name the trace line when the command carries one (`line`, set by the trace loader). */
   execute(c) {
+    try {
+      this._execute(c);
+    } catch (e) {
+      if (c.line != null && !e.traceLine) { e.traceLine = c.line; e.message += ` [trace line ${c.line}]`; }
+      throw e;
+    }
+  }
+
+  _execute(c) {
     validateCommand(c);
     if (this.state.apply(c)) return;
     switch (c.op) {

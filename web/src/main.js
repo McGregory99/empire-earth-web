@@ -4,6 +4,7 @@ import { Renderer } from './renderer.js';
 import { Replayer } from './replay.js';
 import { buildDemoSequence } from './demo.js';
 import { decodeSequence } from './sequence-json.js';
+import { loadFromFiles } from './trace-loader.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('screen');
@@ -33,22 +34,28 @@ function load(sequence, label) {
   try { replayer.seek(Math.min(1, replayer.total)); } catch (e) { status.textContent = `${e.name}: ${e.message}`; }
 }
 
-async function loadFile(file) {
-  if (!/\.json$/i.test(file.name)) {
-    status.textContent = `"${file.name}": only recorded-sequence JSON files can be loaded so far. ` +
-      'The loader for the ddraw_trace text trace + data file (P2.10.1) is not implemented yet.';
-    return;
-  }
+/** Files picked or dropped: a recorded-sequence .json, or a ddraw_trace trace (.trace / .gz) together with its .data. */
+async function loadFiles(fileList) {
+  const files = [...fileList];
+  if (!files.length) return;
+  status.textContent = `reading ${files.map((f) => f.name).join(', ')} ...`;
   try {
-    load(decodeSequence(await file.text()), `loaded ${file.name}`);
+    if (files.length === 1 && /\.json$/i.test(files[0].name)) {
+      load(decodeSequence(await files[0].text()), `loaded ${files[0].name}`);
+      return;
+    }
+    const read = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
+    const { sequence, stats } = await loadFromFiles(read);
+    load(sequence, `loaded ${files.map((f) => f.name).join(' + ')}: ${stats.frames} frames, ${stats.commands} commands, ` +
+      `${stats.textures} textures, ${stats.uniqueVertexRecords} vertex records`);
   } catch (e) {
-    status.textContent = `${file.name}: ${e.message}`;
+    status.textContent = `${e.name}: ${e.message}`;
   }
 }
 
 try {
   renderer = new Renderer(canvas);
-  window.__ee = { renderer, replayer: null };
+  window.__ee = { renderer, replayer: null, loadFiles, load };
   load(buildDemoSequence(), 'synthetic demo sequence (no game data)');
 } catch (e) {
   status.textContent = e.message;
@@ -62,6 +69,6 @@ slider.oninput = () => { replayer.pause(); try { replayer.seek(Number(slider.val
 $('fps').onchange = () => { replayer.fps = Number($('fps').value) || 30; };
 $('loop').onchange = () => { replayer.loop = $('loop').checked; };
 $('demo').onclick = () => load(buildDemoSequence(), 'synthetic demo sequence (no game data)');
-$('file').onchange = (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); };
+$('file').onchange = (e) => loadFiles(e.target.files);
 addEventListener('dragover', (e) => e.preventDefault());
-addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+addEventListener('drop', (e) => { e.preventDefault(); loadFiles(e.dataTransfer.files); });

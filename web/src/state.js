@@ -32,6 +32,10 @@ const isIdentity = (m) => m.length === 16 && m.every((v, i) => v === IDENTITY[i]
 
 export class DeviceState {
   constructor() {
+    this._init();
+  }
+
+  _init() {
     this.rs = new Map();
     this.stages = [stageDefaults(0), stageDefaults(1)];
     this.transforms = new Map([[1, IDENTITY], [2, IDENTITY], [3, IDENTITY]]);
@@ -51,6 +55,7 @@ export class DeviceState {
   /** Apply a state command. Returns true if the command was device state, false otherwise (draw, texture, ...). */
   apply(c) {
     switch (c.op) {
+      case 'resetDeviceState': this._init(); return true;
       case 'setRenderState':
         classifyRenderState(c.id, c.value);
         this.rs.set(c.id, c.value >>> 0);

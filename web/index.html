@@ -26,11 +26,11 @@
   <label>fps <input id="fps" type="number" min="1" max="120" value="30" style="width:4em"></label>
   <label><input id="loop" type="checkbox"> loop</label>
   <button id="demo">Demo</button>
-  <label>Open <input id="file" type="file" accept=".json"></label>
+  <label>Open <input id="file" type="file" multiple accept=".json,.trace,.txt,.gz,.data"></label>
 </div>
 <canvas id="screen" width="640" height="480"></canvas>
 <p id="status"></p>
-<p id="drop">Drop a local file on this page. Nothing is uploaded and nothing is fetched from the network.</p>
+<p id="drop">Open or drop a trace (.trace or .trace.gz) together with its .data file, or a sequence .json. Nothing is uploaded and nothing is fetched from the network.</p>
 <script>
   if (location.protocol === "file:") document.getElementById("status").textContent =
     "Opened from file://: browsers block ES modules there. Run `make serve-web` and open http://localhost:8000/ instead.";

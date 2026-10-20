@@ -132,3 +132,15 @@ test('apply returns false for commands that are not device state', () => {
   assert.equal(s.apply(cmd.present()), false);
   assert.equal(s.apply(cmd.setRenderState(RS.ZENABLE, 1)), true);
 });
+
+test('resetDeviceState restores the defaults and unbinds textures', () => {
+  const s = new DeviceState();
+  run(s, cmd.setRenderState(RS.CULLMODE, 1), cmd.bindTexture(0, 4), cmd.setTransform(1, [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1]),
+    cmd.setViewport({ x: 1, y: 1, width: 2, height: 2, minZ: 0, maxZ: 1 }));
+  assert.equal(s.apply(cmd.resetDeviceState()), true);
+  const c = s.drawConfig();
+  assert.equal(c.cull.enable, true);
+  assert.equal(c.texture0, null);
+  assert.equal(s.transform(1)[0], 1);
+  assert.equal(s.viewport, null);
+});
