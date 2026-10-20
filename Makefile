@@ -17,6 +17,8 @@
 #   make check-layouts          engine class layouts: compile-time asserts + the real engine as oracle, under Wine (P2.5)
 #   make test-rasterizer        harness against the original DX7HRTnLDisplay.dll and ours, under Wine
 #   make game-check-rasterizer  automated in-game check (takes the game-run lock, restores the game dir)
+#   make test-web                 browser replay viewer (web/): Node unit tests + headless WebGL2 pixel check (skipped if no Chromium)
+#   make serve-web               serve web/ on http://localhost:8000 (ES modules need http, not file://)
 #   make test-game-run          the shared game-run library (tools/game_run), the three drivers and the runtime-inventory helpers, against a fake world
 #
 # Everything outside the repository (original game binaries, Wine prefix, test
@@ -346,3 +348,15 @@ wine-prefix:
 
 clean:
 	rm -rf $(BUILD)
+
+# ---- browser replay viewer (web/, P2.10.3) ----------------------------------------------------------------------
+# Node unit tests always run. The headless check needs playwright-core and a headless Chromium (see web/README.md);
+# without them it exits 77 and is reported as skipped, never as passed.
+test-web:
+	cd web && node --test test/*.test.js
+	@cd web && node test/headless-check.mjs; rc=$$?; if [ $$rc -eq 77 ]; then echo "test-web: headless check SKIPPED (unit tests passed)"; elif [ $$rc -ne 0 ]; then exit $$rc; fi
+
+serve-web:
+	python3 -m http.server 8000 --bind 127.0.0.1 --directory web
+
+.PHONY: test-web serve-web
