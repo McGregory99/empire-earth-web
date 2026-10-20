@@ -21,7 +21,7 @@ enum Kind {
 enum Cb { CB_MODES, CB_SURFACES, CB_DEVICES, CB_PIXFMT };
 enum Hook {
     H_NONE, H_QI, H_ADDREF, H_RELEASE, H_GETDDINTERFACE, H_CREATESURFACE, H_GETATTACHED, H_FLIP, H_BLT, H_BLTFAST,
-    H_LOCK, H_UNLOCK, H_CREATEVB, H_DRAW
+    H_LOCK, H_UNLOCK, H_CREATEVB, H_DRAW, H_RELEASEDC, H_SETTEXTURE
 };
 
 typedef struct ArgDef {
@@ -251,6 +251,7 @@ static const struct { const char *name; uint8_t hook; } hook_map[] = {
     {"QueryInterface", H_QI}, {"AddRef", H_ADDREF}, {"Release", H_RELEASE}, {"GetDDInterface", H_GETDDINTERFACE},
     {"CreateSurface", H_CREATESURFACE}, {"GetAttachedSurface", H_GETATTACHED}, {"Flip", H_FLIP}, {"Blt", H_BLT},
     {"BltFast", H_BLTFAST}, {"Lock", H_LOCK}, {"Unlock", H_UNLOCK}, {"CreateVertexBuffer", H_CREATEVB},
+    {"ReleaseDC", H_RELEASEDC}, {"SetTexture", H_SETTEXTURE},
     {"DrawPrimitive", H_DRAW}, {"DrawIndexedPrimitive", H_DRAW}, {"DrawPrimitiveVB", H_DRAW}, {"DrawIndexedPrimitiveVB", H_DRAW},
 };
 
@@ -679,6 +680,41 @@ static void post_create_vb(CallRec *c) {
     }
 }
 
+/* The locked region of a surface from the DDSURFACEDESC2 words `d` Lock filled in (and the rectangle, if any): rows of rowbytes
+ * bytes, pitch apart; block-compressed formats are one contiguous run. */
+static void surf_geometry(const DWORD *d, const RECT *rc, DWORD *pitch, DWORD *rows, DWORD *rowbytes) {
+    DWORD width = d[3], height = d[2], bpp;
+    if (rc) {
+        width = (DWORD)(rc->right - rc->left);
+        height = (DWORD)(rc->bottom - rc->top);
+    }
+    *pitch = (d[1] & DDSD_PITCH) ? d[4] : 0;
+    if (d[19] & DDPF_FOURCC) {
+        *rowbytes = ((width + 3) / 4) * ((height + 3) / 4) * (d[20] == 0x31545844u /* 'DXT1' */ ? 8 : 16);
+        *rows = 1;
+    } else {
+        bpp = d[21];
+        if (!bpp && d[3] && *pitch)
+            bpp = *pitch * 8 / d[3];
+        *rowbytes = width * bpp / 8;
+        *rows = height;
+        if (!*pitch)
+            *pitch = *rowbytes;
+    }
+}
+
+/* What a replayer needs to know about the surface: its size and pixel format, as Lock reported them. */
+static void note_format(Wrap *w, const DWORD *d) {
+    unsigned i;
+    if (d[1] & DDSD_WIDTH)
+        w->surf_w = d[3];
+    if (d[1] & DDSD_HEIGHT)
+        w->surf_h = d[2];
+    if (d[1] & DDSD_PIXELFORMAT)
+        for (i = 0; i < 7; i++)
+            w->pf[i] = d[19 + i];
+}
+
 static void post_lock(CallRec *c) {
     Wrap *w = c->self;
     w->locked = 0;
@@ -694,36 +730,91 @@ static void post_lock(CallRec *c) {
     } else if (w->iface == IF_SURF7) {
         const RECT *rc = (const RECT *)(uintptr_t)c->a[1];
         const DWORD *d = (const DWORD *)(uintptr_t)c->a[2]; /* DDSURFACEDESC2 words */
-        DWORD width, height, bpp, rowbytes, rows;
         if (!d || IsBadReadPtr(d, sizeof(DDSURFACEDESC2)) || !d[9]) /* Wine does not set DDSD_LPSURFACE; the pointer is enough */
             return;
-        width = d[3];
-        height = d[2];
         w->lock_has_rect = rc && !IsBadReadPtr(rc, sizeof *rc);
-        if (w->lock_has_rect) {
+        if (w->lock_has_rect)
             w->lock_rect = *rc;
-            width = (DWORD)(rc->right - rc->left);
-            height = (DWORD)(rc->bottom - rc->top);
-        }
         w->lock_ptr = (void *)(uintptr_t)d[9];
-        w->lock_pitch = (d[1] & DDSD_PITCH) ? d[4] : 0;
-        if (d[19] & DDPF_FOURCC) { /* block compressed: one contiguous run */
-            rowbytes = ((width + 3) / 4) * ((height + 3) / 4) * (d[20] == 0x31545844u /* 'DXT1' */ ? 8 : 16);
-            rows = 1;
-        } else {
-            bpp = d[21];
-            if (!bpp && d[3] && w->lock_pitch)
-                bpp = w->lock_pitch * 8 / d[3];
-            rowbytes = width * bpp / 8;
-            rows = height;
-            if (!w->lock_pitch)
-                w->lock_pitch = rowbytes;
-        }
-        w->lock_rows = rows;
-        w->lock_rowbytes = rowbytes;
-        w->lock_bytes = rows * rowbytes;
+        surf_geometry(d, w->lock_has_rect ? &w->lock_rect : NULL, &w->lock_pitch, &w->lock_rows, &w->lock_rowbytes);
+        w->lock_bytes = w->lock_rows * w->lock_rowbytes;
+        note_format(w, d);
+        w->lock_ro = (c->a[3] & DDLOCK_READONLY) != 0;
         w->locked = 1;
     }
+}
+
+/* ---- surface pixels: stored in the data file at Unlock, ReleaseDC and when a changed surface is used --------------------- */
+static int put_surface(Wrap *w, const void *ptr, DWORD pitch, DWORD rows, DWORD rowbytes, const RECT *rc, unsigned origin,
+                       unsigned *off, unsigned *len) {
+    unsigned p[BLOB_PARAMS], i;
+    memset(p, 0, sizeof p);
+    p[0] = rc ? (unsigned)rc->left : 0;
+    p[1] = rc ? (unsigned)rc->top : 0;
+    p[2] = rc ? (unsigned)rc->right : w->surf_w;
+    p[3] = rc ? (unsigned)rc->bottom : w->surf_h;
+    p[4] = w->surf_w;
+    p[5] = w->surf_h;
+    p[6] = rowbytes;
+    p[7] = rows;
+    p[8] = origin;
+    for (i = 0; i < 7; i++)
+        p[9 + i] = w->pf[i];
+    return data_put(BLOB_SURFACE, w->id, p, ptr, pitch, rows, rowbytes, off, len);
+}
+
+static void add_blob(char *suffix, size_t cap, int st, unsigned off, unsigned len) {
+    size_t n = strlen(suffix);
+    if (st == DATA_OK)
+        snprintf(suffix + n, cap - n, " blob=@%u+%u", off, len);
+    else if (st == DATA_FAIL)
+        snprintf(suffix + n, cap - n, " blob=failed");
+    else if (st == DATA_UNAVAILABLE)
+        snprintf(suffix + n, cap - n, " blob=unavailable");
+}
+
+/* Surfaces the plugin draws into or presents are not textures or 2D images to store. */
+static int pixels_wanted(const Wrap *w) {
+    return w->iface == IF_SURF7 && !(w->caps & (DDSCAPS_PRIMARYSURFACE | DDSCAPS_BACKBUFFER | DDSCAPS_3DDEVICE | DDSCAPS_ZBUFFER));
+}
+
+/* The pixels of a surface that nobody locked (a Blt wrote them, or a DC): read them with a lock of our own, which the plugin
+ * cannot see (it goes straight to the real object).  Only called when no DC is out and no Blt is in flight on this thread. */
+static int readback(Wrap *w, unsigned origin, unsigned *off, unsigned *len) {
+    IDirectDrawSurface7 *s = (IDirectDrawSurface7 *)w->real;
+    DDSURFACEDESC2 sd;
+    const DWORD *d = (const DWORD *)&sd;
+    DWORD pitch, rows, rowbytes;
+    int st = DATA_UNAVAILABLE;
+
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    w->dirty = 0;
+    if (FAILED(s->lpVtbl->Lock(s, NULL, &sd, DDLOCK_WAIT | DDLOCK_READONLY, NULL)))
+        return DATA_UNAVAILABLE;
+    if (d[9]) {
+        note_format(w, d);
+        surf_geometry(d, NULL, &pitch, &rows, &rowbytes);
+        if (rows && rowbytes && !IsBadReadPtr((void *)(uintptr_t)d[9], (rows - 1) * pitch + rowbytes))
+            st = put_surface(w, (void *)(uintptr_t)d[9], pitch, rows, rowbytes, NULL, origin, off, len);
+    }
+    s->lpVtbl->Unlock(s, NULL);
+    return st;
+}
+
+/* The source of a Blt/BltFast and the texture of SetTexture: if a Blt changed it since its pixels were last stored, store them now. */
+static void sync_source(CallRec *c, const char *argname, unsigned origin) {
+    int i = arg_index(c->m, argname);
+    Wrap *s;
+    unsigned off = 0, len = 0;
+    int st;
+    if (i < 0 || !c->a[i + 1])
+        return;
+    s = find_wrapper((void *)(uintptr_t)c->a[i + 1]);
+    if (!s || !s->dirty || !pixels_wanted(s))
+        return;
+    st = readback(s, origin, &off, &len);
+    add_blob(c->suffix, sizeof c->suffix, st, off, len);
 }
 
 /* Before the real Unlock: what the plugin wrote while the buffer was locked. */
@@ -760,6 +851,13 @@ static void pre_unlock(CallRec *c) {
                      (int)w->lock_rect.right, (int)w->lock_rect.bottom);
         snprintf(c->suffix, sizeof c->suffix, " locked={rect=%s, bytes=%u, hash=fnv1a64:%08x%08x}", rect,
                  (unsigned)w->lock_bytes, (unsigned)(h >> 32), (unsigned)h);
+        if (data_enabled() && !w->lock_ro && pixels_wanted(w)) {
+            unsigned off = 0, len = 0;
+            int st = put_surface(w, w->lock_ptr, w->lock_pitch, w->lock_rows, w->lock_rowbytes, w->lock_has_rect ? &w->lock_rect : NULL, 1,
+                                 &off, &len);
+            add_blob(c->suffix, sizeof c->suffix, st, off, len);
+            w->dirty = 0;
+        }
     }
 }
 
@@ -876,6 +974,14 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
         pre_unlock(&c);
     if (m->hook == H_DRAW && c.traced && data_enabled())
         capture_draw(&c);
+    if (c.traced && data_enabled()) {
+        if (m->hook == H_BLT)
+            sync_source(&c, "lpDDSrcSurface", 3);
+        else if (m->hook == H_BLTFAST)
+            sync_source(&c, "lpDDSrcSurface", 4);
+        else if (m->hook == H_SETTEXTURE)
+            sync_source(&c, "surface", 5);
+    }
 
     vt = *(void ***)self->real;
     result = call_real(vt[slot], c.r, m->nargs);
@@ -935,6 +1041,19 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
         /* A copy of a whole surface onto the primary.  Sprite blits (the software cursor) and colour fills are not
          * frames; counting them made the capture length depend on a cursor thread's timing. */
         is_present = (self->caps & DDSCAPS_PRIMARYSURFACE) != 0 && a[1] == 0 && a[2] != 0;
+        if (c.traced && SUCCEEDED((HRESULT)result) && pixels_wanted(self))
+            self->dirty = 1;
+        break;
+    case H_BLTFAST:
+        if (c.traced && SUCCEEDED((HRESULT)result) && pixels_wanted(self))
+            self->dirty = 1;
+        break;
+    case H_RELEASEDC:
+        if (c.traced && data_enabled() && SUCCEEDED((HRESULT)result) && pixels_wanted(self)) {
+            unsigned off = 0, len = 0;
+            int st = readback(self, 2, &off, &len);
+            add_blob(c.suffix, sizeof c.suffix, st, off, len);
+        }
         break;
     default: break;
     }

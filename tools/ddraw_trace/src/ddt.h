@@ -43,7 +43,7 @@ void trace_flush(void);
 
 /* ---- side data file (trace.c) ----------------------------------------------------------------- */
 enum { BLOB_VERTICES = 1, BLOB_INDICES = 2, BLOB_SURFACE = 3 };
-enum { DATA_OK = 0, DATA_OFF = 1, DATA_FAIL = 2 };
+enum { DATA_OK = 0, DATA_OFF = 1, DATA_FAIL = 2, DATA_UNAVAILABLE = 3 }; /* UNAVAILABLE: the pixels could not be read back */
 #define BLOB_PARAMS 16
 int data_enabled(void);                           /* DDT_DATA is configured */
 /* Store one record (or find the identical one stored before): the payload is `rows` rows of `rowbytes` bytes, `pitch` apart.
@@ -91,6 +91,10 @@ typedef struct Wrap {
     DWORD lock_pitch, lock_rows, lock_rowbytes; /* surfaces: the locked region is rows x rowbytes, rows pitch apart */
     DWORD lock_bytes;                           /* total bytes hashed */
     DWORD vb_fvf, vb_stride;                    /* vertex buffers: from the creation description */
+    DWORD pf[7];                                /* surfaces, data capture: pixel format words (flags, fourcc, bit count, R, G, B, A masks) */
+    DWORD surf_w, surf_h;                       /* surfaces: full size, as the last Lock reported it */
+    int lock_ro;                                /* the surface lock in progress is DDLOCK_READONLY */
+    int dirty;                                  /* a Blt wrote to this surface since its pixels were last stored */
     unsigned char *vb_shadow;                   /* vertex buffers, data capture: the contents as of the last Unlock */
     RECT lock_rect;
 } Wrap;

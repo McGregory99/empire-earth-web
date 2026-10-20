@@ -894,7 +894,7 @@ static void cycle_surf(HMODULE plugin, HWND hwnd) {
     check_ref(nth_line("T1 surf#5.BltFast(*", 0), "blob=", 5, "BltFast from the filled a");
     expect_count("T1 surf#5.Lock(*", 0);
     expect_count("T1 surf#3.Lock(*", 3);
-    expect_count("*blob=*", 8);
+    expect_count("*blob=*", 7);
     check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "the capture ends at the third present");
     check_same_as_off();
 }
