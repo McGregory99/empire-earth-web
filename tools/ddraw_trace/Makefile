@@ -1,7 +1,7 @@
 # Tracing DirectDraw proxy: an oracle for the Direct3D 7 renderer plugin.
 #
 #   make              build build/ddraw.dll (the proxy)
-#   make test         unit tests: harness + fake plugin under Wine in front of Wine's builtin ddraw
+#   make test         unit tests (incl. the data file reader): harness + fake plugin under Wine in front of Wine's builtin ddraw
 #   make check-tables regenerate src/*.inc from the SDK headers and compare
 #   make gen-tables   regenerate src/methods.inc and src/names.inc
 #   make game-trace   one in-game capture (takes the game-run lock, launches the game, ~3 min); compares with the previous run
@@ -38,7 +38,7 @@ HDR      := $(wildcard src/*.h) src/methods.inc src/names.inc
 TESTDIR  := ../../tests/ddraw_trace
 TEST_SRC := $(wildcard $(TESTDIR)/*.c) $(wildcard $(TESTDIR)/*.h)
 
-.PHONY: all test test-unit test-game-run test-normalize check-tables gen-tables game-trace game-gate game-check game-gate-skirmish game-check-skirmish clean
+.PHONY: all test test-read-data test-unit test-game-run test-normalize check-tables gen-tables game-trace game-gate game-check game-gate-skirmish game-check-skirmish clean
 
 all: $(BUILD)/ddraw.dll
 
@@ -68,10 +68,14 @@ $(BUILD)/mockddraw.dll: $(TESTDIR)/mockddraw.c | $(BUILD)
 $(BUILD)/harness.exe: $(TESTDIR)/harness.c $(TESTDIR)/scenario.h | $(BUILD)
 	$(CC) $(CFLAGS) -s -o $@ $< -Wl,--enable-stdcall-fixup -static-libgcc -lddraw -ldxguid -luser32
 
-test: check-tables test-game-run test-normalize test-unit
+test: check-tables test-game-run test-normalize test-unit test-read-data
 
 test-normalize:
 	$(TESTDIR)/test-normalize.sh .
+
+# The reference reader of the data file; also reads the file test-unit made (run after it).
+test-read-data:
+	$(TESTDIR)/test-read-data.sh .
 
 # The shared game-run library and the drivers that use it, against a fake world (never the real game).
 test-game-run:

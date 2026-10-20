@@ -7,7 +7,7 @@ plugin <-> ddraw boundary, call by call. This proxy records that boundary as a n
 
 ```
 make -C tools/ddraw_trace              # build/ddraw.dll
-make -C tools/ddraw_trace test         # unit tests (Wine, test prefix), game-run library tests, normalizer tests
+make -C tools/ddraw_trace test         # unit tests (Wine, test prefix), game-run library tests, normalizer and data reader tests
 make -C tools/ddraw_trace check-tables # src/methods.inc and src/names.inc match the SDK headers
 make -C tools/ddraw_trace game-trace   # one capture in the real game (takes the game-run lock)
 make -C tools/ddraw_trace game-gate    # two captures and their diff: the determinism gate
@@ -181,6 +181,8 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 | `DDT_MODULES` | comma separated base names whose calls are traced | the two renderer plugins |
 | `DDT_MAX_PRESENTS` | present cap, 0 = unlimited | 0 |
 | `DDT_FLUSH` | `1`: flush after every line (the unit tests) | 0 |
+| `DDT_DATA` | path prefix of the optional data file `<DDT_DATA>.data` (see "Data file"); empty: no data is captured and the trace is exactly what it was without the feature | empty |
+| `DDT_DATA_MAX` | cap on the data file in bytes (at most 4,294,967,040); when the next record would pass it, the capture fails loudly | 536,870,912 |
 | `DDT_ARM_FILE` | nothing is traced, and no present counted, until this file exists; the present that first sees it is the last outside the trace, the window opens after it and the trace gets a `# armed` line. Object ids are assigned all the same. Used by the scenarios that capture a settled state | empty |
 
 ## How the wrapping works
@@ -195,6 +197,103 @@ interface arguments, calls the real method with the right number of arguments, w
 Interfaces that are not wrapped (`IDirectDrawClipper`, `IDirectDrawPalette`, other `IDirectDraw*` versions) are handed
 out as the real objects and appear as `raw`; they work, but calls on them are not traced. Exports other than
 `DirectDrawCreateEx`, `DirectDrawEnumerateA` and `DirectDrawEnumerateExA` are forwarded by a tail jump, untraced.
+
+## Data file (optional, `DDT_DATA`)
+
+The text trace only hashes what the plugin writes (surface pixels, vertex buffers, index and vertex arrays). With `DDT_DATA`
+set, the proxy also stores those bytes in a binary side file, `<DDT_DATA>.data` (use the trace path as the prefix to get
+`<trace>.data`), so that a replayer can rebuild textures, 2D surfaces and geometry. Off by default: without `DDT_DATA` no
+file is made and the trace is byte-identical to a trace of the same run with the feature absent (the unit tests compare a run
+with and without it). With it on, the trace differs only by the `# data: <file> max=<n>` header line and the ` blob=...`
+suffixes below, which are always the last text of a line (strip from ` blob=` to remove them).
+
+**The data contains the game's textures and models, the user's own copy's content. Never commit it.** Captures go to
+`~/Games/EmpireEarth-re/`, outside the repository (`.gitignore` also refuses `*.data` next to the tool and its tests). Tests
+use synthetic data from the mock ddraw only.
+
+### Layout (all integers little endian)
+
+```
+file   := file_header record*
+file_header (16 bytes):  "DDTDATA1" (8 bytes) | version u32 = 1 | reserved u32 = 0
+record := record_header (96 bytes) payload pad
+record_header:
+    0  u32  magic       0x31524444 (bytes "DDR1")
+    4  u32  kind        1 vertices, 2 indices, 3 surface
+    8  u32  total       length of the whole record: 96 + payload_length rounded up to a multiple of 8 (= the L in "@O+L")
+   12  u32  seq         0, 1, 2, ... in file order
+   16  u32  object      kind 1: the vertex buffer id (vb#N), 0 for an application array; kind 2: 0; kind 3: the surface id (surf#N)
+   20  u32  payload_length   payload bytes without padding
+   24  u64  payload_hash    FNV-1a 64 of the payload (the same function as the trace's hash=fnv1a64:...)
+   32  u32[16] params      kind specific, below; unused entries are 0
+payload := payload_length bytes; pad := zero bytes up to total
+```
+
+Records follow each other without gaps: the first starts at offset 16, the next at `offset + total`. A trace line refers to a
+record by its **start offset** and **total length**: `@<offset>+<length>`. The file ends with a whole record; a capture that
+failed (cap) still holds only whole records.
+
+**Content addressing.** A record is stored once: if a record with the same kind, object, params, payload length and payload hash
+exists, the new reference points at the old record (so a texture that is rewritten with the same pixels, or a quad drawn from
+the same vertices, costs nothing; a surface whose content goes A, B, A refers to A's record again). The key is the 64-bit hash,
+a collision is not checked (at about 10^5 records the chance is about 10^-9).
+
+**Kind 1, vertices** (a draw's vertex range). Payload: `vertex_count * stride` bytes, the vertices exactly as the call reads them.
+params: `p0` FVF, `p1` stride in bytes, `p2` start_vertex (0 for an application array), `p3` vertex_count, `p4` source (0
+vertex buffer, 1 application memory). Vertex buffers: the plugin's ring buffer is locked whole (the pointer is invalid after
+`Unlock`, and many draws read different ranges of one lock, DISCARD or NOOVERWRITE), so the proxy keeps a shadow copy of the
+buffer, refreshed at every `Unlock`, and a draw stores the exact range `[start_vertex, start_vertex + vertex_count)` of the shadow
+at call time. A replayer does not need lock flags or ring offsets: every draw carries the bytes it drew. Draws that read a range
+the shadow does not cover (never locked, or out of range) get `vertices=none`.
+
+**Kind 2, indices.** Payload: `index_count` 16-bit indices. params: `p0` index_count.
+
+**Kind 3, surface pixels.** Payload: `p7` rows of `p6` bytes each, packed without the driver's pitch padding, covering the
+rectangle `(p0,p1)-(p2,p3)` (left, top, right, bottom, right/bottom exclusive) of the surface; for a block-compressed format
+(`p10` fourcc, DXT) one contiguous run (`p7` = 1, `p6` = the run length). params: `p4` surface width, `p5` surface height,
+`p8` origin (below), then the pixel format words: `p9` DDPIXELFORMAT flags, `p10` fourCC, `p11` bits per pixel, `p12` red mask,
+`p13` green mask, `p14` blue mask, `p15` alpha mask. The payload hash equals the `hash=` of the `Unlock` line for origin 1.
+
+| origin | when | trace line |
+| --- | --- | --- |
+| 1 | `surf#N.Unlock`, unless the Lock had `DDLOCK_READONLY`: the locked rectangle (whole surface if `lpDestRect` was NULL) | the `Unlock` line |
+| 2 | `surf#N.ReleaseDC`: the whole surface, read after the real `ReleaseDC` returned (what GDI drew, e.g. text) | the `ReleaseDC` line |
+| 3, 4 | the source of a `Blt` / `BltFast` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `Blt` / `BltFast` line |
+| 5 | the texture of a `SetTexture` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `SetTexture` line |
+
+Origins 2 to 5 read the pixels with a read-only `Lock` on the real surface that the plugin cannot see (it is not traced). Primary,
+back-buffer, 3D-device and Z-buffer surfaces are never stored. A surface's current pixels at any point of the trace are the
+records of its lines applied in trace order, each over the rectangle it names (a later `Blt` onto a surface that is never used as
+a source or texture again is not read back; the replayer replays or ignores it).
+
+### Trace lines
+
+* `Unlock`, `ReleaseDC`, `Blt`, `BltFast`, `SetTexture`: ` blob=@<offset>+<length>` at the end of the line, only when pixels were
+  stored or found already stored by this call (an unchanged surface: no suffix on `Blt`/`SetTexture`; an `Unlock` of unchanged
+  content refers to the old record). `blob=failed`: the cap was exceeded; `blob=unavailable`: the read-back lock failed.
+* Draw calls (`DrawPrimitive`, `DrawIndexedPrimitive`, `DrawPrimitiveVB`, `DrawIndexedPrimitiveVB`): ` blob={vertices=@O+L,
+  indices=@O+L}` (no `indices` for the non-indexed calls; `vertices=none` as above). Strided draws are not captured.
+* Vertex-buffer `Lock` and `Unlock` lines carry no blob: the data is stored by the draws that read it.
+* A texture binding is `dev7#N.SetTexture(stage=S, surface=surf#K)`; `surf#K`'s format is in its records and in its `CreateSurface`
+  and `Lock` lines. Mip chains are separate surfaces linked by `GetAttachedSurface` lines.
+
+### Cap and failure
+
+The file never grows past `DDT_DATA_MAX` bytes (default 512 MiB; the golden's counts, 74 surfaces, 301 locks, 182 blits and 1593
+draws over 60 presents, should need a small fraction of that; most draws are 4-vertex quads of 144 bytes). When a record would
+pass the cap the proxy writes `# ERROR: data cap of <n> bytes exceeded (...)` to the trace, ends the trace (no more lines or data),
+creates `<trace>.failed` instead of `<trace>.done`, and calls `OutputDebugString`. `game-trace.sh` stops waiting when it sees
+`.failed` and fails the run. A data file that cannot be created is an error line and the same failure.
+
+### Reference reader
+
+`scripts/read_data.py FILE summary [--json]` prints the counts and bytes per kind and checks every payload hash;
+`scripts/read_data.py FILE extract OFFSET OUT [--raw]` writes one record's payload (or the whole record) to `OUT` and prints its
+header as JSON. It is also the shortest description of the parser (about 40 lines). `tests/ddraw_trace/test-read-data.sh` tests it.
+
+Not captured: palettes (`IDirectDrawPalette` is not wrapped, so 8-bit surfaces have no colours), lock-less pixel writes through
+`GetDC` on a surface that cannot be locked, strided draws, `ProcessVertices`, state before a `DDT_ARM_FILE` window opens (the
+records start empty, so use the unarmed startup scenario for replays).
 
 ## Side files
 
@@ -261,7 +360,7 @@ problems) and against a build without the `LPDIRECTDRAWSURFACE7` map entry (it m
 * Vertex buffer hashes cover the whole locked range, which for the game's ring buffer is all 87,912 bytes at every
   `Unlock`. That is deterministic here but says nothing about which part changed; a dirty-range hash or a hash of the
   vertex range at draw time would localize differences.
-* Pixels drawn through a surface DC (`GetDC`/`ReleaseDC` with GDI text) are not hashed: 59 pairs in the captured window.
+* Pixels drawn through a surface DC (`GetDC`/`ReleaseDC` with GDI text) are not hashed in the trace (59 pairs in the captured window); with `DDT_DATA` the `ReleaseDC` line refers to the pixels in the data file.
 * The Bink movie path is not exercised (the launcher skips the intro movies).
 * No normalization of the wall-clock menu element: the capture ends before it.
 * `DDCAPS` prints `dwVidMemFree`; it was constant here. Other volatile fields may exist outside the captured window.

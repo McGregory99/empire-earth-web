@@ -7,3 +7,10 @@
 re-raw/
 build/
 __pycache__/
+
+# ddraw_trace data captures hold the game's textures and models (the user's own copy): never commit them.
+# Real captures go to ~/Games/EmpireEarth-re/, outside the repository.
+*.trace.data
+*.txt.data
+tools/ddraw_trace/**/*.data
+tests/ddraw_trace/**/*.data

@@ -191,7 +191,7 @@ one_run() {
   fi
 
   win_raw="Z:$(printf '%s' "$raw" | tr '/' '\\')"
-  rm -f "$raw" "$raw.done" "$raw.times" "$raw.callers"
+  rm -f "$raw" "$raw.done" "$raw.failed" "$raw.times" "$raw.callers"
   local arm_args=()
   if [ -n "$SCN_KEYS" ]; then
     rm -f "$raw.arm"
@@ -221,6 +221,10 @@ one_run() {
   fi
   local waited=0
   while [ ! -f "$raw.done" ]; do
+    if [ -f "$raw.failed" ]; then
+      gr_log "FAIL: the proxy ended the capture ($(grep -m1 '^# ERROR' "$raw" | cut -c1-200)); see the trace tail"
+      return 5
+    fi
     if ! gr_game_running; then
       gr_log "FAIL: the game exited before the capture cap"
       return 5
