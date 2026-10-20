@@ -207,6 +207,11 @@ file is made and the trace is byte-identical to a trace of the same run with the
 with and without it). With it on, the trace differs only by the `# data: <file> max=<n>` header line and the ` blob=...`
 suffixes below, which are always the last text of a line (strip from ` blob=` to remove them).
 
+In the real game, `game-trace.sh --data [--out-dir <dir>]` does this: the launcher scrubs the environment, so `swap-in.sh`
+writes `DDT_DATA=<raw trace path>` (and `DDT_DATA_MAX` when the caller's environment has it) into `ddraw_trace.cfg`. The run
+keeps the data as `trace.<tag>.data` next to `trace.<tag>.txt`; it fails if the data file was not written. `--out-dir` sends all
+outputs to a folder outside the repository, e.g. `~/Games/EmpireEarth-re/captures/replay/<name>/`.
+
 **The data contains the game's textures and models, the user's own copy's content. Never commit it.** Captures go to
 `~/Games/EmpireEarth-re/`, outside the repository (`.gitignore` also refuses `*.data` next to the tool and its tests). Tests
 use synthetic data from the mock ddraw only.

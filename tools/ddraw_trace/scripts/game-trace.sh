@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Capture a normalized ddraw trace of the ORIGINAL renderer plugin from startup to the main menu, in the real game.
 #
-#   game-trace.sh [--test-config <file>] [--scenario <file>] <path-to-proxy-ddraw.dll> [--gate]
+#   game-trace.sh [--test-config <file>] [--scenario <file>] [--data] [--out-dir <dir>] <path-to-proxy-ddraw.dll> [--gate]
 #
 # One run: take the game-run lock, refuse if anything of an earlier run is left over or if the game (or Art of Conquest) is
 # running, snapshot the game directory (verified against its sha256 manifest), launch through the unmodified 00xJS launcher
@@ -15,12 +15,20 @@
 # run; the scenario's determinism switches (EE_SIMHASH, EE_SIM_FIXED_MS) reach the game; when the capture is complete the
 # game is closed with WM_CLOSE (ee-close.exe) before the prefix is stopped.
 #
+# --data also captures the data the trace only hashes (README, "Data file"): the proxy writes <trace>.data (DDT_DATA is the raw
+# trace path; DDT_DATA_MAX from the caller's environment is passed on) and a run keeps it as trace.<tag>.data.  --out-dir <dir>
+# puts every output (traces, data, logs) in <dir> instead of tools/ddraw_trace/build: data holds the game's content, so it
+# belongs outside the repository.
+#
 # The protocol, the lock, the snapshot and the signal-safe teardown are the shared library tools/game_run/lib.sh; the design
 # and the safety argument are in README.md ("The ddraw chain").
 set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-USAGE="usage: game-trace.sh [--test-config <file>] [--scenario <file>] <proxy ddraw.dll> [--gate]"
+USAGE="usage: game-trace.sh [--test-config <file>] [--scenario <file>] [--data] [--out-dir <dir>] <proxy ddraw.dll> [--gate]"
+WITH_DATA=0
+OUT_DIR_OVERRIDE=""
+DATA_MAX="${DDT_DATA_MAX:-}" # read before gr_sanitize_env
 # --test-config <file>: the fake world of tests/game_run (the only way anything but the real installation is used)
 TEST_CONFIG=""
 SCENARIO_FILE=""
@@ -28,6 +36,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --test-config) TEST_CONFIG="${2:?$USAGE}"; shift 2 ;;
     --scenario) SCENARIO_FILE="${2:?$USAGE}"; shift 2 ;;
+    --data) WITH_DATA=1; shift ;;
+    --out-dir) OUT_DIR_OVERRIDE="${2:?$USAGE}"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -69,6 +79,7 @@ if [ -n "$SCENARIO_FILE" ]; then
   OUT="$HERE/build/game-trace-$SCN_NAME" # its own folder: last.txt / prev.txt must never compare it with the startup trace
 fi
 gr_test_hook "$TEST_CONFIG"
+[ -z "$OUT_DIR_OVERRIDE" ] || { mkdir -p "$OUT_DIR_OVERRIDE" && OUT="$(cd "$OUT_DIR_OVERRIDE" && pwd)"; } || { echo "cannot use --out-dir $OUT_DIR_OVERRIDE" >&2; exit 2; }
 gr_sanitize_env
 [ -n "$START_EXE" ] || START_EXE="$OUT/bin/ee-start.exe"
 [ -n "$CLOSE_EXE" ] || CLOSE_EXE="$OUT/bin/ee-close.exe"
@@ -191,13 +202,18 @@ one_run() {
   fi
 
   win_raw="Z:$(printf '%s' "$raw" | tr '/' '\\')"
-  rm -f "$raw" "$raw.done" "$raw.failed" "$raw.times" "$raw.callers"
-  local arm_args=()
+  rm -f "$raw" "$raw.done" "$raw.failed" "$raw.times" "$raw.callers" "$raw.data"
+  local arm_args=() data_args=()
   if [ -n "$SCN_KEYS" ]; then
     rm -f "$raw.arm"
     arm_args=("Z:$(printf '%s' "$raw.arm" | tr '/' '\\')")
   fi
-  gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" ${arm_args[@]+"${arm_args[@]}"} || return 3
+  if [ "$WITH_DATA" = 1 ]; then
+    # swap-in.sh's arm argument is positional: an empty one when there is no arm file
+    [ ${#arm_args[@]} -gt 0 ] || arm_args=("")
+    data_args=("$win_raw" ${DATA_MAX:+"$DATA_MAX"})
+  fi
+  gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" ${arm_args[@]+"${arm_args[@]}"} ${data_args[@]+"${data_args[@]}"} || return 3
 
   gr_launcher_log_mark
   gr_log "launching the game through the launcher (presents cap: $PRESENTS)"
@@ -240,6 +256,11 @@ one_run() {
   cp "$raw" "$OUT/trace.$tag.txt"
   [ -f "$raw.times" ] && cp "$raw.times" "$OUT/trace.$tag.times"
   [ -f "$raw.callers" ] && cp "$raw.callers" "$OUT/trace.$tag.callers"
+  if [ "$WITH_DATA" = 1 ]; then
+    [ -f "$raw.data" ] || { gr_log "FAIL: --data was asked for but the proxy wrote no data file ($raw.data)"; return 5; }
+    cp "$raw.data" "$OUT/trace.$tag.data"
+    gr_log "data file saved: $OUT/trace.$tag.data ($(wc -c <"$raw.data" | tr -d ' ') bytes)"
+  fi
   if [ -n "$SCENARIO_FILE" ]; then
     # the scenario ends the way a player's session does: WM_CLOSE, then (if ignored) WM_QUIT; the prefix is stopped after
     [ -f "$GR_GAME/ee-version.log" ] && cp "$GR_GAME/ee-version.log" "$OUT/ee-version.$tag.log"
