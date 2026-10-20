@@ -13,6 +13,8 @@ typedef struct DdtConfig {
     char modules[512];         /* comma separated module base names whose calls are traced */
     unsigned max_presents;     /* stop tracing after this many present-equivalent calls; 0 = unlimited */
     int flush_each;            /* flush the trace after every line (debugging) */
+    char data_prefix[MAX_PATH]; /* if set: side data file "<prefix>.data" holding the bytes the trace only hashes (README, "Data file") */
+    unsigned data_max;         /* cap on the data file in bytes; exceeding it fails the capture loudly */
     char arm_file[MAX_PATH];   /* if set: nothing is traced (nor counted) until this file exists; see trace_present */
 } DdtConfig;
 
@@ -38,6 +40,17 @@ int trace_wants(void *return_address);            /* active AND the caller is on
 void trace_emit(int depth, const char *text, int timing); /* one line: "T<n> " + indent + text */
 void trace_present(void);                         /* count one present-equivalent call; may cap the trace */
 void trace_flush(void);
+
+/* ---- side data file (trace.c) ----------------------------------------------------------------- */
+enum { BLOB_VERTICES = 1, BLOB_INDICES = 2, BLOB_SURFACE = 3 };
+enum { DATA_OK = 0, DATA_OFF = 1, DATA_FAIL = 2 };
+#define BLOB_PARAMS 16
+int data_enabled(void);                           /* DDT_DATA is configured */
+/* Store one record (or find the identical one stored before): the payload is `rows` rows of `rowbytes` bytes, `pitch` apart.
+ * DATA_OK: off and len name the record; DATA_OFF: the trace is not recording now; DATA_FAIL: the cap or an I/O error ended the
+ * capture (an ERROR line is in the trace). */
+int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], const void *base, size_t pitch, size_t rows,
+             size_t rowbytes, unsigned *off, unsigned *len);
 uint64_t fnv1a64(const void *data, size_t n);
 uint64_t fnv1a64_update(uint64_t h, const void *data, size_t n);
 #define FNV1A64_INIT 0xcbf29ce484222325ull
@@ -77,6 +90,8 @@ typedef struct Wrap {
     void *lock_ptr;
     DWORD lock_pitch, lock_rows, lock_rowbytes; /* surfaces: the locked region is rows x rowbytes, rows pitch apart */
     DWORD lock_bytes;                           /* total bytes hashed */
+    DWORD vb_fvf, vb_stride;                    /* vertex buffers: from the creation description */
+    unsigned char *vb_shadow;                   /* vertex buffers, data capture: the contents as of the last Unlock */
     RECT lock_rect;
 } Wrap;
 

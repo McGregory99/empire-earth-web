@@ -20,6 +20,16 @@ typedef struct ThreadState {
 } ThreadState;
 static DWORD g_tls = TLS_OUT_OF_INDEXES;
 static unsigned g_nthreads;
+/* The side data file: records appended through a buffer, content-addressed so that identical records are stored once. */
+#define DATA_FILE_HDR 16
+#define REC_HDR 96
+typedef struct DEnt { uint64_t key; unsigned off, len; } DEnt;
+static HANDLE g_data = INVALID_HANDLE_VALUE;
+static int g_data_failed;
+static unsigned g_data_off, g_data_seq, g_data_cap_n, g_data_n;
+static unsigned char g_dbuf[1 << 18];
+static unsigned g_dbuf_len;
+static DEnt *g_dtab;
 static char g_modlist[16][64];
 static int g_nmods;
 static struct { char name[64]; unsigned calls; int traced; } g_callers[32];
@@ -120,8 +130,16 @@ static void write_callers_locked(void) {
     CloseHandle(h);
 }
 
+static void dflush_locked(void) {
+    DWORD done;
+    if (g_data != INVALID_HANDLE_VALUE && g_dbuf_len)
+        WriteFile(g_data, g_dbuf, g_dbuf_len, &done, NULL);
+    g_dbuf_len = 0;
+}
+
 static void flush_locked(void) {
     DWORD done;
+    dflush_locked();
     if (g_file != INVALID_HANDLE_VALUE && g_out_len)
         WriteFile(g_file, g_out, g_out_len, &done, NULL);
     g_out_len = 0;
@@ -171,6 +189,25 @@ static void open_locked(void) {
     }
     n = snprintf(head, sizeof head, "# ddraw_trace v1\n# modules: %s\n", g_cfg.modules);
     put_locked(head, (unsigned)n);
+    if (g_cfg.data_prefix[0]) {
+        char dpath[MAX_PATH + 8];
+        const char *base;
+        unsigned char fh[DATA_FILE_HDR] = {'D', 'D', 'T', 'D', 'A', 'T', 'A', '1', 1, 0, 0, 0, 0, 0, 0, 0};
+        DWORD done;
+        snprintf(dpath, sizeof dpath, "%s.data", g_cfg.data_prefix);
+        base = strrchr(dpath, '\\');
+        base = base ? base + 1 : dpath;
+        n = snprintf(head, sizeof head, "# data: %s max=%u\n", base, g_cfg.data_max);
+        put_locked(head, (unsigned)n);
+        g_data = CreateFileA(dpath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (g_data == INVALID_HANDLE_VALUE || !WriteFile(g_data, fh, sizeof fh, &done, NULL)) {
+            static const char msg[] = "# ERROR: cannot create the data file\n";
+            put_locked(msg, sizeof msg - 1);
+            g_data_failed = 1;
+            g_capped = 1;
+        }
+        g_data_off = DATA_FILE_HDR;
+    }
     {
         const char *first = NULL;
         int problems = ddt_selfcheck_problems(&first);
@@ -337,4 +374,147 @@ void ddt_shutdown(void) {
         write_callers_locked();
         unlock();
     }
+}
+
+/* ---- side data file ---------------------------------------------------------------------------- */
+int data_enabled(void) {
+    ddt_init();
+    return g_cfg.data_prefix[0] != 0;
+}
+
+static void le32(unsigned char *p, unsigned v) {
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
+static void dput_locked(const void *p, size_t n) {
+    if (g_dbuf_len + n > sizeof g_dbuf)
+        dflush_locked();
+    if (n > sizeof g_dbuf) {
+        DWORD done;
+        WriteFile(g_data, p, (DWORD)n, &done, NULL);
+        return;
+    }
+    memcpy(g_dbuf + g_dbuf_len, p, n);
+    g_dbuf_len += (unsigned)n;
+}
+
+/* The cap (or an I/O error) makes the capture unusable: say so in the trace, end it, and leave a marker instead of .done. */
+static void data_fail_locked(const char *why, unsigned need) {
+    char line[256], path[MAX_PATH + 8];
+    HANDLE h;
+    int n = snprintf(line, sizeof line, "# ERROR: data cap of %u bytes exceeded (%s: record %u needs %u more bytes after %u written); capture invalid\n",
+                     g_cfg.data_max, why, g_data_seq, need, g_data_off);
+    put_locked(line, (unsigned)n);
+    flush_locked();
+    write_callers_locked();
+    g_capped = 1;
+    g_data_failed = 1;
+    snprintf(path, sizeof path, "%s.failed", g_cfg.trace_path);
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE)
+        CloseHandle(h);
+    OutputDebugStringA(line);
+}
+
+static DEnt *dfind_locked(uint64_t key) {
+    unsigned i;
+    if (!g_dtab)
+        return NULL;
+    for (i = (unsigned)key & (g_data_cap_n - 1); g_dtab[i].len; i = (i + 1) & (g_data_cap_n - 1))
+        if (g_dtab[i].key == key)
+            return &g_dtab[i];
+    return NULL;
+}
+
+static int dinsert_locked(uint64_t key, unsigned off, unsigned len) {
+    unsigned i;
+    if (!g_dtab || (g_data_n + 1) * 2 > g_data_cap_n) { /* grow at half load */
+        unsigned ncap = g_data_cap_n ? g_data_cap_n * 2 : 4096, k;
+        DEnt *nt = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ncap * sizeof *nt);
+        if (!nt)
+            return 0;
+        for (k = 0; k < g_data_cap_n; k++)
+            if (g_dtab[k].len) {
+                for (i = (unsigned)g_dtab[k].key & (ncap - 1); nt[i].len; i = (i + 1) & (ncap - 1))
+                    ;
+                nt[i] = g_dtab[k];
+            }
+        if (g_dtab)
+            HeapFree(GetProcessHeap(), 0, g_dtab);
+        g_dtab = nt;
+        g_data_cap_n = ncap;
+    }
+    for (i = (unsigned)key & (g_data_cap_n - 1); g_dtab[i].len; i = (i + 1) & (g_data_cap_n - 1))
+        ;
+    g_dtab[i].key = key;
+    g_dtab[i].off = off;
+    g_dtab[i].len = len;
+    g_data_n++;
+    return 1;
+}
+
+/* Record layout: README, "Data file".  The key covers kind, object, payload length, the 16 params and the payload hash, so
+ * the same bytes under other parameters (another vertex range, another surface) are a different record. */
+int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], const void *base, size_t pitch, size_t rows,
+             size_t rowbytes, unsigned *off, unsigned *len) {
+    uint64_t ph = FNV1A64_INIT, key;
+    size_t plen = rows * rowbytes, r, total;
+    unsigned char hdr[REC_HDR], pad[8] = {0};
+    unsigned head[3 + BLOB_PARAMS], i;
+    int rc = DATA_OK;
+    DEnt *e;
+
+    if (!g_cfg.data_prefix[0] || !g_cfg.trace_path[0])
+        return DATA_OFF;
+    for (r = 0; r < rows; r++)
+        ph = fnv1a64_update(ph, (const char *)base + r * pitch, rowbytes);
+    head[0] = kind;
+    head[1] = object;
+    head[2] = (unsigned)plen;
+    memcpy(head + 3, p, BLOB_PARAMS * sizeof *p);
+    key = fnv1a64_update(ph, head, sizeof head);
+    total = REC_HDR + ((plen + 7) & ~(size_t)7);
+
+    lock();
+    if (g_data_failed) {
+        rc = DATA_FAIL;
+    } else if (!active_locked() || !(g_armed || !g_cfg.arm_file[0])) {
+        rc = DATA_OFF;
+    } else if ((e = dfind_locked(key)) != NULL) {
+        *off = e->off;
+        *len = e->len;
+    } else if (total > g_cfg.data_max || g_data_off > g_cfg.data_max - total) {
+        data_fail_locked("cap", (unsigned)(total > 0xFFFFFFFFu ? 0xFFFFFFFFu : total));
+        rc = DATA_FAIL;
+    } else {
+        memset(hdr, 0, sizeof hdr);
+        le32(hdr, 0x31524444u); /* "DDR1" */
+        le32(hdr + 4, kind);
+        le32(hdr + 8, (unsigned)total);
+        le32(hdr + 12, g_data_seq++);
+        le32(hdr + 16, object);
+        le32(hdr + 20, (unsigned)plen);
+        le32(hdr + 24, (unsigned)ph);
+        le32(hdr + 28, (unsigned)(ph >> 32));
+        for (i = 0; i < BLOB_PARAMS; i++)
+            le32(hdr + 32 + 4 * i, p[i]);
+        dput_locked(hdr, sizeof hdr);
+        for (r = 0; r < rows; r++)
+            dput_locked((const char *)base + r * pitch, rowbytes);
+        dput_locked(pad, total - REC_HDR - plen);
+        *off = g_data_off;
+        *len = (unsigned)total;
+        if (!dinsert_locked(key, *off, *len)) {
+            data_fail_locked("out of memory", (unsigned)total);
+            rc = DATA_FAIL;
+        }
+        g_data_off += (unsigned)total;
+        if (g_cfg.flush_each)
+            dflush_locked();
+    }
+    unlock();
+    return rc;
 }

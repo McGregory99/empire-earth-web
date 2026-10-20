@@ -601,8 +601,11 @@ static int load_data(const char *path) {
 
 /* "<key>@<offset>+<length>" in a trace line */
 static int line_ref(const char *line, const char *key, unsigned *off, unsigned *len) {
-    const char *p = strstr(line, key);
-    return p && sscanf(p + strlen(key), "@%u+%u", off, len) == 2;
+    char pat[64];
+    const char *p;
+    sprintf(pat, "%s@", key); /* the argument "indices=u16[6]:..." has the same name */
+    p = strstr(line, pat);
+    return p && sscanf(p + strlen(pat), "%u+%u", off, len) == 2;
 }
 
 static int check_ref(const char *line, const char *key, int rec, const char *what) {
@@ -675,7 +678,7 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
     const char *trace = getenv("DDT_TRACE"), *off_trace = getenv("DDT_OFF_TRACE");
     long off_n = 0;
     char *off_text;
-    int i, k, drawn[8];
+    int i, k;
     static const int vrec[8] = {0, 2, 0, 2, 3, 4, 5, 5}, irec[8] = {1, 1, 1, -1, 1, 1, 6, -1};
     static const char *const names[8] = {"DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawPrimitiveVB",
                                          "DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawIndexedPrimitive", "DrawPrimitive"};
@@ -720,8 +723,6 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
     }
 
     /* the trace lines point at them */
-    for (i = 0; i < 8; i++)
-        drawn[i] = 0;
     for (k = 0, i = 0; i < g_nlines && k < 8; i++) {
         char pat[96];
         sprintf(pat, "T1 dev7#1.%s(*", names[k]);
@@ -734,7 +735,6 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
             check_ref(g_lines[i], "indices=", irec[k], names[k]);
         else
             check(strstr(g_lines[i], "indices=@") == NULL, "a draw without indices has no indices reference");
-        drawn[k] = 1;
         k++;
     }
     check(k == 8, "all 8 draw lines carry references");
@@ -745,7 +745,7 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
     check(off_text != NULL, "the data-off trace of the same scenario is available");
     if (off_text) {
         char *p = off_text, *e;
-        int line = 0, same = 1;
+        int same = 1;
         for (i = 0; i < g_nlines; i++) {
             char tmp[8600], *cut;
             if (!strncmp(g_lines[i], "# data:", 7))
@@ -761,7 +761,6 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
                 break;
             }
             p = e + 1;
-            line++;
         }
         check(same && !*p, "stripped of 'blob=' suffixes and the '# data:' header, the trace is byte-identical to the data-off trace");
         free(off_text);

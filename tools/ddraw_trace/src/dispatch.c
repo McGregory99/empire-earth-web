@@ -21,7 +21,7 @@ enum Kind {
 enum Cb { CB_MODES, CB_SURFACES, CB_DEVICES, CB_PIXFMT };
 enum Hook {
     H_NONE, H_QI, H_ADDREF, H_RELEASE, H_GETDDINTERFACE, H_CREATESURFACE, H_GETATTACHED, H_FLIP, H_BLT, H_BLTFAST,
-    H_LOCK, H_UNLOCK, H_CREATEVB
+    H_LOCK, H_UNLOCK, H_CREATEVB, H_DRAW
 };
 
 typedef struct ArgDef {
@@ -127,6 +127,10 @@ void *unwrap(void *p) {
 static void retire_locked(Wrap *w) {
     Wrap **pp;
     w->dead = 1;
+    if (w->vb_shadow) {
+        HeapFree(GetProcessHeap(), 0, w->vb_shadow);
+        w->vb_shadow = NULL;
+    }
     for (pp = &g_by_real[hash_ptr(w->real)]; *pp; pp = &(*pp)->by_real_next)
         if (*pp == w) {
             *pp = w->by_real_next;
@@ -247,6 +251,7 @@ static const struct { const char *name; uint8_t hook; } hook_map[] = {
     {"QueryInterface", H_QI}, {"AddRef", H_ADDREF}, {"Release", H_RELEASE}, {"GetDDInterface", H_GETDDINTERFACE},
     {"CreateSurface", H_CREATESURFACE}, {"GetAttachedSurface", H_GETATTACHED}, {"Flip", H_FLIP}, {"Blt", H_BLT},
     {"BltFast", H_BLTFAST}, {"Lock", H_LOCK}, {"Unlock", H_UNLOCK}, {"CreateVertexBuffer", H_CREATEVB},
+    {"DrawPrimitive", H_DRAW}, {"DrawIndexedPrimitive", H_DRAW}, {"DrawPrimitiveVB", H_DRAW}, {"DrawIndexedPrimitiveVB", H_DRAW},
 };
 
 static const char *const timing_methods[] = {"GetFlipStatus", "GetBltStatus", "WaitForVerticalBlank", "GetScanLine",
@@ -667,8 +672,11 @@ static unsigned fvf_vertex_size(DWORD fvf) {
 
 static void post_create_vb(CallRec *c) {
     const D3DVERTEXBUFFERDESC *d = (const D3DVERTEXBUFFERDESC *)(uintptr_t)c->a[1];
-    if (c->outw[1] && !IsBadReadPtr(d, sizeof *d))
-        c->outw[1]->vb_bytes = d->dwNumVertices * fvf_vertex_size(d->dwFVF);
+    if (c->outw[1] && !IsBadReadPtr(d, sizeof *d)) {
+        c->outw[1]->vb_fvf = d->dwFVF;
+        c->outw[1]->vb_stride = fvf_vertex_size(d->dwFVF);
+        c->outw[1]->vb_bytes = d->dwNumVertices * c->outw[1]->vb_stride;
+    }
 }
 
 static void post_lock(CallRec *c) {
@@ -734,6 +742,13 @@ static void pre_unlock(CallRec *c) {
     }
     if (w->iface == IF_VB7) {
         h = fnv1a64(w->lock_ptr, w->lock_bytes);
+        if (data_enabled()) { /* the draws read ranges of this buffer after Unlock, when the pointer is no longer valid */
+            DWORD n = w->vb_bytes > w->lock_bytes ? w->vb_bytes : w->lock_bytes;
+            if (!w->vb_shadow)
+                w->vb_shadow = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, n);
+            if (w->vb_shadow)
+                memcpy(w->vb_shadow, w->lock_ptr, w->lock_bytes < n ? w->lock_bytes : n);
+        }
         snprintf(c->suffix, sizeof c->suffix, " locked={bytes=%u, hash=fnv1a64:%08x%08x}", (unsigned)w->lock_bytes,
                  (unsigned)(h >> 32), (unsigned)h);
     } else {
@@ -746,6 +761,70 @@ static void pre_unlock(CallRec *c) {
         snprintf(c->suffix, sizeof c->suffix, " locked={rect=%s, bytes=%u, hash=fnv1a64:%08x%08x}", rect,
                  (unsigned)w->lock_bytes, (unsigned)(h >> 32), (unsigned)h);
     }
+}
+
+
+/* ---- draws: the vertex range and the indices the call reads, copied into the data file ---------------------------------- */
+static void blob_ref(Buf *b, const char *name, int st, unsigned off, unsigned len) {
+    if (st == DATA_OK)
+        buf_printf(b, "%s=@%u+%u", name, off, len);
+    else
+        buf_printf(b, "%s=%s", name, st == DATA_FAIL ? "failed" : "none");
+}
+
+/* A vertex buffer is read back from the shadow made at its last Unlock (a ring buffer's pointer is gone, and the plugin
+ * draws many ranges of one lock); application arrays are read from the argument itself. */
+static void capture_draw(CallRec *c) {
+    const MethodDef *m = c->m;
+    int vbi = arg_index(m, "vb"), vi = arg_index(m, "vertices"), ii = arg_index(m, "indices");
+    int ci = arg_index(m, "vertex_count"), si = arg_index(m, "start_vertex"), fi = arg_index(m, "fvf");
+    unsigned p[BLOB_PARAMS], off = 0, len = 0, count = ci >= 0 ? c->a[ci + 1] : 0, start = si >= 0 ? c->a[si + 1] : 0;
+    unsigned stride = 0, fvf = 0, object = 0;
+    const void *src = NULL;
+    int st = DATA_OFF, ist = -1;
+    unsigned ioff = 0, ilen = 0;
+    Buf b;
+
+    memset(p, 0, sizeof p);
+    if (vbi >= 0) {
+        Wrap *w = find_wrapper((void *)(uintptr_t)c->a[vbi + 1]);
+        if (w && w->iface == IF_VB7 && w->vb_shadow && w->vb_stride && (uint64_t)(start + count) * w->vb_stride <= w->vb_bytes) {
+            src = w->vb_shadow + (size_t)start * w->vb_stride;
+            stride = w->vb_stride;
+            fvf = w->vb_fvf;
+            object = w->id;
+        }
+    } else if (vi >= 0 && fi >= 0) {
+        fvf = c->a[fi + 1];
+        stride = fvf_vertex_size(fvf);
+        src = (const void *)(uintptr_t)c->a[vi + 1];
+        p[4] = 1;
+        if (src && IsBadReadPtr(src, (size_t)count * stride))
+            src = NULL;
+    }
+    if (src && stride && count) {
+        p[0] = fvf; p[1] = stride; p[2] = start; p[3] = count;
+        st = data_put(BLOB_VERTICES, object, p, src, (size_t)count * stride, 1, (size_t)count * stride, &off, &len);
+    }
+    if (ii >= 0) {
+        int ni = arg_index(m, "index_count");
+        unsigned n = ni >= 0 ? c->a[ni + 1] : 0;
+        const void *ip = (const void *)(uintptr_t)c->a[ii + 1];
+        unsigned q[BLOB_PARAMS];
+        memset(q, 0, sizeof q);
+        q[0] = n;
+        ist = DATA_OFF;
+        if (ip && n && !IsBadReadPtr(ip, (size_t)n * 2))
+            ist = data_put(BLOB_INDICES, 0, q, ip, (size_t)n * 2, 1, (size_t)n * 2, &ioff, &ilen);
+    }
+    buf_init(&b, c->suffix, sizeof c->suffix);
+    buf_puts(&b, " blob={");
+    blob_ref(&b, "vertices", st, off, len);
+    if (ist >= 0) {
+        buf_puts(&b, ", ");
+        blob_ref(&b, "indices", ist, ioff, ilen);
+    }
+    buf_puts(&b, "}");
 }
 
 static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
@@ -795,6 +874,8 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
 
     if (m->hook == H_UNLOCK && c.traced)
         pre_unlock(&c);
+    if (m->hook == H_DRAW && c.traced && data_enabled())
+        capture_draw(&c);
 
     vt = *(void ***)self->real;
     result = call_real(vt[slot], c.r, m->nargs);

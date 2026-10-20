@@ -21,11 +21,16 @@ static void cfg_set(const char *key, const char *value) {
         g_cfg.max_presents = (unsigned)strtoul(value, NULL, 0);
     else if (!strcmp(key, "DDT_ARM_FILE"))
         lstrcpynA(g_cfg.arm_file, value, sizeof g_cfg.arm_file);
-    else if (!strcmp(key, "DDT_FLUSH"))
+    else if (!strcmp(key, "DDT_DATA"))
+        lstrcpynA(g_cfg.data_prefix, value, sizeof g_cfg.data_prefix);
+    else if (!strcmp(key, "DDT_DATA_MAX")) {
+        unsigned long v = strtoul(value, NULL, 0);
+        g_cfg.data_max = v > 0xFFFFFF00ul ? 0xFFFFFF00u : (unsigned)v; /* references are 32-bit offsets */
+    } else if (!strcmp(key, "DDT_FLUSH"))
         g_cfg.flush_each = atoi(value) != 0;
 }
 
-static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH", "DDT_ARM_FILE"};
+static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH", "DDT_ARM_FILE", "DDT_DATA", "DDT_DATA_MAX"};
 
 /* ddraw_trace.cfg next to the proxy (KEY=VALUE per line), then the environment, which wins. */
 static void cfg_load(void) {
@@ -34,6 +39,7 @@ static void cfg_load(void) {
     unsigned i;
 
     lstrcpyA(g_cfg.next_name, "ddraw_next.dll");
+    g_cfg.data_max = 512u << 20; /* generous but bounded */
     lstrcpyA(g_cfg.modules, "DX7HRTnLDisplay.dll,DX7HRDisplay.dll");
     GetModuleFileNameA(g_self, path, sizeof path);
     slash = strrchr(path, '\\');
