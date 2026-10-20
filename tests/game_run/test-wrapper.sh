@@ -147,6 +147,16 @@ check_not "swap-in: no arm file is configured by default" grep -q DDT_ARM_FILE "
 reset
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm'
 check "swap-in: the config names the arm file when one is given" grep -qF 'DDT_ARM_FILE=Z:\tmp\t.arm' "$W_GAME/ddraw_trace.cfg"
+# the data file (DDT_DATA, optional cap DDT_DATA_MAX) is named in the config only when asked for: the launcher scrubs the environment
+check_not "swap-in: no data file is configured by default" grep -q DDT_DATA "$W_GAME/ddraw_trace.cfg"
+reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 '' 'Z:\tmp\t.raw'
+check "swap-in: the config names the data prefix when one is given" grep -qxF 'DDT_DATA=Z:\tmp\t.raw' "$W_GAME/ddraw_trace.cfg"
+check_not "swap-in: ... an empty arm file argument configures no arm file" grep -q DDT_ARM_FILE "$W_GAME/ddraw_trace.cfg"
+check_not "swap-in: ... and no cap unless one is given" grep -q DDT_DATA_MAX "$W_GAME/ddraw_trace.cfg"
+reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm' 'Z:\tmp\t.raw' 1048576
+check "swap-in: arm file, data prefix and data cap together" bash -c "grep -qxF 'DDT_ARM_FILE=Z:\\tmp\\t.arm' '$W_GAME/ddraw_trace.cfg' && grep -qxF 'DDT_DATA=Z:\\tmp\\t.raw' '$W_GAME/ddraw_trace.cfg' && grep -qxF DDT_DATA_MAX=1048576 '$W_GAME/ddraw_trace.cfg'"
 reset
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
 # idempotent: the launcher retries a launch that dies early, and the wrapper's hook runs again

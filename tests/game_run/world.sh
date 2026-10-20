@@ -146,6 +146,8 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
   if [ -f "$game_dir/ddraw_trace.cfg" ]; then
     trace="$(sed -n 's/^DDT_TRACE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
     arm="$(sed -n 's/^DDT_ARM_FILE=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
+    data="$(sed -n 's/^DDT_DATA=//p' "$game_dir/ddraw_trace.cfg" | sed 's|^Z:||; s|\\|/|g')"
+    cp "$game_dir/ddraw_trace.cfg" "$FAKE_WORLD/cfg.seen"
     # the fake proxy: with an arm file it writes the trace only once the file exists
     (
       if [ -n "$arm" ]; then
@@ -158,6 +160,7 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
         id=$(( $(cat "$FAKE_WORLD/id-counter" 2>/dev/null || echo 100) + 7 )); echo "$id" >"$FAKE_WORLD/id-counter"
       fi
       printf '# ddraw_trace v1\nT1 fake\nT1 surf#%s.Unlock() = DD_OK locked={bytes=8, hash=fnv1a64:%016x}\n# end: 3 presents\n' "$id" "$id" >"$trace"
+      [ -z "$data" ] || printf 'FAKEDATA' >"$data.data"
       : >"$trace.done"
     ) &
   fi

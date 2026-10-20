@@ -347,4 +347,33 @@ check "... saying they differ" grep -q "traces DIFFER" "$W/run12b.out"
 rm -f "$W/vary-ids" "$W/id-counter"
 
 
+run_flags() { bash "$DRIVER" --test-config "$W/config.sh" "$@" "$W/proxy.dll"; }
+# ---- 13. --data: the proxy also writes the data file (P2.10.2); --out-dir: the captures go outside the repository -------------------------------------
+# Default behaviour stays what it was: no DDT_DATA in the config, no data file.  --data names the raw trace path as the data prefix in
+# ddraw_trace.cfg (the launcher scrubs the environment, so the config is the only way in); DDT_DATA_MAX from the caller is passed on.
+fresh
+run_driver >"$W/run13a.out" 2>&1
+check_eq "default run: exit 0" "0" "$?"
+check_not "default run: the config names no data file" grep -q DDT_DATA "$W/cfg.seen"
+check_not "default run: no data file is saved" bash -c "ls '$W/out'/*.data >/dev/null 2>&1"
+fresh
+run_flags --data >"$W/run13b.out" 2>&1
+check_eq "a --data run exits 0" "0" "$?"
+check "--data: the config names the raw trace path as the data prefix" grep -qE '^DDT_DATA=Z:.*run\.raw$' "$W/cfg.seen"
+check_not "--data: no cap in the config unless DDT_DATA_MAX is set" grep -q DDT_DATA_MAX "$W/cfg.seen"
+check "--data: the data file is saved next to the trace" bash -c "cat '$W/out'/trace.*.data | grep -q FAKEDATA"
+check "--data: the game directory is byte-for-byte what it was" same_game
+fresh
+DDT_DATA_MAX=123456 run_flags --data >"$W/run13c.out" 2>&1
+check "--data with DDT_DATA_MAX: the cap reaches the config" grep -qxF 'DDT_DATA_MAX=123456' "$W/cfg.seen"
+fresh
+DDT_DATA_MAX=123456 run_driver >"$W/run13d.out" 2>&1
+check_not "DDT_DATA_MAX without --data configures nothing" grep -q DDT_DATA "$W/cfg.seen"
+fresh
+run_flags --data --out-dir "$W/elsewhere" >"$W/run13e.out" 2>&1
+check_eq "--out-dir run exits 0" "0" "$?"
+check "--out-dir: trace and data are in that folder" bash -c "ls '$W/elsewhere'/trace.*.txt '$W/elsewhere'/trace.*.data >/dev/null 2>&1"
+check "--out-dir: the raw trace marker is kept there (.done)" test -e "$W/elsewhere/run.raw.done"
+rm -rf "$W/elsewhere"
+
 summary
