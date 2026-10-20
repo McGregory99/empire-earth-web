@@ -96,6 +96,19 @@ static __inline void fill_pattern(unsigned char *dst, unsigned first, unsigned c
             dst[i * V_STRIDE + j] = (unsigned char)(seed * 31u + (first + i) * 7u + j);
 }
 
+/* Scenario S (mock ddraw): surface pixels captured at Unlock, ReleaseDC and, for surfaces changed by Blt, when they are used. */
+typedef struct ScenarioS {
+    HRESULT hr[40];
+    int n;
+} ScenarioS;
+typedef int(WINAPI *ScenarioSFn)(HWND hwnd, ScenarioS *out);
+#define S_FILL_COLOR 0x0000ff00u
+#define S_RECT_L 2
+#define S_RECT_T 2
+#define S_RECT_R 6
+#define S_RECT_B 6
+static __inline unsigned short s565_pixel(unsigned x, unsigned y) { return (unsigned short)(((y * 4 + x) * 0x1111u) & 0xffffu); }
+
 /* Deterministic content the plugin writes into locked buffers, so that the harness can compute the expected hash. */
 #define VB_VERTICES 4
 #define VB_FVF 0x152 /* XYZ | NORMAL | DIFFUSE | TEX1 */

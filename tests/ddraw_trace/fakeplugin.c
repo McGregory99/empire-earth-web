@@ -375,6 +375,102 @@ __declspec(dllexport) int WINAPI scenario_v(HWND hwnd, ScenarioV *r) {
     return 0;
 }
 
+/* Scenario S: surface data against the scripted mock ddraw. */
+static LPDIRECTDRAWSURFACE7 make_surface(LPDIRECTDRAW7 dd, DWORD w, DWORD h, int rgb565) {
+    DDSURFACEDESC2 sd;
+    LPDIRECTDRAWSURFACE7 s = NULL;
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+    sd.ddsCaps.dwCaps = DDSCAPS_TEXTURE;
+    sd.dwWidth = w;
+    sd.dwHeight = h;
+    if (rgb565) {
+        sd.dwFlags |= DDSD_PIXELFORMAT;
+        sd.ddpfPixelFormat.dwSize = sizeof sd.ddpfPixelFormat;
+        sd.ddpfPixelFormat.dwFlags = DDPF_RGB;
+        sd.ddpfPixelFormat.dwRGBBitCount = 16;
+        sd.ddpfPixelFormat.dwRBitMask = 0xf800;
+        sd.ddpfPixelFormat.dwGBitMask = 0x07e0;
+        sd.ddpfPixelFormat.dwBBitMask = 0x001f;
+    }
+    IDirectDraw7_CreateSurface(dd, &sd, &s, NULL);
+    return s;
+}
+
+__declspec(dllexport) int WINAPI scenario_s(HWND hwnd, ScenarioS *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECT3D7 d3d = NULL;
+    LPDIRECT3DDEVICE7 dev = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL, a, b, c;
+    DDSURFACEDESC2 sd;
+    DDBLTFX fx;
+    RECT rc = {S_RECT_L, S_RECT_T, S_RECT_R, S_RECT_B};
+    unsigned x, y;
+    int i;
+#define R(call) (r->hr[r->n++] = (call))
+
+    if (FAILED(DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL)))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL); /* surf#1 */
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+    IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);    /* surf#2 */
+    a = make_surface(dd, 8, 8, 0);                       /* surf#3: 8x8 ARGB, texture */
+    b = make_surface(dd, 4, 4, 1);                       /* surf#4: 4x4 RGB565 */
+    c = make_surface(dd, 8, 8, 0);                       /* surf#5: GDI text and blit target */
+    IDirectDraw7_QueryInterface(dd, &IID_IDirect3D7, (void **)&d3d);
+    IDirect3D7_CreateDevice(d3d, &IID_IDirect3DHALDevice, back, &dev);
+
+    for (i = 0; i < 2; i++) { /* the second pass writes the same pixels: nothing new is stored */
+        memset(&sd, 0, sizeof sd);
+        sd.dwSize = sizeof sd;
+        R(IDirectDrawSurface7_Lock(a, NULL, &sd, DDLOCK_WAIT, NULL));
+        fill_texture((unsigned char *)sd.lpSurface, (unsigned)sd.lPitch);
+        R(IDirectDrawSurface7_Unlock(a, NULL));
+    }
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(a, &rc, &sd, DDLOCK_WAIT, NULL));
+    for (y = S_RECT_T; y < S_RECT_B; y++)
+        for (x = S_RECT_L; x < S_RECT_R; x++)
+            ((unsigned *)((unsigned char *)sd.lpSurface + (y - S_RECT_T) * sd.lPitch))[x - S_RECT_L] = rect_pixel(x, y);
+    R(IDirectDrawSurface7_Unlock(a, &rc));
+
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(b, NULL, &sd, DDLOCK_WAIT, NULL));
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            ((unsigned short *)((unsigned char *)sd.lpSurface + y * sd.lPitch))[x] = s565_pixel(x, y);
+    R(IDirectDrawSurface7_Unlock(b, NULL));
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(b, NULL, &sd, DDLOCK_WAIT | DDLOCK_READONLY, NULL)); /* reading changes nothing */
+    R(IDirectDrawSurface7_Unlock(b, NULL));
+
+    {   HDC dc = NULL;
+        R(IDirectDrawSurface7_GetDC(c, &dc));
+        R(IDirectDrawSurface7_ReleaseDC(c, dc)); /* the mock draws its "GDI text" here */
+    }
+    R(IDirectDrawSurface7_Blt(c, NULL, a, NULL, DDBLT_WAIT, NULL)); /* c now holds a copy of a */
+    R(IDirect3DDevice7_SetTexture(dev, 0, c));                      /* c changed by a blit: its pixels are stored now */
+    R(IDirect3DDevice7_SetTexture(dev, 0, c));                      /* unchanged since: nothing */
+    memset(&fx, 0, sizeof fx);
+    fx.dwSize = sizeof fx;
+    fx.dwFillColor = S_FILL_COLOR;
+    R(IDirectDrawSurface7_Blt(a, NULL, NULL, NULL, DDBLT_WAIT | DDBLT_COLORFILL, &fx));
+    R(IDirectDrawSurface7_BltFast(c, 0, 0, a, NULL, DDBLTFAST_WAIT)); /* a is a source after a colour fill: its pixels are stored */
+    for (i = 0; i < 3; i++)
+        R(IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_WAIT, NULL));
+#undef R
+    return 0;
+}
+
 __declspec(dllexport) int WINAPI scenario_r(HWND hwnd, ScenarioR *r) {
     LPDIRECTDRAW7 dd = NULL;
     LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;

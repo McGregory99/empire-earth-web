@@ -11,15 +11,21 @@
 
 typedef struct Mock {
     const void *vtbl;
-    int id; /* 1 = primary, 2 = back buffer */
+    int id; /* 1 = primary, 2 = back buffer, 3.. = surfaces with memory */
+    DWORD w, h, bpp, pitch, pf_flags, rmask, gmask, bmask, amask;
+    unsigned char *mem;
+    int dc_held;
 } Mock;
 
-static Mock g_primary, g_back;
+static Mock g_primary, g_back, g_pool[8];
+static int g_npool;
 static LONG g_dd_refs = 1;
 static int g_flip_calls, g_blt_calls;
 static IDirectDraw7 *g_dd;
 
-static int is_mine(const void *p) { return p == (const void *)&g_primary || p == (const void *)&g_back; }
+static int is_mine(const void *p) {
+    return p == (const void *)&g_primary || p == (const void *)&g_back || (p >= (const void *)g_pool && p < (const void *)(g_pool + 8));
+}
 
 static HRESULT WINAPI s_qi(IDirectDrawSurface7 *This, REFIID riid, void **out) { (void)This; (void)riid; *out = NULL; return E_NOINTERFACE; }
 static ULONG WINAPI s_addref(IDirectDrawSurface7 *This) { (void)This; return 2; }
@@ -41,12 +47,37 @@ static HRESULT WINAPI s_blt(IDirectDrawSurface7 *This, LPRECT dr, IDirectDrawSur
     ++g_blt_calls;
     if ((flags & DDBLT_DONOTWAIT) && g_blt_calls == 1)
         return DDERR_WASSTILLDRAWING;
+    {   /* surfaces with memory: a colour fill or a whole-surface copy, so that the tests can predict the pixels */
+        Mock *d = (Mock *)This, *s = (Mock *)src;
+        DWORD y, x;
+        if (d->mem && (flags & DDBLT_COLORFILL) && fx) {
+            for (y = 0; y < d->h; y++)
+                for (x = 0; x < d->w; x++)
+                    if (d->bpp == 32)
+                        ((DWORD *)(d->mem + y * d->pitch))[x] = fx->dwFillColor;
+                    else
+                        ((WORD *)(d->mem + y * d->pitch))[x] = (WORD)fx->dwFillColor;
+        } else if (d->mem && s && s->mem && s->w == d->w && s->h == d->h && s->bpp == d->bpp) {
+            for (y = 0; y < d->h; y++)
+                memcpy(d->mem + y * d->pitch, s->mem + y * s->pitch, d->w * d->bpp / 8);
+        }
+    }
     return DD_OK;
 }
 
 static HRESULT WINAPI s_bltfast(IDirectDrawSurface7 *This, DWORD x, DWORD y, IDirectDrawSurface7 *src, LPRECT r, DWORD t) {
-    (void)This; (void)x; (void)y; (void)r; (void)t;
-    return (src && !is_mine(src)) ? DDERR_INVALIDPARAMS : DD_OK;
+    Mock *d = (Mock *)This, *s = (Mock *)src;
+    (void)t;
+    if (src && !is_mine(src))
+        return DDERR_INVALIDPARAMS;
+    if (d->mem && s && s->mem && s->bpp == d->bpp) { /* copies the source rectangle (default: all of it) to (x, y) */
+        RECT rc = r ? *r : (RECT){0, 0, (LONG)s->w, (LONG)s->h};
+        LONG row;
+        for (row = 0; row < rc.bottom - rc.top && y + (DWORD)row < d->h; row++)
+            memcpy(d->mem + (y + (DWORD)row) * d->pitch + x * d->bpp / 8, s->mem + (rc.top + row) * s->pitch + rc.left * s->bpp / 8,
+                   (size_t)(rc.right - rc.left) * s->bpp / 8);
+    }
+    return DD_OK;
 }
 
 static HRESULT WINAPI s_getattached(IDirectDrawSurface7 *This, LPDDSCAPS2 caps, IDirectDrawSurface7 **out) {
@@ -60,7 +91,54 @@ static HRESULT WINAPI s_getattached(IDirectDrawSurface7 *This, LPDDSCAPS2 caps, 
 
 static HRESULT WINAPI s_flipstatus(IDirectDrawSurface7 *This, DWORD flags) { (void)This; (void)flags; return DD_OK; }
 
+/* Lock fills the whole description like Wine does (pitch, size, pixel format) and hands out the rectangle's first pixel; a surface
+ * whose DC is out cannot be locked, so a proxy that reads the pixels before ReleaseDC returned would fail here. */
+static HRESULT WINAPI s_lock(IDirectDrawSurface7 *This, LPRECT rc, LPDDSURFACEDESC2 sd, DWORD flags, HANDLE ev) {
+    Mock *m = (Mock *)This;
+    (void)flags; (void)ev;
+    if (!m->mem)
+        return DDERR_GENERIC;
+    if (m->dc_held)
+        return DDERR_SURFACEBUSY;
+    sd->dwFlags |= DDSD_PITCH | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT | DDSD_LPSURFACE;
+    sd->dwWidth = m->w;
+    sd->dwHeight = m->h;
+    sd->lPitch = (LONG)m->pitch;
+    sd->ddpfPixelFormat.dwSize = sizeof sd->ddpfPixelFormat;
+    sd->ddpfPixelFormat.dwFlags = m->pf_flags;
+    sd->ddpfPixelFormat.dwRGBBitCount = m->bpp;
+    sd->ddpfPixelFormat.dwRBitMask = m->rmask;
+    sd->ddpfPixelFormat.dwGBitMask = m->gmask;
+    sd->ddpfPixelFormat.dwBBitMask = m->bmask;
+    sd->ddpfPixelFormat.dwRGBAlphaBitMask = m->amask;
+    sd->lpSurface = m->mem + (rc ? (size_t)rc->top * m->pitch + (size_t)rc->left * m->bpp / 8 : 0);
+    return DD_OK;
+}
+static HRESULT WINAPI s_unlock(IDirectDrawSurface7 *This, LPRECT rc) { (void)This; (void)rc; return DD_OK; }
+static HRESULT WINAPI s_getdc(IDirectDrawSurface7 *This, HDC *dc) {
+    Mock *m = (Mock *)This;
+    if (!m->mem || m->dc_held)
+        return DDERR_GENERIC;
+    m->dc_held = 1;
+    *dc = (HDC)(uintptr_t)(0x1000 + m->id);
+    return DD_OK;
+}
+/* What GDI drew while the DC was out shows up when it is released: pixel (x, y) of a 32-bit surface becomes 0xffc0de00 | (y*8+x). */
+static HRESULT WINAPI s_releasedc(IDirectDrawSurface7 *This, HDC dc) {
+    Mock *m = (Mock *)This;
+    DWORD x, y;
+    (void)dc;
+    if (!m->dc_held)
+        return DDERR_GENERIC;
+    for (y = 0; y < m->h; y++)
+        for (x = 0; x < m->w; x++)
+            ((DWORD *)(m->mem + y * m->pitch))[x] = 0xffc0de00u | (y * 8 + x);
+    m->dc_held = 0;
+    return DD_OK;
+}
+
 static IDirectDrawSurface7Vtbl g_surface_vtbl = {
+    .Lock = s_lock, .Unlock = s_unlock, .GetDC = s_getdc, .ReleaseDC = s_releasedc,
     .QueryInterface = s_qi, .AddRef = s_addref, .Release = s_release, .Blt = s_blt, .BltFast = s_bltfast,
     .Flip = s_flip, .GetAttachedSurface = s_getattached, .GetFlipStatus = s_flipstatus,
 };
@@ -115,7 +193,13 @@ static HRESULT WINAPI dev_drawi(IDirect3DDevice7 *This, D3DPRIMITIVETYPE t, DWOR
     return (v && idx) ? DD_OK : DDERR_INVALIDPARAMS;
 }
 
+static HRESULT WINAPI dev_settexture(IDirect3DDevice7 *This, DWORD stage, IDirectDrawSurface7 *tex) {
+    (void)This; (void)stage;
+    return (!tex || is_mine(tex)) ? DD_OK : DDERR_INVALIDPARAMS;
+}
+
 static IDirect3DDevice7Vtbl g_dev_vtbl = {
+    .SetTexture = dev_settexture,
     .QueryInterface = (void *)o_qi, .AddRef = (void *)o_addref, .Release = (void *)o_release,
     .DrawPrimitive = dev_draw, .DrawIndexedPrimitive = dev_drawi,
     .DrawPrimitiveVB = dev_drawvb, .DrawIndexedPrimitiveVB = dev_drawivb,
@@ -157,6 +241,25 @@ static HRESULT WINAPI d_createsurface(IDirectDraw7 *This, LPDDSURFACEDESC2 desc,
     *out = NULL;
     if (!(desc->dwFlags & DDSD_CAPS))
         return DDERR_INVALIDPARAMS;
+    if ((desc->dwFlags & DDSD_WIDTH) && (desc->dwFlags & DDSD_HEIGHT) && !(desc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE) && g_npool < 8) {
+        Mock *m = &g_pool[g_npool];
+        const DDPIXELFORMAT *pf = &desc->ddpfPixelFormat;
+        int own = (desc->dwFlags & DDSD_PIXELFORMAT) != 0;
+        m->vtbl = &g_surface_vtbl;
+        m->id = 3 + g_npool++;
+        m->w = desc->dwWidth;
+        m->h = desc->dwHeight;
+        m->pf_flags = own ? pf->dwFlags : DDPF_RGB | DDPF_ALPHAPIXELS;
+        m->bpp = own ? pf->dwRGBBitCount : 32;
+        m->rmask = own ? pf->dwRBitMask : 0x00ff0000;
+        m->gmask = own ? pf->dwGBitMask : 0x0000ff00;
+        m->bmask = own ? pf->dwBBitMask : 0x000000ff;
+        m->amask = own ? pf->dwRGBAlphaBitMask : 0xff000000;
+        m->pitch = m->w * m->bpp / 8 + 8; /* padded rows, as real drivers do */
+        m->mem = calloc(1, (size_t)m->pitch * m->h);
+        *out = (IDirectDrawSurface7 *)m;
+        return DD_OK;
+    }
     *out = (IDirectDrawSurface7 *)((desc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE) ? &g_primary : &g_back);
     return DD_OK;
 }

@@ -670,14 +670,44 @@ static void cycle_data_off(HMODULE plugin, HWND hwnd) {
     check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, "no data file without DDT_DATA");
 }
 
+/* With the data file off, the trace is the same text (the header line and the blob suffixes aside). */
+static void check_same_as_off(void) {
+    const char *off_trace = getenv("DDT_OFF_TRACE");
+    long off_n = 0;
+    char *off_text;
+    int i;
+    off_text = off_trace ? read_all(off_trace, &off_n) : NULL;
+    check(off_text != NULL, "the data-off trace of the same scenario is available");
+    if (off_text) {
+        char *p = off_text, *e;
+        int same = 1;
+        for (i = 0; i < g_nlines; i++) {
+            char tmp[8600], *cut;
+            if (!strncmp(g_lines[i], "# data:", 7))
+                continue;
+            strncpy(tmp, g_lines[i], sizeof tmp - 1);
+            tmp[sizeof tmp - 1] = 0;
+            cut = strstr(tmp, " blob=");
+            if (cut)
+                *cut = 0;
+            e = strchr(p, '\n');
+            if (!e || (size_t)(e - p) != strlen(tmp) || strncmp(p, tmp, strlen(tmp))) {
+                same = 0;
+                break;
+            }
+            p = e + 1;
+        }
+        check(same && !*p, "stripped of 'blob=' suffixes and the '# data:' header, the trace is byte-identical to the data-off trace");
+        free(off_text);
+    }
+}
+
 static void cycle_data(HMODULE plugin, HWND hwnd) {
     ScenarioV r;
     unsigned char exp[V_TOTAL * V_STRIDE], zero[4 * V_STRIDE], app[3 * V_STRIDE];
     WORD idx6[6] = {0, 1, 2, 2, 1, 3}, idx3[3] = {2, 1, 0};
     char path[700];
-    const char *trace = getenv("DDT_TRACE"), *off_trace = getenv("DDT_OFF_TRACE");
-    long off_n = 0;
-    char *off_text;
+    const char *trace = getenv("DDT_TRACE");
     int i, k;
     static const int vrec[8] = {0, 2, 0, 2, 3, 4, 5, 5}, irec[8] = {1, 1, 1, -1, 1, 1, 6, -1};
     static const char *const names[8] = {"DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawPrimitiveVB",
@@ -740,31 +770,133 @@ static void cycle_data(HMODULE plugin, HWND hwnd) {
     check(k == 8, "all 8 draw lines carry references");
     expect_count("*vb#1.Unlock*blob=*", 0);
 
-    /* with the data file off, the trace is the same text (the header line and the blob suffix aside) */
-    off_text = off_trace ? read_all(off_trace, &off_n) : NULL;
-    check(off_text != NULL, "the data-off trace of the same scenario is available");
-    if (off_text) {
-        char *p = off_text, *e;
-        int same = 1;
-        for (i = 0; i < g_nlines; i++) {
-            char tmp[8600], *cut;
-            if (!strncmp(g_lines[i], "# data:", 7))
-                continue;
-            strncpy(tmp, g_lines[i], sizeof tmp - 1);
-            tmp[sizeof tmp - 1] = 0;
-            cut = strstr(tmp, " blob=");
-            if (cut)
-                *cut = 0;
-            e = strchr(p, '\n');
-            if (!e || (size_t)(e - p) != strlen(tmp) || strncmp(p, tmp, strlen(tmp))) {
-                same = 0;
-                break;
-            }
-            p = e + 1;
+    check_same_as_off();
+}
+
+
+static const char *nth_line(const char *pat, int n) {
+    int i;
+    for (i = 0; i < g_nlines; i++)
+        if (glob(pat, g_lines[i]) && n-- == 0)
+            return g_lines[i];
+    return "";
+}
+
+static void run_scenario_s(HMODULE plugin, HWND hwnd) {
+    ScenarioS r;
+    ScenarioSFn fn = (ScenarioSFn)GetProcAddress(plugin, "scenario_s");
+    int i, bad = 0;
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_s");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario S ran to the end");
+    for (i = 0; i < r.n; i++)
+        if (r.hr[i] != DD_OK) {
+            bad++;
+            printf("note: call %d returned %08lx\n", i, (unsigned long)r.hr[i]);
         }
-        check(same && !*p, "stripped of 'blob=' suffixes and the '# data:' header, the trace is byte-identical to the data-off trace");
-        free(off_text);
+    check(r.n == 20 && !bad, "every call of scenario S succeeded (the mock refuses a Lock while a DC is out)");
+    load_trace_again();
+}
+
+static void cycle_surf_off(HMODULE plugin, HWND hwnd) {
+    char path[700];
+    const char *trace = getenv("DDT_TRACE");
+    run_scenario_s(plugin, hwnd);
+    expect_count("*blob=*", 0);
+    expect_count("# data:*", 0);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, "no data file without DDT_DATA");
+}
+
+static int surf_rec(int i, unsigned object, unsigned origin, const unsigned rect[4], unsigned w, unsigned h, unsigned bpp, unsigned pf_flags,
+                    const unsigned masks[4], const unsigned char *want, const char *what) {
+    char b[200];
+    const Rec *r = &g_recs[i];
+    unsigned rw = rect[2] - rect[0], rh = rect[3] - rect[1], rowbytes = rw * bpp / 8;
+    int ok = i < g_nrecs && r->kind == K_SURFACE && r->object == object && r->plen == rowbytes * rh && !memcmp(r->payload, want, r->plen) &&
+             r->p[0] == rect[0] && r->p[1] == rect[1] && r->p[2] == rect[2] && r->p[3] == rect[3] && r->p[4] == w && r->p[5] == h &&
+             r->p[6] == rowbytes && r->p[7] == rh && r->p[8] == origin && r->p[9] == pf_flags && r->p[10] == 0 && r->p[11] == bpp &&
+             r->p[12] == masks[0] && r->p[13] == masks[1] && r->p[14] == masks[2] && r->p[15] == masks[3] &&
+             r->hash == fnv1a(want, r->plen, 0xcbf29ce484222325ull);
+    sprintf(b, "record %d is %s (object surf#%u, origin %u, %ux%u rect, rows without padding, format params, hash)", i, what, object, origin, rw, rh);
+    check(ok, b);
+    return ok;
+}
+
+static void check_hash_in_line(const char *line, int rec, const char *what) {
+    char want[64], b[200];
+    sprintf(want, "hash=fnv1a64:%08x%08x", (unsigned)(g_recs[rec].hash >> 32), (unsigned)g_recs[rec].hash);
+    sprintf(b, "%s: the hash in the line is the record's payload hash", what);
+    check(strstr(line, want) != NULL, b);
+}
+
+static void cycle_surf(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    unsigned a[64], rect[64], b[16], gdi[64], fill[64], x, y;
+    static const unsigned argb[4] = {0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000}, m565[4] = {0xf800, 0x07e0, 0x001f, 0};
+    static const unsigned full8[4] = {0, 0, 8, 8}, full4[4] = {0, 0, 4, 4}, rc[4] = {S_RECT_L, S_RECT_T, S_RECT_R, S_RECT_B};
+    unsigned short b565[16];
+    const char *ln;
+
+    run_scenario_s(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 6, "6 records: a (full), a (rect), b, c (GDI), c (as a texture after a blit), a (after a colour fill)");
+    if (g_nrecs != 6)
+        return;
+    fill_texture((unsigned char *)a, 32);
+    for (y = 0; y < 8; y++)
+        for (x = 0; x < 8; x++) {
+            gdi[y * 8 + x] = 0xffc0de00u | (y * 8 + x);
+            fill[y * 8 + x] = S_FILL_COLOR;
+        }
+    for (y = S_RECT_T; y < S_RECT_B; y++)
+        for (x = S_RECT_L; x < S_RECT_R; x++)
+            rect[(y - S_RECT_T) * 4 + x - S_RECT_L] = rect_pixel(x, y);
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            b565[y * 4 + x] = s565_pixel(x, y);
+    (void)b;
+    check(g_recs[0].off == DATA_HDR, "the first record starts right after the file header");
+    surf_rec(0, 3, 1, full8, 8, 8, 32, 0x41, argb, (unsigned char *)a, "surface a at Unlock (pitch 40 stripped to 32-byte rows)");
+    surf_rec(1, 3, 1, rc, 8, 8, 32, 0x41, argb, (unsigned char *)rect, "the 4x4 rectangle a was locked with");
+    surf_rec(2, 4, 1, full4, 4, 4, 16, 0x40, m565, (unsigned char *)b565, "surface b, RGB565");
+    surf_rec(3, 5, 2, full8, 8, 8, 32, 0x41, argb, (unsigned char *)gdi, "surface c after GetDC/ReleaseDC (read after the DC was released)");
+    {   /* a after its rectangle was rewritten, copied into c by the Blt */
+        unsigned amodel[64];
+        memcpy(amodel, a, sizeof a);
+        for (y = S_RECT_T; y < S_RECT_B; y++)
+            for (x = S_RECT_L; x < S_RECT_R; x++)
+                amodel[y * 8 + x] = rect_pixel(x, y);
+        surf_rec(4, 5, 5, full8, 8, 8, 32, 0x41, argb, (unsigned char *)amodel, "surface c bound as a texture after a Blt onto it");
     }
+    surf_rec(5, 3, 4, full8, 8, 8, 32, 0x41, argb, (unsigned char *)fill, "surface a read as a BltFast source after a colour fill");
+
+    /* the lines */
+    ln = nth_line("T1 surf#3.Unlock(*", 0);
+    check_ref(ln, "blob=", 0, "first Unlock of a");
+    check_hash_in_line(ln, 0, "first Unlock of a");
+    check_ref(nth_line("T1 surf#3.Unlock(*", 1), "blob=", 0, "second, identical Unlock of a (stored once)");
+    ln = nth_line("T1 surf#3.Unlock(*", 2);
+    check_ref(ln, "blob=", 1, "Unlock of a's rectangle");
+    check_hash_in_line(ln, 1, "rectangle Unlock");
+    ln = nth_line("T1 surf#4.Unlock(*", 0);
+    check_ref(ln, "blob=", 2, "Unlock of b");
+    check_hash_in_line(ln, 2, "Unlock of b");
+    check(strstr(nth_line("T1 surf#4.Unlock(*", 1), "blob=") == NULL, "a DDLOCK_READONLY Unlock stores nothing");
+    check_ref(nth_line("T1 surf#5.ReleaseDC(*", 0), "blob=", 3, "ReleaseDC of c");
+    check(strstr(nth_line("T1 surf#5.Blt(*", 0), "blob=") == NULL, "Blt of an unchanged source stores nothing");
+    check_ref(nth_line("T1 dev7#1.SetTexture(*", 0), "blob=", 4, "SetTexture of the blitted-to c");
+    check(strstr(nth_line("T1 dev7#1.SetTexture(*", 1), "blob=") == NULL, "SetTexture of an unchanged texture stores nothing");
+    check_ref(nth_line("T1 surf#5.BltFast(*", 0), "blob=", 5, "BltFast from the filled a");
+    expect_count("T1 surf#5.Lock(*", 0);
+    expect_count("T1 surf#3.Lock(*", 3);
+    expect_count("*blob=*", 8);
+    check(g_nlines > 0 && !strcmp(g_lines[g_nlines - 1], "# end: 3 presents"), "the capture ends at the third present");
+    check_same_as_off();
 }
 
 /* DDT_DATA_MAX too small for the third record: the capture fails loudly and stops. */
@@ -802,6 +934,10 @@ int main(int argc, char **argv) {
         load_trace();
         if (!strcmp(argv[1], "data-off"))
             cycle_data_off(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-surf-off"))
+            cycle_surf_off(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-surf"))
+            cycle_surf(plugin, hwnd);
         else if (!strcmp(argv[1], "data-cap"))
             cycle_data_cap(plugin, hwnd);
         else
