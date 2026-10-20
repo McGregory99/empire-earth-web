@@ -251,3 +251,24 @@ test('loadFromFiles: picks trace and data by name, accepts .gz, and tells what i
   await assert.rejects(loadFromFiles([{ name: 'a.data', bytes: new Uint8Array(f.data) }]), /trace/i);
   await assert.rejects(loadFromFiles([{ name: 'a.trace', bytes: new TextEncoder().encode(f.trace) }]), /\.data/);
 });
+
+test('GDI read-back of a screen surface becomes a gdiOverlay of its snapshot (stored once, referenced twice)', () => {
+  const f = build({ gdi: true });
+  const { sequence, stats } = loadTrace(f.trace, new Uint8Array(f.data));
+  const f2 = sequence.frames[1].commands;
+  const overlays = f2.filter((c) => c.op === 'gdiOverlay');
+  assert.equal(overlays.length, 2);
+  assert.equal(overlays[0].srcId, 2);
+  const creates = f2.filter((c) => c.op === 'createTexture' && c.id === 2);
+  assert.equal(creates.length, 1, 'the snapshot texture is created once');
+  assert.equal(creates[0].format, 'XRGB8888');
+  assert.equal(f2.filter((c) => c.op === 'updateTexture' && c.id === 2).length, 0, 'the identical second record is not uploaded again');
+  assert.ok(f2.indexOf(creates[0]) < f2.indexOf(overlays[0]));
+  assert.equal(stats.gdiOverlays, 2);
+  assert.equal(sequence.frames[0].commands.filter((c) => c.op === 'gdiOverlay').length, 0);
+});
+
+test('GDI read-back of a non-screen surface stays a plain texture update (no overlay)', () => {
+  const { sequence } = load();
+  assert.equal(sequence.frames.flatMap((f) => f.commands).filter((c) => c.op === 'gdiOverlay').length, 0);
+});

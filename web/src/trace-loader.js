@@ -41,7 +41,7 @@ class Loader {
     this.stats = {
       lines: 0, calls: 0, presents: 0, frames: 0, commands: 0, droppedTrailingCommands: 0, skippedFailedCalls: 0, ignoredCalls: {},
       ignoredOffscreenBlts: 0, skippedDraws: 0, skippedPixelUpdates: 0, skippedBlits: 0, uniqueVertexRecords: 0, deviceSwitches: 0,
-      displayModes: [], textures: 0,
+      displayModes: [], textures: 0, gdiOverlays: 0,
     };
   }
 
@@ -176,6 +176,9 @@ class Loader {
     if (!Number.isInteger(px) || px < 1 || rowBytes !== (rt - l) * px || rows !== b - t || r.payload.length !== rowBytes * rows) {
       this.fail(`surf#${s.id}: inconsistent surface record at ${blob.offset}`);
     }
+    const whole = l === 0 && t === 0 && rt === w && b === h;
+    if (whole && s.pixels && s.lastWhole === blob.offset && s.width === w && s.height === h && s.bpp === bpp) return; // same content again
+    s.lastWhole = whole ? blob.offset : null;
     if (!s.pixels || s.width !== w || s.height !== h || s.bpp !== bpp) {
       s.width = w; s.height = h; s.bpp = bpp;
       s.pixels = new Uint8Array(w * h * px);
@@ -186,7 +189,18 @@ class Loader {
   }
 
   surf_Unlock(c) { this.applyBlob(this.surf(c.obj.id), parseBlob(c.suffix)); }
-  surf_ReleaseDC(c) { this.applyBlob(this.surf(c.obj.id), parseBlob(c.suffix)); }
+  surf_ReleaseDC(c) {
+    const s = this.surf(c.obj.id);
+    const blob = parseBlob(c.suffix);
+    this.applyBlob(s, blob);
+    // GDI (text) drawn straight onto the screen surface: the capture stored the whole surface, which includes the 3D
+    // output. Take only the pixels that differ from our own render (cmd.gdiOverlay).
+    if (s.screen && blob && this.data && s.pixels) {
+      this.flush(s, false);
+      this.emit(cmd.gdiOverlay(s.id));
+      this.stats.gdiOverlays++;
+    }
+  }
 
   /** Make the renderer's copy of a surface current. With `must`, a surface without captured pixels is an error. */
   flush(s, must) {

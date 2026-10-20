@@ -118,6 +118,10 @@ const CHECKS = {
     checkRect(c.dstRect, 'blit2D.dstRect');
     if (c.colorKey !== null && !(isUint32(c.colorKey?.low) && isUint32(c.colorKey?.high))) fail('blit2D: colorKey must be null or {low, high}');
   },
+  gdiOverlay(c) {
+    if (!Number.isInteger(c.srcId)) fail('gdiOverlay: srcId');
+    if (!(Number.isInteger(c.threshold) && c.threshold >= 0 && c.threshold <= 255)) fail('gdiOverlay: threshold must be 0..255');
+  },
   resetDeviceState() {},
   present() {},
 };
@@ -170,6 +174,12 @@ export const cmd = {
   fillRect: (rect, color) => make({ op: 'fillRect', rect, color }),
   /** Blt from a surface to the render target (nearest neighbour). colorKey drops matching source texels. */
   blit2D: (srcId, srcRect, dstRect, colorKey = null) => make({ op: 'blit2D', srcId, srcRect, dstRect, colorKey }),
+  /**
+   * GDI drew onto the screen surface (GetDC/ReleaseDC) and the capture stored the whole surface as `srcId`. Pixels of that
+   * snapshot that differ from the current render by more than `threshold` (max channel difference) are copied over it; the
+   * rest keeps the renderer's own output, so the 3D result stays visible and only the GDI layer (text) is taken from data.
+   */
+  gdiOverlay: (srcId, threshold = 24) => make({ op: 'gdiOverlay', srcId, threshold }),
   /** Back to D3D7 default device state and no bound textures: the trace switched to another Direct3D device. */
   resetDeviceState: () => make({ op: 'resetDeviceState' }),
   /** End of frame. */

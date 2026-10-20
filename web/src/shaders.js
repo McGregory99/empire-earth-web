@@ -2,7 +2,8 @@
 //
 // Matrices arrive exactly as D3D stores them (row-major, row-vector convention) and are uploaded WITHOUT
 // transposing: GLSL then sees M^T, and `M^T * v` equals the D3D `v * M`. Clip depth is remapped from D3D
-// [0, w] to GL [-w, w]. View-space depth |z| drives vertex fog (no range fog).
+// [0, w] to GL [-w, w]. Screen positions are shifted by half a pixel because D3D (and the D3D9-based stack the original
+// ran on) puts pixel centres on integer coordinates, so the game's -0.5 vertex offsets are exact texel-to-pixel maps. View-space depth |z| drives vertex fog (no range fog).
 
 export const MAIN_VS = `#version 300 es
 precision highp float;
@@ -12,6 +13,7 @@ layout(location = 2) in vec4 aColor;   // bytes B,G,R,A in memory (D3DCOLOR), no
 layout(location = 3) in vec2 aUV;
 
 uniform mat4 uWorld, uView, uProj;
+uniform vec2 uHalfPixel;         // (+1/viewport width, -1/viewport height)
 uniform bool uLighting, uNormalize;
 uniform vec4 uGlobalAmbient;
 uniform vec4 uMatDiffuse, uMatAmbient, uMatEmissive;
@@ -30,6 +32,7 @@ void main() {
   vec4 pv = uView * (uWorld * vec4(aPos, 1.0));
   vec4 clip = uProj * pv;
   clip.z = 2.0 * clip.z - clip.w;
+  clip.xy += uHalfPixel * clip.w;   // D3D pixel centres are on integers, GL's on +0.5: shift by half a pixel
   gl_Position = clip;
 
   vec4 vcol = aColor.bgra;

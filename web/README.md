@@ -40,6 +40,10 @@ Z-buffer Clears) are skipped and counted.
 * Geometry: each draw carries its exact vertex range, so ring-buffer locks and DISCARD/NOOVERWRITE are irrelevant. Records are
   content addressed: a vertex record referenced by several draws is uploaded once and every draw uses the same `startVertex`.
   Non-indexed draws get sequential indices.
+* GDI text: the original draws all menu text with GDI straight onto the 3D-device surface (`GetDC`/`ReleaseDC`), and the capture
+  stores that whole surface at `ReleaseDC`. A `ReleaseDC` on a screen surface becomes `gdiOverlay`: only snapshot pixels that
+  differ from our own render by more than 24 are copied, so the 3D output stays ours and only the text layer comes from data
+  (`renderer.stats.gdiPixels` counts the copied pixels). An identical record referenced again is not uploaded again.
 * Several Direct3D devices (the game has one per resolution phase): each device has a state shadow; when the trace switches
   device the loader emits `resetDeviceState` and replays that device's shadow.
 
@@ -85,8 +89,17 @@ with `present`. Commands are plain objects built (and validated) by `cmd.*` in `
 | `draw({primitive, startVertex, vertexCount, indices})` | `triangleList` / `lineList`, `Uint16Array` indices relative to startVertex |
 | `clear(flags, color, z, rect?)`, `fillRect(rect, color)` | D3DCLEAR TARGET 1 / ZBUFFER 2 |
 | `blit2D(srcId, srcRect, dstRect, colorKey)` | Blt, nearest, optional colour key |
+| `gdiOverlay(srcId, threshold)` | GDI drew on the screen surface and the capture stored it as `srcId`: copy the snapshot pixels that differ from the current render by more than `threshold` (the text), keep the rest |
 | `resetDeviceState()` | back to D3D7 defaults, no textures bound (the trace switched device) |
 | `present()` | frame boundary |
+
+## Pixel conventions
+
+D3D (and the D3D9-based stack the game ran on) places pixel centres on integer coordinates, so the game's 2D quads use vertices
+at `-0.5` offsets. The vertex shader shifts every screen position by half a pixel (`uHalfPixel`) so those quads map texels to
+pixels exactly (headless test: a 1:1 point-sampled quad reproduces its texture pixel for pixel). Against the real startup-to-menu
+capture this took the share of pixels differing by more than 24 from the game's own surface from 10.0% to 1.1% (the rest was the
+GDI text and the cursor); with the GDI overlay the mean difference to the reference surface is 0.04 per channel.
 
 ## Supported (everything the golden startup-menu summary uses)
 

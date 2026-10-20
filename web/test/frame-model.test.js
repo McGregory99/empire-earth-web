@@ -28,6 +28,7 @@ test('constructors produce plain tagged objects that validate', () => {
     cmd.clear(3, 0xff000000, 1),
     cmd.fillRect({ x: 0, y: 0, w: 4, h: 4 }, 0xff00ff00),
     cmd.blit2D(5, { x: 0, y: 0, w: 2, h: 2 }, { x: 10, y: 10, w: 2, h: 2 }, null),
+    cmd.gdiOverlay(5),
     cmd.present(),
   ];
   for (const c of all) assert.doesNotThrow(() => validateCommand(c), c.op);
@@ -48,6 +49,8 @@ test('malformed commands fail loudly', () => {
   assert.throws(() => cmd.uploadVertices(new Uint8Array(35 + 36)), /multiple of 36/);
   assert.throws(() => cmd.setRenderState(7, -1), /uint32/);
   assert.throws(() => cmd.bindTexture(2, 5), /stage/);
+  assert.throws(() => cmd.gdiOverlay(5, -1), /threshold/);
+  assert.equal(cmd.gdiOverlay(5).threshold, 24);
 });
 
 test('validateSequence: frames of commands, display size, counts', () => {

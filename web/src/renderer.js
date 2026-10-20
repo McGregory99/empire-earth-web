@@ -27,6 +27,7 @@ export class Renderer {
     gl.samplerParameteri(this.nearest, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.samplerParameteri(this.nearest, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.textures = new Map();
+    this.stats = { gdiPixels: 0 };
     this.reset();
   }
 
@@ -111,6 +112,7 @@ export class Renderer {
       case 'clear': this._clear(c); break;
       case 'fillRect': this._fillRect(c); break;
       case 'blit2D': this._blit(c); break;
+      case 'gdiOverlay': this._gdiOverlay(c); break;
       case 'present': this.gl.flush(); break;
       default: throw new Error(`renderer: unhandled op ${c.op}`);
     }
@@ -214,6 +216,7 @@ export class Renderer {
     const v = this.state.viewport ?? { x: 0, y: 0, width: this.width, height: this.height, minZ: 0, maxZ: 1 };
     this.gl.viewport(v.x, this.height - v.y - v.height, v.width, v.height);
     this.gl.depthRange(v.minZ, v.maxZ);
+    return v;
   }
 
   _draw(c) {
@@ -237,7 +240,7 @@ export class Renderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, c.indices, gl.STREAM_DRAW);
 
     // fixed-function state -> GL state
-    this._viewport();
+    const vp = this._viewport();
     gl.disable(gl.SCISSOR_TEST);
     gl.colorMask(true, true, true, true);
     gl.frontFace(gl.CW);
@@ -248,6 +251,7 @@ export class Renderer {
 
     const u = (n) => this._u(prog, n);
     const m = this.state;
+    gl.uniform2f(u('uHalfPixel'), 1 / vp.width, -1 / vp.height);
     gl.uniformMatrix4fv(u('uWorld'), false, m.transform(1));
     gl.uniformMatrix4fv(u('uView'), false, m.transform(2));
     gl.uniformMatrix4fv(u('uProj'), false, m.transform(3));
@@ -361,6 +365,42 @@ export class Renderer {
     gl.uniform2f(this._u(prog, 'uTarget'), this.width, this.height);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindSampler(0, null);
+  }
+
+  /** Copy the pixels of a stored screen snapshot that differ from the current render (see cmd.gdiOverlay). */
+  _gdiOverlay(c) {
+    const gl = this.gl;
+    const t = this._tex(c.srcId);
+    const w = this.width, h = this.height;
+    if (t.width !== w || t.height !== h) throw new Error(`gdiOverlay: snapshot ${t.width}x${t.height} does not match the ${w}x${h} target`);
+    const snap = convertToRGBA8(t.format, w, h, t.raw);
+    const cur = this.readPixels();
+    let n = 0;
+    for (let i = 0; i < snap.length; i += 4) {
+      const d = Math.max(Math.abs(snap[i] - cur[i]), Math.abs(snap[i + 1] - cur[i + 1]), Math.abs(snap[i + 2] - cur[i + 2]));
+      if (d > c.threshold) { snap[i + 3] = 255; n++; } else snap[i + 3] = 0;
+    }
+    this.stats.gdiPixels += n;
+    if (!n) return;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, snap);
+    const prog = this.blit;
+    gl.useProgram(prog.p);
+    gl.bindVertexArray(this.emptyVao);
+    gl.viewport(0, 0, w, h);
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
+    gl.colorMask(true, true, true, true);
+    gl.bindSampler(0, this.nearest);
+    gl.uniform1i(this._u(prog, 'uTex'), 0);
+    gl.uniform1i(this._u(prog, 'uKeyed'), true);
+    gl.uniform4f(this._u(prog, 'uDst'), 0, 0, w, h);
+    gl.uniform4f(this._u(prog, 'uSrc'), 0, 0, 1, 1);
+    gl.uniform2f(this._u(prog, 'uTarget'), w, h);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindSampler(0, null);
+    gl.deleteTexture(tex);
   }
 
   /** The current target as top-down RGBA8 (width * height * 4 bytes). */

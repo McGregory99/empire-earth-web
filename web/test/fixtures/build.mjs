@@ -102,7 +102,7 @@ export const FIXTURE = {
   triangle: [[0.2, -0.2, 0.5, 0xffff8000, 0, 0], [0.8, -0.2, 0.5, 0xffff8000, 0, 0], [0.5, -0.8, 0.5, 0xffff8000, 0, 0]],
 };
 
-export function build() {
+export function build({ gdi = false } = {}) {
   const d = new DataWriter();
   const L = [];
   const add = (s) => L.push(s);
@@ -178,6 +178,14 @@ export function build() {
   add('T1 dev7#1.SetTexture(stage=0, surface=NULL) = DD_OK');
   add(`T1 dev7#1.DrawPrimitive(primitive_type=TRIANGLELIST(4), fvf=0x152, vertices=P, vertex_count=3, flags=0x0) = DD_OK blob={vertices=${vtxTri}}`);
   add('T1 dev7#1.EndScene() = DD_OK');
+  if (gdi) {
+    // GDI text drawn onto the screen surface: ReleaseDC stores the whole 320x240 surface (origin 2). The same record twice.
+    const snap = Buffer.alloc(320 * 240 * 4);
+    for (let i = 0; i < 320 * 240; i++) snap.set([48, 32, 16, 0], i * 4);
+    for (let y = 200; y < 210; y++) for (let x = 200; x < 210; x++) snap.set([255, 255, 255, 0], (y * 320 + x) * 4);
+    const ref = d.surface(2, 320, 240, FMTX8888, [0, 0, 320, 240], snap, 2);
+    for (let k = 0; k < 2; k++) { add('T1 surf#2.GetDC(lphDC=P) = DD_OK'); add(`T1 surf#2.ReleaseDC(hDC=P) = DD_OK blob=${ref}`); }
+  }
   add('T1 surf#3.Blt(lpDestRect={0,0,4,4}, lpDDSrcSurface=surf#2, lpSrcRect={8,8,12,12}, dwFlags=0x8000000, lpDDBltFx=NULL) = DD_OK'); // screen read-back into a texture: ignored
   add('T1 surf#2.Blt(lpDestRect={8,130,40,162}, lpDDSrcSurface=surf#4, lpSrcRect={0,0,4,4}, dwFlags=0x8008000, lpDDBltFx=NULL) = DD_OK');
   add('T1 surf#1.Blt(lpDestRect=NULL, lpDDSrcSurface=surf#2, lpSrcRect=NULL, dwFlags=0x8000000, lpDDBltFx=NULL) = DD_OK');
