@@ -311,6 +311,70 @@ __declspec(dllexport) int WINAPI scenario_m(HWND hwnd, ScenarioM *r) {
     return 0;
 }
 
+/* Scenario V: vertex-buffer ring and index data against the scripted mock ddraw (DDT_DATA tests). */
+__declspec(dllexport) int WINAPI scenario_v(HWND hwnd, ScenarioV *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECT3D7 d3d = NULL;
+    LPDIRECT3DDEVICE7 dev = NULL;
+    LPDIRECT3DVERTEXBUFFER7 vb = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;
+    D3DVERTEXBUFFERDESC vbd;
+    DDSURFACEDESC2 sd;
+    void *mem = NULL;
+    DWORD size = 0;
+    unsigned char app[3 * V_STRIDE];
+    WORD idx6[6] = {0, 1, 2, 2, 1, 3}, idx3[3] = {2, 1, 0};
+    int i;
+
+    r->hr_setup = DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL);
+    if (FAILED(r->hr_setup))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL);
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+    IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);
+    IDirectDraw7_QueryInterface(dd, &IID_IDirect3D7, (void **)&d3d);
+    IDirect3D7_CreateDevice(d3d, &IID_IDirect3DHALDevice, back, &dev);
+    memset(&vbd, 0, sizeof vbd);
+    vbd.dwSize = sizeof vbd;
+    vbd.dwCaps = D3DVBCAPS_WRITEONLY;
+    vbd.dwFVF = 0x152;
+    vbd.dwNumVertices = V_TOTAL;
+    r->hr_vb_create = IDirect3D7_CreateVertexBuffer(d3d, &vbd, &vb, 0);
+    if (FAILED(r->hr_vb_create))
+        return 2;
+
+    /* a ring: DISCARD starts a new generation, NOOVERWRITE appends behind the vertices already drawn */
+    r->hr_lock[0] = IDirect3DVertexBuffer7_Lock(vb, DDLOCK_WAIT | DDLOCK_DISCARDCONTENTS, &mem, &size);
+    fill_pattern((unsigned char *)mem + 0 * V_STRIDE, 0, 4, 1);
+    r->hr_unlock[0] = IDirect3DVertexBuffer7_Unlock(vb);
+    r->hr_draw[0] = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 4, idx6, 6, 0);
+    r->hr_lock[1] = IDirect3DVertexBuffer7_Lock(vb, DDLOCK_WAIT | DDLOCK_NOOVERWRITE, &mem, &size);
+    fill_pattern((unsigned char *)mem + 4 * V_STRIDE, 4, 4, 2);
+    r->hr_unlock[1] = IDirect3DVertexBuffer7_Unlock(vb);
+    r->hr_draw[1] = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 4, 4, idx6, 6, 0);
+    r->hr_draw[2] = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 4, idx6, 6, 0);
+    r->hr_draw[3] = IDirect3DDevice7_DrawPrimitiveVB(dev, D3DPT_TRIANGLESTRIP, vb, 4, 4, 0);
+    r->hr_lock[2] = IDirect3DVertexBuffer7_Lock(vb, DDLOCK_WAIT | DDLOCK_DISCARDCONTENTS, &mem, &size);
+    fill_pattern((unsigned char *)mem + 0 * V_STRIDE, 0, 4, 3);
+    r->hr_unlock[2] = IDirect3DVertexBuffer7_Unlock(vb);
+    r->hr_draw[4] = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 4, idx6, 6, 0);
+    r->hr_draw[5] = IDirect3DDevice7_DrawIndexedPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 4, 4, idx6, 6, 0);
+
+    /* draws that read application memory */
+    fill_pattern(app, 0, 3, 4);
+    r->hr_draw[6] = IDirect3DDevice7_DrawIndexedPrimitive(dev, D3DPT_TRIANGLELIST, 0x152, app, 3, idx3, 3, 0);
+    r->hr_draw[7] = IDirect3DDevice7_DrawPrimitive(dev, D3DPT_TRIANGLELIST, 0x152, app, 3, 0);
+
+    for (i = 0; i < 3; i++)
+        r->hr_blt[i] = IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_WAIT, NULL);
+    return 0;
+}
+
 __declspec(dllexport) int WINAPI scenario_r(HWND hwnd, ScenarioR *r) {
     LPDIRECTDRAW7 dd = NULL;
     LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;

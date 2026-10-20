@@ -541,6 +541,253 @@ static void cycle_arm(HMODULE plugin, HWND hwnd) {
     check(GetFileAttributesA(done) != INVALID_FILE_ATTRIBUTES, "the armed capture writes the .done marker");
 }
 
+
+/* ---- the side data file (DDT_DATA): a minimal parser of the documented format, used by the data scenarios ---------------- */
+#define DATA_HDR 16
+#define REC_HDR 96
+enum { K_VERTICES = 1, K_INDICES = 2, K_SURFACE = 3 };
+typedef struct Rec {
+    unsigned off, kind, total, seq, object, plen, p[16];
+    unsigned long long hash;
+    const unsigned char *payload;
+} Rec;
+static unsigned char *g_data;
+static long g_data_len;
+static Rec g_recs[256];
+static int g_nrecs;
+
+static unsigned rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
+
+static int load_data(const char *path) {
+    FILE *f = fopen(path, "rb");
+    long off;
+    g_nrecs = 0;
+    free(g_data);
+    g_data = NULL;
+    g_data_len = 0;
+    if (!f)
+        return 0;
+    fseek(f, 0, SEEK_END);
+    g_data_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    g_data = malloc((size_t)g_data_len + 1);
+    g_data_len = (long)fread(g_data, 1, (size_t)g_data_len, f);
+    fclose(f);
+    if (g_data_len < DATA_HDR || memcmp(g_data, "DDTDATA1", 8) || rd32(g_data + 8) != 1)
+        return 0;
+    for (off = DATA_HDR; off + REC_HDR <= g_data_len && g_nrecs < 256;) {
+        Rec *r = &g_recs[g_nrecs];
+        const unsigned char *h = g_data + off;
+        int i;
+        if (rd32(h) != 0x31524444u) /* "DDR1" */
+            return 0;
+        r->off = (unsigned)off;
+        r->kind = rd32(h + 4);
+        r->total = rd32(h + 8);
+        r->seq = rd32(h + 12);
+        r->object = rd32(h + 16);
+        r->plen = rd32(h + 20);
+        r->hash = rd32(h + 24) | (unsigned long long)rd32(h + 28) << 32;
+        for (i = 0; i < 16; i++)
+            r->p[i] = rd32(h + 32 + 4 * i);
+        r->payload = h + REC_HDR;
+        if (r->total < REC_HDR + r->plen || r->total % 8 || off + (long)r->total > g_data_len)
+            return 0;
+        off += (long)r->total;
+        g_nrecs++;
+    }
+    return off == g_data_len;
+}
+
+/* "<key>@<offset>+<length>" in a trace line */
+static int line_ref(const char *line, const char *key, unsigned *off, unsigned *len) {
+    const char *p = strstr(line, key);
+    return p && sscanf(p + strlen(key), "@%u+%u", off, len) == 2;
+}
+
+static int check_ref(const char *line, const char *key, int rec, const char *what) {
+    unsigned off = 0, len = 0;
+    char b[256];
+    int ok = line_ref(line, key, &off, &len) && rec < g_nrecs && off == g_recs[rec].off && len == g_recs[rec].total;
+    sprintf(b, "%s: %s@%u+%u is record %d (offset %u, length %u)", what, key, off, len, rec, rec < g_nrecs ? g_recs[rec].off : 0,
+            rec < g_nrecs ? g_recs[rec].total : 0);
+    check(ok, b);
+    return ok;
+}
+
+static int check_rec(int i, unsigned kind, unsigned object, unsigned plen, const unsigned char *want, const char *what) {
+    char b[256];
+    const Rec *r = &g_recs[i];
+    int ok = i < g_nrecs && r->kind == kind && r->object == object && r->plen == plen && !memcmp(r->payload, want, plen) &&
+             r->hash == fnv1a(want, plen, 0xcbf29ce484222325ull);
+    sprintf(b, "record %d is %s (kind %u, object %u, %u payload bytes, bytes and hash as written)", i, what, kind, object, plen);
+    check(ok, b);
+    return ok;
+}
+
+static char *read_all(const char *path, long *n) {
+    FILE *f = fopen(path, "rb");
+    char *t;
+    if (!f)
+        return NULL;
+    fseek(f, 0, SEEK_END);
+    *n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    t = malloc((size_t)*n + 1);
+    *n = (long)fread(t, 1, (size_t)*n, f);
+    t[*n] = 0;
+    fclose(f);
+    return t;
+}
+
+static void run_scenario_v(HMODULE plugin, HWND hwnd, ScenarioV *r) {
+    ScenarioVFn fn = (ScenarioVFn)GetProcAddress(plugin, "scenario_v");
+    int i;
+    memset(r, 0, sizeof *r);
+    check(fn != NULL, "fake plugin exports scenario_v");
+    if (!fn)
+        return;
+    check(fn(hwnd, r) == 0, "scenario V ran to the end");
+    for (i = 0; i < 8; i++)
+        check_hr(r->hr_draw[i], DD_OK, "draw call result passes through (the mock refuses a wrapped vb)");
+}
+
+/* DDT_DATA unset: the trace is what it always was, and no data file appears. */
+static void cycle_data_off(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    char path[700];
+    const char *trace = getenv("DDT_TRACE");
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    check(g_nlines > 0, "the data-off trace could be read");
+    expect_count("*blob=*", 0);
+    expect_count("# data:*", 0);
+    expect_count("T1 dev7#1.DrawIndexedPrimitiveVB(*", 5);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, "no data file without DDT_DATA");
+}
+
+static void cycle_data(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    unsigned char exp[V_TOTAL * V_STRIDE], zero[4 * V_STRIDE], app[3 * V_STRIDE];
+    WORD idx6[6] = {0, 1, 2, 2, 1, 3}, idx3[3] = {2, 1, 0};
+    char path[700];
+    const char *trace = getenv("DDT_TRACE"), *off_trace = getenv("DDT_OFF_TRACE");
+    long off_n = 0;
+    char *off_text;
+    int i, k, drawn[8];
+    static const int vrec[8] = {0, 2, 0, 2, 3, 4, 5, 5}, irec[8] = {1, 1, 1, -1, 1, 1, 6, -1};
+    static const char *const names[8] = {"DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawPrimitiveVB",
+                                         "DrawIndexedPrimitiveVB", "DrawIndexedPrimitiveVB", "DrawIndexedPrimitive", "DrawPrimitive"};
+
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    expect("# data: *");
+
+    /* the records, in order of first use; identical draws share a record (content-addressed) */
+    {
+        char b[64];
+        sprintf(b, "record count is %d", g_nrecs);
+        check(g_nrecs == 7, b);
+    }
+    if (g_nrecs != 7)
+        return;
+    check(g_recs[0].off == DATA_HDR, "the first record starts right after the 16-byte file header");
+    fill_pattern(exp, 0, 4, 1);
+    check_rec(0, K_VERTICES, 1, 4 * V_STRIDE, exp, "vb#1 vertices 0..3, first generation");
+    check(g_recs[0].p[0] == 0x152 && g_recs[0].p[1] == V_STRIDE && g_recs[0].p[2] == 0 && g_recs[0].p[3] == 4 && g_recs[0].p[4] == 0,
+          "record 0 params: fvf 0x152, stride 36, start 0, count 4, source vb");
+    check_rec(1, K_INDICES, 0, sizeof idx6, (const unsigned char *)idx6, "the 6 indices of the quad");
+    check(g_recs[1].p[0] == 6, "record 1 param: 6 indices");
+    fill_pattern(exp, 4, 4, 2);
+    check_rec(2, K_VERTICES, 1, 4 * V_STRIDE, exp, "vb#1 vertices 4..7 (NOOVERWRITE append)");
+    check(g_recs[2].p[2] == 4, "record 2 start_vertex is 4");
+    fill_pattern(exp, 0, 4, 3);
+    check_rec(3, K_VERTICES, 1, 4 * V_STRIDE, exp, "vb#1 vertices 0..3 after DISCARD (new content, same range)");
+    memset(zero, 0, sizeof zero);
+    check_rec(4, K_VERTICES, 1, 4 * V_STRIDE, zero, "vb#1 vertices 4..7 after DISCARD (zeros: not the old B and not the poisoned 0xEE)");
+    fill_pattern(app, 0, 3, 4);
+    check_rec(5, K_VERTICES, 0, 3 * V_STRIDE, app, "application vertex array");
+    check(g_recs[5].p[4] == 1 && g_recs[5].p[3] == 3, "record 5 params: source application memory, count 3");
+    check_rec(6, K_INDICES, 0, sizeof idx3, (const unsigned char *)idx3, "the 3 indices of the application draw");
+    {
+        long end = DATA_HDR;
+        for (i = 0; i < g_nrecs; i++)
+            end += g_recs[i].total;
+        check(end == g_data_len, "the records tile the file exactly (sum of lengths + header = file size)");
+    }
+
+    /* the trace lines point at them */
+    for (i = 0; i < 8; i++)
+        drawn[i] = 0;
+    for (k = 0, i = 0; i < g_nlines && k < 8; i++) {
+        char pat[96];
+        sprintf(pat, "T1 dev7#1.%s(*", names[k]);
+        if (!glob(pat, g_lines[i]))
+            continue;
+        if (!strcmp(names[k], "DrawIndexedPrimitiveVB") && k > 5)
+            continue;
+        check_ref(g_lines[i], "vertices=", vrec[k], names[k]);
+        if (irec[k] >= 0)
+            check_ref(g_lines[i], "indices=", irec[k], names[k]);
+        else
+            check(strstr(g_lines[i], "indices=@") == NULL, "a draw without indices has no indices reference");
+        drawn[k] = 1;
+        k++;
+    }
+    check(k == 8, "all 8 draw lines carry references");
+    expect_count("*vb#1.Unlock*blob=*", 0);
+
+    /* with the data file off, the trace is the same text (the header line and the blob suffix aside) */
+    off_text = off_trace ? read_all(off_trace, &off_n) : NULL;
+    check(off_text != NULL, "the data-off trace of the same scenario is available");
+    if (off_text) {
+        char *p = off_text, *e;
+        int line = 0, same = 1;
+        for (i = 0; i < g_nlines; i++) {
+            char tmp[8600], *cut;
+            if (!strncmp(g_lines[i], "# data:", 7))
+                continue;
+            strncpy(tmp, g_lines[i], sizeof tmp - 1);
+            tmp[sizeof tmp - 1] = 0;
+            cut = strstr(tmp, " blob=");
+            if (cut)
+                *cut = 0;
+            e = strchr(p, '\n');
+            if (!e || (size_t)(e - p) != strlen(tmp) || strncmp(p, tmp, strlen(tmp))) {
+                same = 0;
+                break;
+            }
+            p = e + 1;
+            line++;
+        }
+        check(same && !*p, "stripped of 'blob=' suffixes and the '# data:' header, the trace is byte-identical to the data-off trace");
+        free(off_text);
+    }
+}
+
+/* DDT_DATA_MAX too small for the third record: the capture fails loudly and stops. */
+static void cycle_data_cap(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    char path[700];
+    const char *trace = getenv("DDT_TRACE");
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    check(g_nlines > 0, "the capped trace could be read");
+    expect("# data: *");
+    expect("# ERROR: data cap of 400 bytes exceeded*");
+    check(g_nlines > 0 && !strncmp(g_lines[g_nlines - 1], "# ERROR: data cap", 17), "the ERROR line ends the trace");
+    sprintf(path, "%s.failed", trace ? trace : "");
+    check(GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES, "a .failed marker is written");
+    sprintf(path, "%s.done", trace ? trace : "");
+    check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, "no .done marker: the capture is not complete");
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the truncated data file is still well-formed (whole records only)");
+    check(g_nrecs == 2 && g_data_len <= 400, "only the 2 records that fit under the cap were written");
+}
+
 int main(int argc, char **argv) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
@@ -552,6 +799,14 @@ int main(int argc, char **argv) {
     } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "arm")) {
         load_trace();
         cycle_arm(plugin, hwnd);
+    } else if (hwnd && plugin && argc > 1 && !strncmp(argv[1], "data", 4)) {
+        load_trace();
+        if (!strcmp(argv[1], "data-off"))
+            cycle_data_off(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-cap"))
+            cycle_data_cap(plugin, hwnd);
+        else
+            cycle_data(plugin, hwnd);
     } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {
         load_trace();
         cycle_mock(plugin, hwnd);

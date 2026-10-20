@@ -90,6 +90,22 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-mock.txt' \
 	    "$(WINE)" harness.exe mock 2>/dev/null
+	rm -f $(TESTBED)/trace-data-*.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-off.txt' \
+	    "$(WINE)" harness.exe data-off 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-on.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-on.txt' \
+	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-off.txt' \
+	    "$(WINE)" harness.exe data 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 DDT_DATA_MAX=400 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-cap.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-cap.txt' \
+	    "$(WINE)" harness.exe data-cap 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-arm.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
 	    DDT_NEXT=ddraw_next.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \

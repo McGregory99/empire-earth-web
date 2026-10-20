@@ -79,6 +79,23 @@ typedef struct ScenarioM {
 } ScenarioM;
 typedef int(WINAPI *ScenarioMFn)(HWND hwnd, ScenarioM *out);
 
+/* Scenario V (against the scripted mock ddraw, DDT_DATA set or not): vertex and index data captured through a vertex-buffer
+ * ring (DISCARD / NOOVERWRITE locks), plus draws that read application memory.  All content is synthetic. */
+typedef struct ScenarioV {
+    HRESULT hr_setup, hr_vb_create, hr_lock[3], hr_unlock[3], hr_draw[8], hr_blt[3];
+} ScenarioV;
+typedef int(WINAPI *ScenarioVFn)(HWND hwnd, ScenarioV *out);
+
+#define V_STRIDE 36       /* FVF 0x152 */
+#define V_TOTAL 16        /* vertices in the buffer */
+/* Synthetic vertex bytes: vertices first .. first+count-1 of pattern `seed`. */
+static __inline void fill_pattern(unsigned char *dst, unsigned first, unsigned count, unsigned seed) {
+    unsigned i, j;
+    for (i = 0; i < count; i++)
+        for (j = 0; j < V_STRIDE; j++)
+            dst[i * V_STRIDE + j] = (unsigned char)(seed * 31u + (first + i) * 7u + j);
+}
+
 /* Deterministic content the plugin writes into locked buffers, so that the harness can compute the expected hash. */
 #define VB_VERTICES 4
 #define VB_FVF 0x152 /* XYZ | NORMAL | DIFFUSE | TEX1 */
