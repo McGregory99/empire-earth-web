@@ -268,6 +268,7 @@ rm -rf "$W_GAME/Data/Saved Games"
 cat >"$W/scn-keys.env" <<SCN
 $(cat "$W/scn.env")
 SCN_KEYS="3d"
+SCN_KEY_WINDOW="SSSI Empire Earth"
 SCN
 { cat "$W/config-scn.sh"; cat <<CONF
 KEY_BUILD=0
@@ -286,7 +287,8 @@ rm -f "$W/key.log" "$W/paused" "$W/not-paused"
 : >"$W/ticking"
 run_keys >"$W/run10.out" 2>&1
 check_eq "a scenario with keys exits 0" "0" "$?"
-check "the key helper was asked for the pause key (scancode 3d)" grep -q "ee-key.exe 3d" "$W/key.log"
+check "the key helper was asked for the pause key (scancode 3d)" grep -q "ee-key.exe.* 3d" "$W/key.log"
+check "... and to give the game's window (class 'SSSI Empire Earth') the focus first" grep -q "ee-key.exe --window-class SSSI Empire Earth 3d" "$W/key.log"
 check "the simulation was seen to stop" grep -q "the simulation stopped" "$W/run10.out"
 t0="$(cat "$W/tick0.time")"; tk="$(sed -n 's/.* at \([0-9]*\)$/\1/p' "$W/key.log" | head -1)"
 check "the key waits PRE_KEY_DELAY (3 s) after the first tick line (tick $t0, key $tk)" test "$((tk - t0))" -ge 3

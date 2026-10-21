@@ -44,4 +44,18 @@ wine "$T/ee-key.exe" zz >"$T/k3.out" 2>&1
 check_eq "a scancode that is not hex: exit 2" "2" "$?"
 wine "$T/ee-key.exe" --desktop NoSuchDesktop 3d >"$T/k4.out" 2>&1
 check_eq "a desktop that does not exist: exit 3" "3" "$?"
+# Focus: with --window-class the helper finds the game's top-level window, tries to make it the foreground window (and says
+# whether it got it) and presses only with the focus confirmed; where the system will not give it, the same key goes to the
+# window as WM_KEYDOWN / WM_KEYUP messages, and the output says so.  A window that does not exist is an error (exit 6).
+rm -f "$T/key_victim.ready" "$T/key_victim.out" "$T/victim.rc"
+( cd "$T" && wine key_victim.exe >/dev/null 2>&1; echo $? >"$T/victim.rc" ) &
+wait_for 300 test -e "$T/key_victim.ready"
+wine "$T/ee-key.exe" --window-class EEKeyVictim 3d 01 >"$T/k5.out" 2>&1
+check_eq "--window-class: exit 0" "0" "$?"
+wait_for 100 test -e "$T/victim.rc"
+check_eq "the window got the keys (F3, Esc)" "3d 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' 2>/dev/null | sed 's/ $//')"
+check "the output says how: focus confirmed, or messages posted" grep -Eq "^ee-key: (focus confirmed|focus not obtained, posting)" "$T/k5.out"
+wine "$T/ee-key.exe" --window-class NoSuchClassAnywhere 3d >"$T/k6.out" 2>&1
+check_eq "a window class that does not exist: exit 6" "6" "$?"
+check "... with a clear message" grep -q "no visible window of class 'NoSuchClassAnywhere'" "$T/k6.out"
 summary
