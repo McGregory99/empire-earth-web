@@ -58,7 +58,7 @@ public:
     long Draw(GEText *text, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 16
     long Draw(GEText *text, GERectangle const &, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 15
     long Draw(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 14
-    long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 13
+    long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override;  // 13 (dx7_draw3d.cpp)
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 22
     long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23
     long DrawSky(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 24
@@ -155,9 +155,9 @@ private:
     long LockVB(unsigned long count, unsigned long screen, void *&vertices);
     long UnlockVB(unsigned long screen);
 
-    // The tail every 2D draw shares (dx7_draw2d.cpp): unlock the ring, draw the vertices just written (an indexed quad list when `indexed`,
-    // else a plain list of `primitive` type) retrying while Direct3D is busy, and move the cursor on.  Answers the unlock's status.
-    long UnlockAndDraw(unsigned long screen, unsigned long primitive, unsigned long vertices, bool indexed);
+    // The tail every draw shares (dx7_draw2d.cpp): unlock the ring, draw the `vertices` just written (indexed by `indices`, `indexCount` of them, or
+    // as a plain list of `primitive` type when `indices` is null) retrying while Direct3D is busy, and move the cursor on.  Answers the unlock's status.
+    long UnlockAndDraw(unsigned long screen, unsigned long primitive, unsigned long vertices, const unsigned short *indices, unsigned long indexCount);
 
     // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose
     // bytes are the engine's and the layouts' to define; nothing of this class touches them directly.

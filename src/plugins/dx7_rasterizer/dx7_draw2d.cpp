@@ -89,7 +89,7 @@ bool CanRead(GEVertexArray* array, ulong vertices)
 
 } // namespace
 
-long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong vertices, bool indexed)
+long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong vertices, const unsigned short* indices, ulong indexCount)
 {
     long unlocked = UnlockVB(screen);
     DX7ScreenRecordLayout* record = Record(screen);
@@ -97,8 +97,8 @@ long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong ver
     do {
         IDirect3DDevice7* device = Device(screen);
         IDirect3DVertexBuffer7* buffer = static_cast<IDirect3DVertexBuffer7*>(record->vertexBuffer);
-        if (indexed) {
-            error = device->vtbl->DrawIndexedPrimitiveVB(device, primitive, buffer, record->vertexCursor, vertices, kQuadIndices, 6, 0);
+        if (indices) {
+            error = device->vtbl->DrawIndexedPrimitiveVB(device, primitive, buffer, record->vertexCursor, vertices, indices, indexCount, 0);
         } else {
             error = device->vtbl->DrawPrimitiveVB(device, primitive, buffer, record->vertexCursor, vertices, 0);
         }
@@ -142,7 +142,7 @@ long EEWebNullRasterizer::Draw(GEBitmap* bitmap, ulong screen)
             result = 1;
         } else {
             __builtin_memcpy(static_cast<char*>(ring) + record->vertexCursor * kVertexSize, DataOf(array), 0x90);
-            result = UnlockAndDraw(screen, 4, 4, true);
+            result = UnlockAndDraw(screen, 4, 4, kQuadIndices, 6);
         }
     }
     if (section) {
@@ -194,7 +194,7 @@ long EEWebNullRasterizer::Draw(GELine* lines, ulong count, ulong screen)
             second[1] = Add(0.001f, second[1]);
             to += 2 * kVertexSize;
         }
-        result = UnlockAndDraw(screen, 2, count * 2, false);
+        result = UnlockAndDraw(screen, 2, count * 2, 0, 0);
     }
     if (section) {
         EEWebCriticalSectionLeave(section);
@@ -239,7 +239,7 @@ long EEWebNullRasterizer::Draw(GEPoint* points, ulong count, ulong screen)
             __builtin_memcpy(to, DataOf(array), kVertexSize);
             to += kVertexSize;
         }
-        result = UnlockAndDraw(screen, 1, count, false);
+        result = UnlockAndDraw(screen, 1, count, 0, 0);
     }
     if (section) {
         EEWebCriticalSectionLeave(section);
@@ -271,7 +271,7 @@ long EEWebNullRasterizer::Draw(GERhombus* rhombus, ulong screen)
         UnlockVB(screen);
     } else {
         __builtin_memcpy(static_cast<char*>(ring) + record->vertexCursor * kVertexSize, DataOf(array), 0x90);
-        result = UnlockAndDraw(screen, 4, 4, true);
+        result = UnlockAndDraw(screen, 4, 4, kQuadIndices, 6);
     }
     if (section) {
         EEWebCriticalSectionLeave(section);
