@@ -335,6 +335,16 @@ void trace_emit(int depth, const char *text, int timing) {
     unlock();
 }
 
+int trace_prearm(void) {
+    int r;
+    if (!g_cfg.data_early || !g_cfg.arm_file[0] || !g_cfg.data_prefix[0])
+        return 0;
+    lock();
+    r = open_ok_locked() && !g_capped && !g_armed;
+    unlock();
+    return r;
+}
+
 void trace_comment(const char *text) {
     char line[256];
     unsigned n;
@@ -540,7 +550,10 @@ int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], cons
     lock();
     if (g_data_failed) {
         rc = DATA_FAIL;
-    } else if (!active_locked() || !(g_armed || !g_cfg.arm_file[0])) {
+    } else if (!open_ok_locked() || g_capped ||
+               !(g_armed || !g_cfg.arm_file[0] || (g_cfg.data_early && kind == BLOB_SURFACE && p[8] != 2))) {
+        /* before the arming only the pixels of Unlock / Blt / SetTexture are kept (DDT_DATA_EARLY); the per-frame GDI
+         * read-backs of the screen surface (origin 2) are not: they are the bulk of a long run and the window brings its own */
         rc = DATA_OFF;
     } else if ((e = dfind_locked(key)) != NULL) {
         *off = e->off;

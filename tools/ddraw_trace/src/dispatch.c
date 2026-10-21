@@ -745,6 +745,42 @@ static void post_lock(CallRec *c) {
 }
 
 /* ---- surface pixels: stored in the data file at Unlock, ReleaseDC and when a changed surface is used --------------------- */
+/* DDT_DATA_EARLY: remember what was stored for a surface before the arming.  A record that covers the whole surface replaces
+ * the older ones (it overwrites every pixel); a partial one is kept on top of them, in order. */
+#define MAX_EARLY_REFS 64
+static void note_early_ref(Wrap *w, const unsigned p[BLOB_PARAMS], unsigned off, unsigned len) {
+    EnterCriticalSection(&g_reg_cs);
+    if (p[0] == 0 && p[1] == 0 && p[2] >= p[4] && p[3] >= p[5]) {
+        w->nrefs = 0;
+        w->refs_lost = 0;
+    }
+    if (w->nrefs && w->refs[w->nrefs - 1].off == off) {
+        /* the same record again: nothing new */
+    } else if (w->nrefs >= MAX_EARLY_REFS) {
+        w->refs_lost = 1;
+    } else {
+        if (w->nrefs == w->refcap) {
+            unsigned ncap = w->refcap ? w->refcap * 2 : 4;
+            void *n = HeapAlloc(GetProcessHeap(), 0, ncap * sizeof *w->refs);
+            if (!n) {
+                w->refs_lost = 1;
+                LeaveCriticalSection(&g_reg_cs);
+                return;
+            }
+            if (w->refs) {
+                memcpy(n, w->refs, w->nrefs * sizeof *w->refs);
+                HeapFree(GetProcessHeap(), 0, w->refs);
+            }
+            w->refs = n;
+            w->refcap = ncap;
+        }
+        w->refs[w->nrefs].off = off;
+        w->refs[w->nrefs].len = len;
+        w->nrefs++;
+    }
+    LeaveCriticalSection(&g_reg_cs);
+}
+
 static int put_surface(Wrap *w, const void *ptr, DWORD pitch, DWORD rows, DWORD rowbytes, const RECT *rc, unsigned origin,
                        unsigned *off, unsigned *len) {
     unsigned p[BLOB_PARAMS], i;
@@ -760,7 +796,10 @@ static int put_surface(Wrap *w, const void *ptr, DWORD pitch, DWORD rows, DWORD 
     p[8] = origin;
     for (i = 0; i < 7; i++)
         p[9 + i] = w->pf[i];
-    return data_put(BLOB_SURFACE, w->id, p, ptr, pitch, rows, rowbytes, off, len);
+    i = (unsigned)data_put(BLOB_SURFACE, w->id, p, ptr, pitch, rows, rowbytes, off, len);
+    if (i == DATA_OK && trace_prearm())
+        note_early_ref(w, p, *off, *len);
+    return (int)i;
 }
 
 static void add_blob(char *suffix, size_t cap, int st, unsigned off, unsigned len) {
@@ -841,10 +880,14 @@ static void snapshot_surfaces(void) {
 
     if (!data_enabled())
         return;
+    if (!g_cfg.snapshot && !g_cfg.data_early)
+        return;
     EnterCriticalSection(&g_reg_cs);
     for (b = 0; b < NBUCKETS; b++)
         for (w = g_by_self[b]; w; w = w->by_self_next) {
             if (w->dead || !pixels_wanted(w))
+                continue;
+            if (!g_cfg.snapshot && !w->nrefs && !w->refs_lost)
                 continue;
             if (n == cap) {
                 Wrap **nl = HeapAlloc(GetProcessHeap(), 0, (cap = cap ? cap * 2 : 256) * sizeof *nl);
@@ -871,6 +914,26 @@ static void snapshot_surfaces(void) {
         unsigned off = 0, len = 0;
         int st = DATA_UNAVAILABLE;
         w = list[i];
+        if (g_cfg.data_early && (w->nrefs || w->refs_lost)) { /* what the game itself stored before the window, no Lock */
+            unsigned k;
+            if (w->refs_lost) {
+                snprintf(line, sizeof line, "snapshot %s", wrap_label(w, lbl));
+                add_blob(line, sizeof line, DATA_UNAVAILABLE, 0, 0);
+                trace_comment(line);
+                w->dirty = 1;
+            }
+            for (k = 0; !w->refs_lost && k < w->nrefs; k++) {
+                snprintf(line, sizeof line, "snapshot %s", wrap_label(w, lbl));
+                add_blob(line, sizeof line, DATA_OK, w->refs[k].off, w->refs[k].len);
+                trace_comment(line);
+            }
+            if (!g_cfg.snapshot)
+                continue;
+            if (!w->refs_lost)
+                continue; /* already named: no read-back */
+        }
+        if (!g_cfg.snapshot)
+            continue;
         w->dirty = 1;
         /* The progress line is flushed first: if the read-back takes the process down, the trace names the surface. */
         snprintf(line, sizeof line, "snapshot-begin %s", wrap_label(w, lbl));

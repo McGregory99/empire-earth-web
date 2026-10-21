@@ -28,11 +28,15 @@ static void cfg_set(const char *key, const char *value) {
     else if (!strcmp(key, "DDT_DATA_MAX")) {
         unsigned long v = strtoul(value, NULL, 0);
         g_cfg.data_max = v > 0xFFFFFF00ul ? 0xFFFFFF00u : (unsigned)v; /* references are 32-bit offsets */
-    } else if (!strcmp(key, "DDT_FLUSH"))
+    } else if (!strcmp(key, "DDT_SNAPSHOT"))
+        g_cfg.snapshot = atoi(value) != 0;
+    else if (!strcmp(key, "DDT_DATA_EARLY"))
+        g_cfg.data_early = atoi(value) != 0;
+    else if (!strcmp(key, "DDT_FLUSH"))
         g_cfg.flush_each = atoi(value) != 0;
 }
 
-static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH", "DDT_ARM_FILE", "DDT_DATA", "DDT_DATA_MAX", "DDT_TEST_FAULT"};
+static const char *const cfg_keys[] = {"DDT_NEXT", "DDT_TRACE", "DDT_MODULES", "DDT_MAX_PRESENTS", "DDT_FLUSH", "DDT_ARM_FILE", "DDT_DATA", "DDT_DATA_MAX", "DDT_SNAPSHOT", "DDT_DATA_EARLY", "DDT_TEST_FAULT"};
 
 /* ddraw_trace.cfg next to the proxy (KEY=VALUE per line), then the environment, which wins. */
 static void cfg_load(void) {

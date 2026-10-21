@@ -16,6 +16,8 @@ typedef struct DdtConfig {
     char data_prefix[MAX_PATH]; /* if set: side data file "<prefix>.data" holding the bytes the trace only hashes (README, "Data file") */
     unsigned data_max;         /* cap on the data file in bytes; exceeding it fails the capture loudly */
     char test_fault[32];       /* tests only (DDT_TEST_FAULT): inject one failure, see ddt_fault; never set by the drivers */
+    int snapshot;              /* DDT_SNAPSHOT: at the arming, read every live texture back with a Lock of our own (off by default: it can fault the game) */
+    int data_early;            /* DDT_DATA_EARLY: with DDT_ARM_FILE and DDT_DATA, store Unlock / Blt / texture pixels before the arming and name them at it */
     char arm_file[MAX_PATH];   /* if set: nothing is traced (nor counted) until this file exists; see trace_present */
 } DdtConfig;
 
@@ -41,6 +43,7 @@ int trace_active(void);                           /* configured, open and not ye
 int trace_wants(void *return_address);            /* active AND the caller is one of the traced modules */
 void trace_emit(int depth, const char *text, int timing); /* one line: "T<n> " + indent + text */
 int trace_present(void);                          /* count one present-equivalent call; may cap the trace.  1: this call armed the trace */
+int trace_prearm(void);                           /* DDT_DATA_EARLY and the trace is open but not armed yet */
 void trace_comment(const char *text);             /* one "# text" line, no thread prefix (only while the trace is recording) */
 void trace_flush(void);
 
@@ -102,6 +105,9 @@ typedef struct Wrap {
     int dirty;                                  /* a Blt wrote to this surface since its pixels were last stored */
     unsigned char *vb_shadow;                   /* vertex buffers, data capture: the contents as of the last Unlock */
     RECT lock_rect;
+    struct { unsigned off, len; } *refs;        /* surfaces, DDT_DATA_EARLY: the records stored before the arming that still make up its pixels, in order */
+    unsigned nrefs, refcap;
+    int refs_lost;                              /* more records than we keep: the arming cannot name them all */
 } Wrap;
 
 void *wrap_new(int iface, void *real);            /* wrapper for a real interface pointer, or NULL */

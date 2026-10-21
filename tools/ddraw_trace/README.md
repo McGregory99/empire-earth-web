@@ -183,6 +183,8 @@ T<n>   cb <Method>(<arg>, ...) = <result>          callback invoked from inside 
 | `DDT_FLUSH` | `1`: flush after every line (the unit tests) | 0 |
 | `DDT_DATA` | path prefix of the optional data file `<DDT_DATA>.data` (see "Data file"); empty: no data is captured and the trace is exactly what it was without the feature | empty |
 | `DDT_DATA_MAX` | cap on the data file in bytes (at most 4,294,967,040); when the next record would pass it, the capture fails loudly | 536,870,912 |
+| `DDT_DATA_EARLY` | `1`: with `DDT_ARM_FILE` and `DDT_DATA`, the pixels of `Unlock`, `Blt` / `BltFast` sources and `SetTexture` are stored as the game writes them, before the arming (not the per-frame `ReleaseDC` read-backs, origin 2); the arming then writes `# snapshot surf#N blob=@O+L` lines naming, in order, the records that make up each surface (a whole-surface record replaces the older ones). No `Lock` of ours, so nothing in the game is touched. `game-trace.sh --data` with a keyed scenario sets it | off |
+| `DDT_SNAPSHOT` | `1`: at the arming, read every live texture / 2D surface back with a `Lock` of our own (origin 6, `# snapshot-begin` progress lines). Off by default: on the real game it faulted the game in its own code (a stale mip child, then surf#71, a 64x64 7-level texture) | off |
 | `DDT_ARM_FILE` | nothing is traced, and no present counted, until this file exists; the present that first sees it is the last outside the trace, the window opens after it and the trace gets a `# armed` line. Object ids are assigned all the same. Used by the scenarios that capture a settled state | empty |
 
 ## How the wrapping works
@@ -265,7 +267,7 @@ rectangle `(p0,p1)-(p2,p3)` (left, top, right, bottom, right/bottom exclusive) o
 | 2 | `surf#N.ReleaseDC`: the whole surface, read after the real `ReleaseDC` returned (what GDI drew, e.g. text) | the `ReleaseDC` line |
 | 3, 4 | the source of a `Blt` / `BltFast` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `Blt` / `BltFast` line |
 | 5 | the texture of a `SetTexture` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `SetTexture` line |
-| 6 | the present that arms a `DDT_ARM_FILE` capture: every live texture / 2D surface once, whatever happened to it before the window (most textures of a running game were filled before it opened) | a `# snapshot surf#N blob=...` line right after `# armed` |
+| 6 | with `DDT_SNAPSHOT=1` (off by default), the present that arms a `DDT_ARM_FILE` capture: every live texture / 2D surface once, whatever happened to it before the window (most textures of a running game were filled before it opened) | a `# snapshot surf#N blob=...` line right after `# armed` |
 
 Origins 2 to 6 read the pixels with a read-only `Lock` on the real surface that the plugin cannot see (it is not traced). Primary,
 back-buffer, 3D-device and Z-buffer surfaces are never stored. A surface's current pixels at any point of the trace are the
