@@ -192,6 +192,7 @@ static const struct {
 #include "draw2d_expected.inc"
 #include "poly_expected.inc"
 #include "line3d_expected.inc"
+#include "text_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -207,6 +208,7 @@ static const struct {
 #include "draw2d_expected_ours.inc"
 #include "poly_expected_ours.inc"
 #include "line3d_expected_ours.inc"
+#include "text_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)

@@ -78,6 +78,7 @@ struct FakeDD {
         int times;
     } vb_script[2];                      /* scripted results of the vertex buffer's Lock (0) and Unlock (1): `code` is returned `times` times */
     int vb_null_lock_times;              /* the next n Lock calls succeed without storing a pointer */
+    void *text_dc;                       /* what a surface's GetDC hands out when set (text_checks.h, P2.6.7e): a real memory device context */
 };
 
 enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT, FD_DRAW_PRIMITIVE, FD_DRAW_INDEXED };
@@ -362,7 +363,7 @@ static long FAKE_DD_STDCALL fake_surf_get_dc(FakeSurface *s, void **out)
     long result = fake_surface_result(s, FS_GETDC);
     fake_log(s->dd, "s%d.GetDC", s->id);
     if (result == 0) {
-        *out = (void *)(0xDC0000UL + (unsigned long)s->id);
+        *out = s->dd->text_dc ? s->dd->text_dc : (void *)(0xDC0000UL + (unsigned long)s->id);
     }
     return result;
 }
@@ -1189,6 +1190,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "draw2d_checks.h"    /* Draw(GEBitmap), Draw(GELine), Draw(GEPoint) and Draw(GERhombus) (P2.6.7b) */
 #include "poly_checks.h"      /* Draw(GEPolygonArray, GEVertexArray, ...) (P2.6.7c) */
 #include "line3d_checks.h"    /* Draw3DLine (P2.6.7d) */
+#include "text_checks.h"      /* Draw(GEText, ...) (P2.6.7e) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1220,6 +1222,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_draw2d(e, h, &api, get_rasterizer());
         check_poly(e, h, &api, get_rasterizer());
         check_line3d(e, h, &api, get_rasterizer());
+        check_text(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
