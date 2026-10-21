@@ -36,6 +36,7 @@ through the shared game-run library (`tools/game_run`: lock, verified snapshot, 
   Only then does it create the arm file the proxy waits for (`DDT_ARM_FILE`): the capture window opens at the next frame boundary.
   Holding the key from the moment the game's window exists (so that the pause lands at the loop's first poll) was tried in two real runs
   and had no effect; that code was reverted.
+* Reference screenshots: `SCN_SHOTS=3`, `SCN_SHOT_GAP=4` (seconds): after the capture window, while the game is still paused, the driver runs `screencapture -x` (read-only, the whole display, the game window scaled) three times into `<out dir>/shot-0.png` .. `shot-2.png`. A failing shot fails the run after the game was closed and the directory restored.
 * Window: the first 60 presents after the arming (`SCN_PRESENTS=60`), 84,844 lines, 1,406 lines a frame after the first 50 frames of loading; then WM_CLOSE (`ee-close.exe`) and the game leaves by itself.
 * Command: `make -C tools/ddraw_trace game-gate-skirmish` (two captures and their comparison), `game-check-skirmish` (one against the golden).
 

@@ -67,6 +67,9 @@ SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV="
 SCN_NORMALIZE="" # "structure": two captures must be identical in normalize.py's --structure form (see there for what it leaves out)
 SCN_KEY_WINDOW="" # class of the game's window: ee-key.exe gives it the focus (or posts the keys to it) before pressing
 SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
+SCN_SHOTS=0 # screenshots of the paused game taken after the capture window (reference frames for the viewer); 0 = none
+SCN_SHOT_GAP=4 # seconds between them
+SHOT_CMD=screencapture # read-only: it only reads the display; -x keeps it silent
 KEY_BUILD=1
 KEY_EXE=""
 LOOP_WAIT=180        # seconds to wait for the game loop (EE_SIMHASH's "tick 0" line) after the launcher returns
@@ -215,6 +218,24 @@ scenario_pause_and_arm() {
   : >"$arm"
 }
 
+# The paused game is still presented, so every shot shows the frame the trace describes (the window was opened by the arming).
+# Returns non-zero (and says why) if one cannot be taken; the caller still closes the game and restores the directory first.
+scenario_shots() {
+  local i=0 f
+  while [ "$i" -lt "$SCN_SHOTS" ]; do
+    [ "$i" -eq 0 ] || sleep "$SCN_SHOT_GAP"
+    f="$OUT/shot-$i.png"
+    rm -f "$f"
+    if "$SHOT_CMD" -x "$f" >>"$OUT/shot.log" 2>&1 && [ -s "$f" ]; then
+      gr_log "screenshot $((i + 1)) of $SCN_SHOTS: $f"
+    else
+      gr_log "FAIL: screenshot $((i + 1)) of $SCN_SHOTS could not be taken (see $OUT/shot.log)"
+      return 1
+    fi
+    i=$((i + 1))
+  done
+}
+
 # The Windows path of the game's exe, from its place in the prefix: C:\GOG Games\...\Empire Earth.exe
 game_exe_windows_path() {
   local rel="${GR_GAME#"$GR_PREFIX"/drive_c/}"
@@ -315,6 +336,10 @@ one_run() {
     cp "$raw.data" "$OUT/trace.$tag.data"
     gr_log "data file saved: $OUT/trace.$tag.data ($(wc -c <"$raw.data" | tr -d ' ') bytes)"
   fi
+  local shots_failed=0
+  if [ -n "$SCENARIO_FILE" ] && [ "${SCN_SHOTS:-0}" -gt 0 ]; then
+    scenario_shots || shots_failed=1
+  fi
   if [ -n "$SCENARIO_FILE" ]; then
     # the scenario ends the way a player's session does: WM_CLOSE, then (if ignored) WM_QUIT; the prefix is stopped after
     [ -f "$GR_GAME/ee-version.log" ] && cp "$GR_GAME/ee-version.log" "$OUT/ee-version.$tag.log"
@@ -329,6 +354,7 @@ one_run() {
   gr_stop_game || return 7
   gr_log "trace saved: $OUT/trace.$tag.txt"
   gr_teardown || return 6
+  [ "$shots_failed" -eq 0 ] || { gr_log "FAIL: the reference screenshots were not all taken; the trace is kept, the run is not clean"; return 9; }
   [ "${unclean:-0}" -eq 0 ] || { gr_log "FAIL: the game did not close by itself (WM_CLOSE and WM_QUIT were ignored); the trace is kept, the run is not clean"; return 8; }
   return 0
 }
