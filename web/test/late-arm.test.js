@@ -77,7 +77,7 @@ test('a late-armed capture starts its device with the render states the game set
   const { sequence } = loadTrace(stateTrace(true), null, { allowMissingData: true });
   assert.equal(rsValue(sequence, 25), 5, 'ALPHAFUNC GREATER');
   assert.equal(rsValue(sequence, 143), 1, 'NORMALIZENORMALS');
-  assert.equal(rsValue(sequence, 140), 3, 'FOGVERTEXMODE');
+  assert.equal(rsValue(sequence, 140), undefined, 'fog is not seeded (its range is not in the capture)');
   assert.equal(rsValue(sequence, 7), 1, 'the capture\'s own ZENABLE still applies');
   const cmds = all(sequence);
   assert.ok(cmds.findIndex((c) => c.op === 'setRenderState' && c.id === 25) < cmds.findIndex((c) => c.op === 'setRenderState' && c.id === 7), 'seeded before the first captured state');

@@ -20,6 +20,14 @@ const FAILED = /^(DDERR_|D3DERR_|0x[89a-fA-F][0-9a-fA-F]{7}$)/;
 const VERTEX_FVF = 0x152;
 const STATE_CALLS = new Set(['SetRenderState', 'SetTextureStageState', 'SetTransform', 'SetViewport', 'SetMaterial', 'SetLight', 'LightEnable', 'SetTexture']);
 
+// The render states the game sets once, when it creates its device (tests/ddraw_trace/golden/startup-menu-n60.trace.gz, the TnL device,
+// lines 1189-1233), as [D3DRENDERSTATETYPE, value]. A capture armed late (`# armed` header) never sees them; the D3D defaults
+// differ (ALPHAFUNC ALWAYS instead of GREATER, NORMALIZENORMALS off, no vertex fog mode, ...). They seed the shadow of a device
+// before the capture's own state calls, which still win. Not seeded: FOGVERTEXMODE / FOGCOLOR (the renderer would fog everything to black:
+// the fog range is also set outside the window and the original does not show it).
+const DEVICE_INIT_STATE = [[29, 0], [138, 0], [143, 1], [142, 0], [146, 0], [148, 0], [2, 0], [8, 3], [9, 2], [26, 1],
+  [41, 1], [25, 5]];
+
 const rectOf = (a) => ({ x: a[0], y: a[1], w: a[2] - a[0], h: a[3] - a[1] });
 const keyOf = (a) => (Array.isArray(a) && a.length === 2 ? { low: a[0], high: a[1] } : null);
 const sameKey = (a, b) => (a === b) || (a && b && a.low === b.low && a.high === b.high);
@@ -37,6 +45,7 @@ class Loader {
     this.display = null;
     this.inferredDisplay = null; // late-armed capture: the size of the screen surface, from its first whole-surface ReleaseDC record
     this.gdiIds = new Set();
+    this.lateArmed = /^# armed$/m.test(text);
     this.slots = new Map();
     this.nextVertex = 0;
     this.line = 0;
@@ -314,7 +323,11 @@ class Loader {
   // ---- Direct3D device ---------------------------------------------------------------------------------------------
   shadow(id) {
     let s = this.shadows.get(id);
-    if (!s) { s = new Map(); this.shadows.set(id, s); }
+    if (!s) {
+      s = new Map();
+      this.shadows.set(id, s);
+      if (this.lateArmed) for (const [rs, v] of DEVICE_INIT_STATE) s.set(`rs:${rs}`, cmd.setRenderState(rs, v));
+    }
     return s;
   }
 
