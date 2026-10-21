@@ -63,6 +63,7 @@ class Loader {
     this.stats.lines = lines.length;
     for (let i = 0; i < lines.length; i++) {
       this.line = i + 1;
+      if (lines[i].startsWith('# snapshot ')) { this.snapshot(lines[i]); continue; }
       const call = parseCall(lines[i].replace(/\r$/, ''), this.line);
       if (!call) continue;
       this.stats.calls++;
@@ -186,6 +187,18 @@ class Loader {
     s.masks = { rgbBitCount: bpp, rMask: rm, gMask: gm, bMask: bm, aMask: am };
     for (let y = 0; y < rows; y++) s.pixels.set(r.payload.subarray(y * rowBytes, (y + 1) * rowBytes), ((t + y) * w + l) * px);
     s.dirty = true;
+  }
+
+  // "# snapshot surf#N blob=...": the pixels a surface had when the capture was armed (a surface filled before the window
+  // has no Lock/Unlock in it). blob=unavailable is not an error yet: the surface may never be used, or a later Blt source /
+  // SetTexture line stores it; using it without pixels still fails in flush().
+  snapshot(line) {
+    const m = /^# snapshot surf#(\d+)(.*)$/.exec(line.replace(/\r$/, ''));
+    if (!m) this.fail(`malformed snapshot line: ${line}`);
+    const blob = parseBlob(m[2]);
+    if (blob && blob.state === 'unavailable') { this.stats.unavailableSnapshots = (this.stats.unavailableSnapshots ?? 0) + 1; return; }
+    this.applyBlob(this.surf(Number(m[1])), blob);
+    this.stats.snapshots = (this.stats.snapshots ?? 0) + 1;
   }
 
   surf_Unlock(c) { this.applyBlob(this.surf(c.obj.id), parseBlob(c.suffix)); }
