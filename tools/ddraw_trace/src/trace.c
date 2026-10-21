@@ -551,9 +551,10 @@ int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], cons
     if (g_data_failed) {
         rc = DATA_FAIL;
     } else if (!open_ok_locked() || g_capped ||
-               !(g_armed || !g_cfg.arm_file[0] || (g_cfg.data_early && kind == BLOB_SURFACE && p[8] != 2))) {
-        /* before the arming only the pixels of Unlock / Blt / SetTexture are kept (DDT_DATA_EARLY); the per-frame GDI
-         * read-backs of the screen surface (origin 2) are not: they are the bulk of a long run and the window brings its own */
+               !(g_armed || !g_cfg.arm_file[0] || (g_cfg.data_early && kind == BLOB_SURFACE && (p[8] == 1 || p[8] == 5)))) {
+        /* before the arming only what the game writes into textures is kept (DDT_DATA_EARLY): Unlock (origin 1) and the
+         * texture of a SetTexture (5).  The GDI read-back (2) and the Blt sources (3, 4) of the 2D screen surface recur every
+         * frame, 7 MB each, and a surface read back is stored again at its first use inside the window (it stays dirty). */
         rc = DATA_OFF;
     } else if ((e = dfind_locked(key)) != NULL) {
         *off = e->off;
