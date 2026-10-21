@@ -507,6 +507,10 @@ __declspec(dllexport) int WINAPI scenario_n(HWND hwnd, ScenarioS *r) {
         for (x = 0; x < 4; x++)
             ((unsigned short *)((unsigned char *)sd.lpSurface + y * sd.lPitch))[x] = s565_pixel(x, y);
     R(IDirectDrawSurface7_Unlock(b, NULL));
+    if (GetEnvironmentVariableA("N_DEAD", arm, sizeof arm)) { /* surf#5: freed by DDraw behind the proxy's back (see the mock) */
+        LPDIRECTDRAWSURFACE7 dead = make_surface(dd, 13, 13, 0);
+        IDirectDrawSurface7_Release(dead);
+    }
     for (i = 0; i < 5; i++) {
         if (i == 2 && GetEnvironmentVariableA("DDT_ARM_FILE", arm, sizeof arm)) {
             HANDLE h = CreateFileA(arm, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);

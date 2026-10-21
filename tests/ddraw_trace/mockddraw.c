@@ -29,7 +29,14 @@ static int is_mine(const void *p) {
 
 static HRESULT WINAPI s_qi(IDirectDrawSurface7 *This, REFIID riid, void **out) { (void)This; (void)riid; *out = NULL; return E_NOINTERFACE; }
 static ULONG WINAPI s_addref(IDirectDrawSurface7 *This) { (void)This; return 2; }
-static ULONG WINAPI s_release(IDirectDrawSurface7 *This) { (void)This; return 1; }
+/* A 13x13 surface models one DDraw frees behind the proxy's back (an implicit child of a released texture): the Release the
+ * proxy sees still reports a live object, but the memory is gone, its vtable is NULL afterwards. */
+static ULONG WINAPI s_release(IDirectDrawSurface7 *This) {
+    Mock *m = (Mock *)This;
+    if (m->mem && m->w == 13)
+        m->vtbl = NULL;
+    return 1;
+}
 
 /* The first two flips, and the first Blt with DDBLT_DONOTWAIT, report DDERR_WASSTILLDRAWING; a surface argument that
  * is not one of ours (for example one of the proxy's wrappers) is an invalid parameter. */

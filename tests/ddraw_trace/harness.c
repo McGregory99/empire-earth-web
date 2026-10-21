@@ -683,7 +683,7 @@ static void check_same_as_off(void) {
         int same = 1;
         for (i = 0; i < g_nlines; i++) {
             char tmp[8600], *cut;
-            if (!strncmp(g_lines[i], "# data:", 7) || !strncmp(g_lines[i], "# snapshot ", 11))
+            if (!strncmp(g_lines[i], "# data:", 7) || !strncmp(g_lines[i], "# snapshot", 10))
                 continue;
             strncpy(tmp, g_lines[i], sizeof tmp - 1);
             tmp[sizeof tmp - 1] = 0;
@@ -1046,8 +1046,11 @@ static void cycle_arm_snapshot(HMODULE plugin, HWND hwnd) {
     armed = snapshot_index("# armed*");
     s3 = snapshot_index("# snapshot surf#3 blob=@*");
     s4 = snapshot_index("# snapshot surf#4 blob=@*");
-    check(armed >= 0 && s3 == armed + 1 && s4 == armed + 2, "right after '# armed': one '# snapshot' line for surf#3, then surf#4, in id order");
+    check(armed >= 0 && s3 == armed + 2 && s4 == armed + 4, "after '# armed': a '# snapshot' line for surf#3, then surf#4, in id order, each after its own progress line");
+    check(snapshot_index("# snapshot-begin surf#3") == armed + 1 && snapshot_index("# snapshot-begin surf#4") == armed + 3,
+          "a '# snapshot-begin surf#N' progress line is written before each read-back, so a crash names the surface");
     expect_count("# snapshot *", 2);
+    expect_count("# snapshot-begin *", 2);
     fill_texture((unsigned char *)a, 32);
     (void)b;
     for (y = 0; y < 4; y++)
@@ -1084,6 +1087,19 @@ static void cycle_arm_snapshot_cap(HMODULE plugin, HWND hwnd) {
     check_failed_capture("# ERROR: data cap of 400 bytes exceeded*", "snapshot over the cap");
     sprintf(path, "%s.data", trace ? trace : "");
     check(load_data(path) && g_nrecs == 1 && g_data_len <= 400, "only the record that fits under the cap was written");
+}
+
+/* A surface DDraw freed behind the proxy's back (stale wrapper): the read-back must not call through its dead vtable. */
+static void cycle_arm_snapshot_dead(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_n(plugin, hwnd);
+    check(snapshot_index("# snapshot-begin surf#5") >= 0, "the progress line names the dead surface");
+    check(snapshot_index("# snapshot surf#5 blob=unavailable") >= 0, "the dead surface is reported as blob=unavailable, not read");
+    check(snapshot_index("# snapshot surf#3 blob=@*") >= 0 && snapshot_index("# snapshot surf#4 blob=@*") >= 0, "the live textures are stored all the same");
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path) && g_nrecs == 2, "2 records: the two live textures");
+    expect("# end: 2 presents");
 }
 
 /* Data capture off: arming writes no snapshot line and no data file. */
@@ -1129,6 +1145,8 @@ int main(int argc, char **argv) {
             cycle_arm_snapshot_retry(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-cap"))
             cycle_arm_snapshot_cap(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-dead"))
+            cycle_arm_snapshot_dead(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-off"))
             cycle_arm_snapshot_off(plugin, hwnd);
         else if (!strcmp(argv[1], "data-partial"))
