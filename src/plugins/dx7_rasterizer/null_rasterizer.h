@@ -47,8 +47,8 @@ public:
     long ClearZBuffer(float, GERectangle const &, unsigned long) override;  // 7
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override { return 0; }  // 9
     GEMovie * CreateMovie(FSFileSpec const &, unsigned long, GERectangle const &, bool) override { return 0; }  // 8
-    GEPolygonArray * CreatePolygonArray(unsigned long) override { return 0; }  // 10
-    GEVertexArray * CreateVertexArray(unsigned long, unsigned long) override { return 0; }  // 11
+    GEPolygonArray * CreatePolygonArray(unsigned long) override;  // 10 (dx7_arrays.cpp)
+    GEVertexArray * CreateVertexArray(unsigned long, unsigned long) override;  // 11 (dx7_arrays.cpp)
     long Deactivate() override;  // 12
     long Draw(GEBitmap *, unsigned long) override;  // 21
     long Draw(GELine *, unsigned long, unsigned long) override;  // 20
