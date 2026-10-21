@@ -1162,6 +1162,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "lifecycle_checks.h" /* ActivateScreen, Deactivate and the scene calls on the fake DirectDraw and Direct3D (P2.6.5) */
 #include "texture_checks.h"   /* SetTexture, CanDoCurrentState and the texture handle slots (P2.6.6) */
 #include "ring_checks.h"      /* the ring vertex buffer's LockVB and UnlockVB (P2.6.6) */
+#include "array_checks.h"     /* CreatePolygonArray, CreateVertexArray and the arrays they build (P2.6.7a) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1189,6 +1190,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_lifecycle(e, h, &api, get_rasterizer());
         check_textures(e, h, &api, get_rasterizer());
         check_ring(e, h, &api, get_rasterizer());
+        check_arrays(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

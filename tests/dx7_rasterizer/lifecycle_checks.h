@@ -188,6 +188,7 @@ static const struct {
 #include "lifecycle_expected.inc"
 #include "texture_expected.inc"
 #include "ring_expected.inc"
+#include "array_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -199,6 +200,7 @@ static const struct {
 #include "lifecycle_expected_ours.inc"
 #include "texture_expected_ours.inc"
 #include "ring_expected_ours.inc"
+#include "array_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)
@@ -260,11 +262,11 @@ static void life_step_end(const char *name, long ret, int with_diff)
 }
 
 /* One step: `stmt` sets `ret`.  The flags say whether the state words are compared as well as the calls. */
-#define LS(name, flags, stmt)               \
+#define LS(name, flags, ...)                \
     do {                                    \
         long ret = 0;                       \
         life_step_begin(flags);             \
-        stmt;                               \
+        __VA_ARGS__;                        \
         life_step_end(name, ret, flags);    \
     } while (0)
 
