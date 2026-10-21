@@ -471,6 +471,43 @@ __declspec(dllexport) int WINAPI scenario_s(HWND hwnd, ScenarioS *r) {
     return 0;
 }
 
+/* Scenario P: a surface changed by a Blt, then partly rewritten through a rectangle Lock; it is read as a Blt source afterwards.
+ * The partial Unlock stores only the rectangle, so the Blt-written pixels outside it still have to be stored when it is used. */
+__declspec(dllexport) int WINAPI scenario_p(HWND hwnd, ScenarioS *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, a, c;
+    DDSURFACEDESC2 sd;
+    DDBLTFX fx;
+    RECT rc = {S_RECT_L, S_RECT_T, S_RECT_R, S_RECT_B};
+    unsigned x, y;
+#define R(call) (r->hr[r->n++] = (call))
+
+    if (FAILED(DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL)))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL); /* surf#1 */
+    a = make_surface(dd, 8, 8, 0);                       /* surf#2 */
+    c = make_surface(dd, 8, 8, 0);                       /* surf#3 */
+    memset(&fx, 0, sizeof fx);
+    fx.dwSize = sizeof fx;
+    fx.dwFillColor = S_FILL_COLOR;
+    R(IDirectDrawSurface7_Blt(a, NULL, NULL, NULL, DDBLT_WAIT | DDBLT_COLORFILL, &fx));
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(a, &rc, &sd, DDLOCK_WAIT, NULL));
+    for (y = S_RECT_T; y < S_RECT_B; y++)
+        for (x = S_RECT_L; x < S_RECT_R; x++)
+            ((unsigned *)((unsigned char *)sd.lpSurface + (y - S_RECT_T) * sd.lPitch))[x - S_RECT_L] = rect_pixel(x, y);
+    R(IDirectDrawSurface7_Unlock(a, &rc));
+    R(IDirectDrawSurface7_BltFast(c, 0, 0, a, NULL, DDBLTFAST_WAIT)); /* a is a source: the whole surface is stored now */
+#undef R
+    return 0;
+}
+
 __declspec(dllexport) int WINAPI scenario_r(HWND hwnd, ScenarioR *r) {
     LPDIRECTDRAW7 dd = NULL;
     LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;

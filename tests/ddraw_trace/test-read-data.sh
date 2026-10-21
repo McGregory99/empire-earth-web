@@ -70,6 +70,7 @@ check_eq "extract --raw: header + payload + padding" "168" "$(wc -c <"$work/raw.
 
 check_fails "an offset inside a record is refused" "bad record magic" python3 -I "$READ" "$work/ok.data" extract $((o1 + 8)) "$work/x.bin"
 check_fails "an offset past the end is refused" "truncated record header" python3 -I "$READ" "$work/ok.data" extract 100000 "$work/x.bin"
+check_fails "a negative offset is refused" "negative offset" python3 -I "$READ" "$work/ok.data" extract -1 "$work/x.bin"
 check_fails "a truncated file is reported" "truncated record" python3 -I "$READ" "$work/trunc.data" summary
 check_fails "a wrong magic is reported" "bad magic" python3 -I "$READ" "$work/magic.data" summary
 checks=$((checks + 1)); python3 -I "$READ" "$work/badhash.data" summary >"$work/bh.txt" 2>&1; rc=$?

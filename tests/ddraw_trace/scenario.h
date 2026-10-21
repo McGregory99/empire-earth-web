@@ -102,6 +102,7 @@ typedef struct ScenarioS {
     int n;
 } ScenarioS;
 typedef int(WINAPI *ScenarioSFn)(HWND hwnd, ScenarioS *out);
+/* Scenario P (same result type): Blt, partial Lock/Unlock, BltFast source -- see fakeplugin.c. */
 #define S_FILL_COLOR 0x0000ff00u
 #define S_RECT_L 2
 #define S_RECT_T 2

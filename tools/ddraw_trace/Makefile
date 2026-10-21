@@ -120,6 +120,31 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-surf.txt' \
 	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-surf-off.txt' \
 	    "$(WINE)" harness.exe data-surf 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 DDT_TEST_FAULT=data-write \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-write-fail.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-write-fail.txt' \
+	    "$(WINE)" harness.exe data-write-fail 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 DDT_TEST_FAULT=data-alloc \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-alloc-fail.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-alloc-fail.txt' \
+	    "$(WINE)" harness.exe data-alloc-fail 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 DDT_TEST_FAULT=shadow-alloc \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-shadow-fail.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-shadow-fail.txt' \
+	    "$(WINE)" harness.exe data-shadow-fail 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 MOCK_FAIL_RO_LOCK=3 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-surf-retry.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-surf-retry.txt' \
+	    "$(WINE)" harness.exe data-surf-retry 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-partial.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-partial.txt' \
+	    "$(WINE)" harness.exe data-partial 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-arm.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
 	    DDT_NEXT=ddraw_next.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \

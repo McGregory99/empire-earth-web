@@ -919,6 +919,95 @@ static void cycle_data_cap(HMODULE plugin, HWND hwnd) {
     check(g_nrecs == 2 && g_data_len <= 400, "only the 2 records that fit under the cap were written");
 }
 
+/* ---- data capture integrity: I/O and allocation failures end the capture loudly; a failed readback is retried -------------- */
+static void check_failed_capture(const char *error_glob, const char *what) {
+    char path[700], b[200];
+    const char *trace = getenv("DDT_TRACE");
+    sprintf(b, "%s: the trace says why (%s)", what, error_glob);
+    expect(error_glob);
+    sprintf(b, "%s: the ERROR line ends the trace", what);
+    check(g_nlines > 0 && !strncmp(g_lines[g_nlines - 1], "# ERROR:", 8), b);
+    sprintf(path, "%s.failed", trace ? trace : "");
+    sprintf(b, "%s: a .failed marker is written", what);
+    check(GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES, b);
+    sprintf(path, "%s.done", trace ? trace : "");
+    sprintf(b, "%s: no .done marker", what);
+    check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, b);
+}
+
+/* DDT_TEST_FAULT=data-write: every write to the data file fails. */
+static void cycle_data_write_fail(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    check_failed_capture("# ERROR: data write failed*", "failed data write");
+    expect_count("# ERROR: data cap*", 0);
+}
+
+/* DDT_TEST_FAULT=data-alloc: the record index cannot grow. */
+static void cycle_data_alloc_fail(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    check_failed_capture("# ERROR: data allocation failed*", "failed index allocation");
+    expect_count("# ERROR: data cap*", 0);
+}
+
+/* DDT_TEST_FAULT=shadow-alloc: the vertex shadow copy cannot be allocated. */
+static void cycle_data_shadow_fail(HMODULE plugin, HWND hwnd) {
+    ScenarioV r;
+    run_scenario_v(plugin, hwnd, &r);
+    load_trace_again();
+    check_failed_capture("# ERROR: data allocation failed*vertex shadow*", "failed shadow allocation");
+    expect_count("# ERROR: data cap*", 0);
+}
+
+/* MOCK_FAIL_RO_LOCK=3: the read-back of c at its first SetTexture finds the surface busy.  Its pixels must not be lost: the
+ * surface stays dirty and the next use stores them. */
+static void cycle_surf_retry(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_s(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 6, "the same 6 records as without the failure");
+    check(strstr(nth_line("T1 dev7#1.SetTexture(*", 0), "blob=unavailable") != NULL, "the failed read-back is reported as blob=unavailable");
+    check_ref(nth_line("T1 dev7#1.SetTexture(*", 1), "blob=", 4, "the next SetTexture of c retries and stores it");
+}
+
+/* A Blt-written surface, then a rectangle Unlock: the rectangle is stored but the rest is still unstored. */
+static void cycle_surf_partial(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    ScenarioS r;
+    ScenarioSFn fn = (ScenarioSFn)GetProcAddress(plugin, "scenario_p");
+    unsigned a[64], rect[16], x, y;
+    static const unsigned argb[4] = {0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000};
+    static const unsigned full8[4] = {0, 0, 8, 8}, rc[4] = {S_RECT_L, S_RECT_T, S_RECT_R, S_RECT_B};
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_p");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0 && r.n == 4, "scenario P ran to the end");
+    load_trace_again();
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 2, "2 records: the rectangle, then the whole surface used as a Blt source");
+    if (g_nrecs != 2)
+        return;
+    for (y = 0; y < 8; y++)
+        for (x = 0; x < 8; x++)
+            a[y * 8 + x] = S_FILL_COLOR;
+    for (y = S_RECT_T; y < S_RECT_B; y++)
+        for (x = S_RECT_L; x < S_RECT_R; x++) {
+            a[y * 8 + x] = rect_pixel(x, y);
+            rect[(y - S_RECT_T) * 4 + x - S_RECT_L] = rect_pixel(x, y);
+        }
+    surf_rec(0, 2, 1, rc, 8, 8, 32, 0x41, argb, (unsigned char *)rect, "the locked rectangle at Unlock");
+    surf_rec(1, 2, 4, full8, 8, 8, 32, 0x41, argb, (unsigned char *)a, "the whole surface (fill outside, rectangle inside) as a BltFast source");
+    check_ref(nth_line("T1 surf#3.BltFast(*", 0), "blob=", 1, "BltFast from a, after the partial Unlock");
+}
+
 int main(int argc, char **argv) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
@@ -940,6 +1029,16 @@ int main(int argc, char **argv) {
             cycle_surf(plugin, hwnd);
         else if (!strcmp(argv[1], "data-cap"))
             cycle_data_cap(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-write-fail"))
+            cycle_data_write_fail(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-alloc-fail"))
+            cycle_data_alloc_fail(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-shadow-fail"))
+            cycle_data_shadow_fail(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-surf-retry"))
+            cycle_surf_retry(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-partial"))
+            cycle_surf_partial(plugin, hwnd);
         else
             cycle_data(plugin, hwnd);
     } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {

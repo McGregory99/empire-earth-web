@@ -93,11 +93,18 @@ static HRESULT WINAPI s_flipstatus(IDirectDrawSurface7 *This, DWORD flags) { (vo
 
 /* Lock fills the whole description like Wine does (pitch, size, pixel format) and hands out the rectangle's first pixel; a surface
  * whose DC is out cannot be locked, so a proxy that reads the pixels before ReleaseDC returned would fail here. */
+static int g_ro_locks;
 static HRESULT WINAPI s_lock(IDirectDrawSurface7 *This, LPRECT rc, LPDDSURFACEDESC2 sd, DWORD flags, HANDLE ev) {
     Mock *m = (Mock *)This;
-    (void)flags; (void)ev;
+    (void)ev;
     if (!m->mem)
         return DDERR_GENERIC;
+    if (flags & DDLOCK_READONLY) { /* MOCK_FAIL_RO_LOCK=N: the Nth read-only lock fails once (a busy surface) */
+        char v[16];
+        DWORD n = GetEnvironmentVariableA("MOCK_FAIL_RO_LOCK", v, sizeof v);
+        if (n > 0 && n < sizeof v && ++g_ro_locks == atoi(v))
+            return DDERR_SURFACEBUSY;
+    }
     if (m->dc_held)
         return DDERR_SURFACEBUSY;
     sd->dwFlags |= DDSD_PITCH | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT | DDSD_LPSURFACE;
