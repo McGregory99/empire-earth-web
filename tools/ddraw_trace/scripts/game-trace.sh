@@ -230,7 +230,9 @@ one_run() {
   if [ "$WITH_DATA" = 1 ]; then
     # swap-in.sh's arm argument is positional: an empty one when there is no arm file
     [ ${#arm_args[@]} -gt 0 ] || arm_args=("")
-    data_args=("$win_raw" ${DATA_MAX:+"$DATA_MAX"})
+    data_args=("$win_raw" "${DATA_MAX:-}")
+    # a keyed scenario arms late: store the pixels as the game writes them, before the arming (README, DDT_DATA_EARLY)
+    [ -z "$SCN_KEYS" ] || data_args+=(1)
   fi
   gr_make_wine_wrapper "$OUT/wrap" "$HERE/scripts/swap-in.sh" "$GR_GAME" "$PROXY" "$win_raw" "$PRESENTS" ${arm_args[@]+"${arm_args[@]}"} ${data_args[@]+"${data_args[@]}"} || return 3
 

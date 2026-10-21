@@ -391,9 +391,8 @@ fresh
 DDT_DATA_MAX=123456 run_flags --data >"$W/run13c.out" 2>&1
 check "--data with DDT_DATA_MAX: the cap reaches the config" grep -qxF 'DDT_DATA_MAX=123456' "$W/cfg.seen"
 fresh
-fresh
 rm -f "$W/key.log" "$W/paused" "$W/not-paused"; : >"$W/ticking"
-run_keys --data >"$W/run13e.out" 2>&1
+bash "$DRIVER" --test-config "$W/config-keys.sh" --scenario "$W/scn-keys.env" --data "$W/proxy.dll" >"$W/run13f.out" 2>&1
 check "a keyed scenario with --data stores the pixels early (DDT_DATA_EARLY=1 in the config)" grep -qxF 'DDT_DATA_EARLY=1' "$W/cfg.seen"
 fresh
 DDT_DATA_MAX=123456 run_driver >"$W/run13d.out" 2>&1
