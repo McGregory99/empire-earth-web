@@ -64,3 +64,33 @@ test('a surface created by a CreateSurface call is not taken for the screen just
   const { stats } = loadTrace(text, new Uint8Array(f.data));
   assert.equal(stats.gdiOverlays, 0);
 });
+
+// The game sets these once, when it creates its device (tests/ddraw_trace/golden/startup-menu-n60.trace.gz, dev7#3, lines 1189-1233),
+// and never again; a capture armed after that never sees them, and the D3D defaults differ (ALPHAFUNC ALWAYS instead of GREATER: the
+// transparent texels of an alpha-tested mesh wrote depth; NORMALIZENORMALS off: scaled normals lit the units too dark).
+const stateTrace = (armed) => `# ddraw_trace v1\n${armed ? '# armed\n' : ''}` +
+  'T1 dev7#3.SetRenderState(dwRenderStateType=ZENABLE(7), dwRenderState=0x1) = DD_OK\n' +
+  'T1 surf#5.Flip(lpDDSurfaceTargetOverride=NULL, dwFlags=0x28) = DD_OK\n';
+const rsValue = (seq, id) => { let v; for (const c of all(seq)) if (c.op === 'setRenderState' && c.id === id) v = c.value; return v; };
+
+test('a late-armed capture starts its device with the render states the game set at device creation', () => {
+  const { sequence } = loadTrace(stateTrace(true), null, { allowMissingData: true });
+  assert.equal(rsValue(sequence, 25), 5, 'ALPHAFUNC GREATER');
+  assert.equal(rsValue(sequence, 143), 1, 'NORMALIZENORMALS');
+  assert.equal(rsValue(sequence, 140), 3, 'FOGVERTEXMODE');
+  assert.equal(rsValue(sequence, 7), 1, 'the capture\'s own ZENABLE still applies');
+  const cmds = all(sequence);
+  assert.ok(cmds.findIndex((c) => c.op === 'setRenderState' && c.id === 25) < cmds.findIndex((c) => c.op === 'setRenderState' && c.id === 7), 'seeded before the first captured state');
+});
+
+test('a capture that was not armed late gets no seeded state (it sees the device creation itself)', () => {
+  const { sequence } = loadTrace(stateTrace(false), null, { allowMissingData: true });
+  assert.equal(rsValue(sequence, 25), undefined);
+  assert.equal(rsValue(sequence, 143), undefined);
+});
+
+test('a state the capture sets itself wins over the seeded one', () => {
+  const t = stateTrace(true).replace('T1 surf#5', 'T1 dev7#3.SetRenderState(dwRenderStateType=ALPHAFUNC(25), dwRenderState=0x8) = DD_OK\nT1 surf#5');
+  const { sequence } = loadTrace(t, null, { allowMissingData: true });
+  assert.equal(rsValue(sequence, 25), 8);
+});
