@@ -35,13 +35,15 @@ class Loader {
     this.shadows = new Map();
     this.active = null;
     this.display = null;
+    this.inferredDisplay = null; // late-armed capture: the size of the screen surface, from its first whole-surface ReleaseDC record
+    this.gdiIds = new Set();
     this.slots = new Map();
     this.nextVertex = 0;
     this.line = 0;
     this.stats = {
       lines: 0, calls: 0, presents: 0, frames: 0, commands: 0, droppedTrailingCommands: 0, skippedFailedCalls: 0, ignoredCalls: {},
       ignoredOffscreenBlts: 0, skippedDraws: 0, skippedPixelUpdates: 0, skippedBlits: 0, uniqueVertexRecords: 0, deviceSwitches: 0,
-      displayModes: [], textures: 0, gdiOverlays: 0,
+      displayModes: [], textures: 0, gdiOverlays: 0, skippedKeyedBlits: 0,
     };
   }
 
@@ -59,6 +61,9 @@ class Loader {
     if (!this.data && (header || hasBlobs) && !this.opts.allowMissingData) {
       throw new TraceError(`this trace references a data file${header ? ` (${header})` : ''}: select the .data file together with the trace`);
     }
+    // A capture armed late never sees the CreateSurface / SetDisplayMode calls of the screen. The surface whose whole content
+    // GDI reads back (ReleaseDC with a pixel record) and that the trace never creates is the 2D back buffer: treat it as the screen.
+    for (const m of this.text.matchAll(/surf#(\d+)\.ReleaseDC\([^\n]*blob=@/g)) this.gdiIds.add(Number(m[1]));
     const lines = this.text.split('\n');
     this.stats.lines = lines.length;
     for (let i = 0; i < lines.length; i++) {
@@ -79,7 +84,7 @@ class Loader {
     this.stats.commands = this.frames.reduce((n, f) => n + f.commands.length, 0);
     this.stats.textures = [...this.surfaces.values()].filter((s) => s.created).length;
     return {
-      sequence: { width: this.firstDisplay?.w ?? 640, height: this.firstDisplay?.h ?? 480, frames: this.frames },
+      sequence: { width: (this.firstDisplay ?? this.inferredDisplay)?.w ?? 640, height: (this.firstDisplay ?? this.inferredDisplay)?.h ?? 480, frames: this.frames },
       stats: this.stats,
     };
   }
@@ -103,6 +108,7 @@ class Loader {
     if (!s) {
       s = { id, width: 0, height: 0, caps: 0, screen: false, primary: false, zbuffer: false, key: null, pixels: null, bpp: 0,
         masks: null, dirty: false, created: false, format: null, keyEmitted: null };
+      if (this.gdiIds.has(id)) { s.screen = true; s.inferredScreen = true; }
       this.surfaces.set(id, s);
     }
     return s;
@@ -122,6 +128,7 @@ class Loader {
     const out = c.outs.lplpDDSurface;
     if (!(out instanceof ObjRef)) this.fail('CreateSurface without a surface id');
     const s = this.surf(out.id);
+    s.inferredScreen = false;
     s.caps = desc.ddsCaps?.dwCaps ?? 0;
     s.width = desc.dwWidth ?? 0;
     s.height = desc.dwHeight ?? 0;
@@ -206,6 +213,10 @@ class Loader {
     const s = this.surf(c.obj.id);
     const blob = parseBlob(c.suffix);
     this.applyBlob(s, blob);
+    if (s.inferredScreen && s.width && s.height && !this.inferredDisplay) {
+      this.inferredDisplay = { w: s.width, h: s.height };
+      this.display ??= this.inferredDisplay;
+    }
     // GDI (text) drawn straight onto the screen surface: the capture stored the whole surface, which includes the 3D
     // output. Take only the pixels that differ from our own render (cmd.gdiOverlay).
     if (s.screen && blob && this.data && s.pixels) {
@@ -270,7 +281,11 @@ class Loader {
     }
     const srcRect = c.args.lpSrcRect ? rectOf(c.args.lpSrcRect) : { x: 0, y: 0, w: src.width, h: src.height };
     let key = null;
-    if (flags & BLT.KEYSRC) key = src.key;
+    if (flags & BLT.KEYSRC) {
+      key = src.key;
+      // the key was set before the window opened (late arming), so it is unknown: an opaque square would be wrong
+      if (!key) { this.stats.skippedKeyedBlits++; return; }
+    }
     if (flags & BLT.KEYSRCOVERRIDE) key = keyOf(c.args.lpDDBltFx?.ddckSrcColorkey);
     if (this.blit(src, srcRect, dstRect, key) && isPresent) this.present();
     else if (isPresent) this.present();
