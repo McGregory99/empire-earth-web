@@ -33,6 +33,32 @@ inline long FloorLikeOriginal(float value)
     return rounded;
 }
 
+// The original's x87 arithmetic that stores a float: a float minus an integer (fild; fsubr), an integer minus a float and the sum
+// of two floats, each rounded once, at the store.
+inline float FloatMinusInt(float value, long integer)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfildl %2\n\tfsubrp\n\tfstps %0" : "=m"(result) : "m"(value), "m"(integer) : "st");
+    return result;
+}
+
+inline float IntMinusFloat(long integer, float value)
+{
+    float result;
+    __asm__ volatile("fildl %1\n\tfsubs %2\n\tfstps %0" : "=m"(result) : "m"(integer), "m"(value) : "st");
+    return result;
+}
+
+// floor() with the plain comparison: the value rounded to nearest, one less when the rounding went up.
+inline long FloorOf(float value)
+{
+    long rounded = RoundToNearest(value);
+    if (static_cast<double>(rounded) > static_cast<double>(value)) {
+        --rounded;
+    }
+    return rounded;
+}
+
 } // namespace dx7math
 
 #endif

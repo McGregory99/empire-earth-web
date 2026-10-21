@@ -55,8 +55,8 @@ public:
     long Draw(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 19
     long Draw(GEPoint *, unsigned long, unsigned long) override;  // 18 (dx7_draw2d.cpp)
     long Draw(GERhombus *, unsigned long) override;  // 17 (dx7_draw2d.cpp)
-    long Draw(GEText *text, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 16
-    long Draw(GEText *text, GERectangle const &, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 15
+    long Draw(GEText *, GESurface *) override;  // 16 (dx7_text.cpp)
+    long Draw(GEText *, GERectangle const &, GESurface *) override;  // 15 (dx7_text.cpp)
     long Draw(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 14
     long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override;  // 13 (dx7_draw3d.cpp)
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override;  // 22 (dx7_draw3d.cpp)
@@ -157,6 +157,7 @@ private:
 
     // The tail every draw shares (dx7_draw2d.cpp): unlock the ring, draw the `vertices` just written (indexed by `indices`, `indexCount` of them, or
     // as a plain list of `primitive` type when `indices` is null) retrying while Direct3D is busy, and move the cursor on.  Answers the unlock's status.
+    long DrawTextOn(GEText *text, const GERectangleLayout *clip, GESurface *surface);  // the text draws' body (dx7_text.cpp)
     long UnlockAndDraw(unsigned long screen, unsigned long primitive, unsigned long vertices, const unsigned short *indices, unsigned long indexCount);
 
     // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose

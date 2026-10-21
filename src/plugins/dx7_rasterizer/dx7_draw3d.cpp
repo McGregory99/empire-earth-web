@@ -24,6 +24,8 @@
 // and a lock that gave no pointer are refused without a draw (EEWEB_NOT_SUPPORTED, or 1 for the lock).
 #include "null_rasterizer.h"
 
+#include "dx7_math.h"
+
 #include "engine_imports.h"
 #include "rasterizer_abi.h"
 
@@ -38,20 +40,8 @@ const ulong kViewTransform = 2;
 const ulong kProjectionTransform = 3;
 const ulong kNormalizeNormals = 0x88;
 
-// x87 arithmetic of the texture coordinate wrap: float minus integer, integer minus float, stored as a float.
-inline float FloatMinusInt(float value, long integer)
-{
-    float result;
-    __asm__ volatile("flds %1\n\tfildl %2\n\tfsubrp\n\tfstps %0" : "=m"(result) : "m"(value), "m"(integer) : "st");
-    return result;
-}
-
-inline float IntMinusFloat(long integer, float value)
-{
-    float result;
-    __asm__ volatile("fildl %1\n\tfsubs %2\n\tfstps %0" : "=m"(result) : "m"(integer), "m"(value) : "st");
-    return result;
-}
+using dx7math::FloatMinusInt;
+using dx7math::IntMinusFloat;
 
 // The sum of two floats in extended precision, stored as a float.
 inline float AddFloats(float first, float second)
@@ -61,19 +51,14 @@ inline float AddFloats(float first, float second)
     return result;
 }
 
-inline long Rounded(float value)
-{
-    long rounded;
-    __asm__ volatile("flds %1\n\tfistpl %0" : "=m"(rounded) : "m"(value) : "st");
-    return rounded;
-}
+using dx7math::RoundToNearest;
 
 // v wrapped the way the original does it.
 float WrapCoordinate(float v)
 {
     if (v > -1.0f) {
         if (v > 1.0f) {
-            long integer = Rounded(v);
+            long integer = RoundToNearest(v);
             if (static_cast<double>(integer) > static_cast<double>(v)) {
                 --integer;
             }
@@ -81,7 +66,7 @@ float WrapCoordinate(float v)
         }
         return v;
     }
-    long integer = Rounded(v);
+    long integer = RoundToNearest(v);
     if (static_cast<double>(integer) < static_cast<double>(v)) {
         ++integer;
     }

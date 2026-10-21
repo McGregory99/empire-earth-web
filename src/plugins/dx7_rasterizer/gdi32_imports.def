@@ -1,4 +1,11 @@
-; The gdi32.dll function the 32-bit probe's window class needs (its background brush).  stdcall.
+; The gdi32.dll functions the plugin calls: the stock object of the 32-bit probe's window class (its background brush) and the
+; text draws' GDI (dx7_text.cpp).  stdcall.
 LIBRARY gdi32.dll
 EXPORTS
     GetStockObject@4
+    SelectObject@8
+    GetTextExtentPoint32A@16
+    SetTextColor@8
+    SetBkColor@8
+    SetBkMode@8
+    ExtTextOutA@32
