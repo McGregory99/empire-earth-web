@@ -818,6 +818,64 @@ static void sync_source(CallRec *c, const char *argname, unsigned origin) {
     add_blob(c->suffix, sizeof c->suffix, st, off, len);
 }
 
+/* The capture window opens on a game that has been running: most textures were filled before it, and nothing in the window
+ * would ever store their pixels.  So the present that arms the trace stores every live texture or 2D surface once (origin 6) and
+ * names each in a "# snapshot surf#N blob=..." line.  A surface that cannot be read now (locked, DC out, busy) says
+ * blob=unavailable and stays dirty: its first use in the window stores it, like any Blt-written surface. */
+static int by_id(const void *x, const void *y) {
+    unsigned a = (*(Wrap *const *)x)->id, b = (*(Wrap *const *)y)->id;
+    return a < b ? -1 : a > b;
+}
+
+static void snapshot_surfaces(void) {
+    Wrap **list = NULL, *w;
+    unsigned b, n = 0, cap = 0, i;
+
+    if (!data_enabled())
+        return;
+    EnterCriticalSection(&g_reg_cs);
+    for (b = 0; b < NBUCKETS; b++)
+        for (w = g_by_self[b]; w; w = w->by_self_next) {
+            if (w->dead || !pixels_wanted(w))
+                continue;
+            if (n == cap) {
+                Wrap **nl = HeapAlloc(GetProcessHeap(), 0, (cap = cap ? cap * 2 : 256) * sizeof *nl);
+                if (!nl) {
+                    LeaveCriticalSection(&g_reg_cs);
+                    if (list)
+                        HeapFree(GetProcessHeap(), 0, list);
+                    data_fail("snapshot list");
+                    return;
+                }
+                if (list) {
+                    memcpy(nl, list, n * sizeof *nl);
+                    HeapFree(GetProcessHeap(), 0, list);
+                }
+                list = nl;
+            }
+            list[n++] = w;
+        }
+    LeaveCriticalSection(&g_reg_cs);
+    if (n > 1)
+        qsort(list, n, sizeof *list, by_id);
+    for (i = 0; i < n; i++) { /* wrappers are never freed: the pointers stay valid */
+        char line[96], lbl[24];
+        unsigned off = 0, len = 0;
+        int st = DATA_UNAVAILABLE;
+        w = list[i];
+        w->dirty = 1;
+        if (!w->locked) /* a surface the plugin holds locked is not locked again */
+            st = readback(w, 6, &off, &len);
+        snprintf(line, sizeof line, "snapshot %s", wrap_label(w, lbl));
+        add_blob(line, sizeof line, st, off, len);
+        trace_comment(line);
+        if (st == DATA_FAIL)
+            break;
+    }
+    if (list)
+        HeapFree(GetProcessHeap(), 0, list);
+}
+
 /* Before the real Unlock: what the plugin wrote while the buffer was locked. */
 static void pre_unlock(CallRec *c) {
     Wrap *w = c->self;
@@ -1085,8 +1143,8 @@ static uint32_t dispatch(int iface, int slot, void *ra, const uint32_t *a) {
         buf_puts(&b, c.suffix);
         trace_emit(0, b.p, m->timing || busy);
         /* only a call that worked shows a frame: a Flip or Blt that reports DDERR_WASSTILLDRAWING is retried */
-        if (is_present && SUCCEEDED((HRESULT)result))
-            trace_present();
+        if (is_present && SUCCEEDED((HRESULT)result) && trace_present())
+            snapshot_surfaces();
     }
     return result;
 }

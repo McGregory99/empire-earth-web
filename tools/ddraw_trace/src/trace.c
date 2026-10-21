@@ -335,16 +335,35 @@ void trace_emit(int depth, const char *text, int timing) {
     unlock();
 }
 
-void trace_present(void) {
-    char done[MAX_PATH + 8], line[64];
-    int n;
-    HANDLE h;
+void trace_comment(const char *text) {
+    char line[256];
+    unsigned n;
 
     if (!g_cfg.trace_path[0])
         return;
     lock();
+    if (active_locked()) {
+        n = (unsigned)snprintf(line, sizeof line, "# %s\n", text);
+        if (n >= sizeof line)
+            n = sizeof line - 1;
+        put_locked(line, n);
+        if (g_cfg.flush_each)
+            flush_locked();
+    }
+    unlock();
+}
+
+int trace_present(void) {
+    char done[MAX_PATH + 8], line[64];
+    int n, just_armed = 0;
+    HANDLE h;
+
+    if (!g_cfg.trace_path[0])
+        return 0;
+    lock();
     if (!g_armed && g_cfg.arm_file[0]) {
         arm_locked();
+        just_armed = g_armed;
     } else if (active_locked()) {
         LARGE_INTEGER now;
         DWORD written;
@@ -369,6 +388,7 @@ void trace_present(void) {
         }
     }
     unlock();
+    return just_armed;
 }
 
 void trace_flush(void) {

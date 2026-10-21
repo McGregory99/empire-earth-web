@@ -40,7 +40,8 @@ void buf_printf(Buf *b, const char *fmt, ...) __attribute__((format(printf, 2, 3
 int trace_active(void);                           /* configured, open and not yet capped */
 int trace_wants(void *return_address);            /* active AND the caller is one of the traced modules */
 void trace_emit(int depth, const char *text, int timing); /* one line: "T<n> " + indent + text */
-void trace_present(void);                         /* count one present-equivalent call; may cap the trace */
+int trace_present(void);                          /* count one present-equivalent call; may cap the trace.  1: this call armed the trace */
+void trace_comment(const char *text);             /* one "# text" line, no thread prefix (only while the trace is recording) */
 void trace_flush(void);
 
 /* ---- side data file (trace.c) ----------------------------------------------------------------- */

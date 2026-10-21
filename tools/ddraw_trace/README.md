@@ -265,8 +265,9 @@ rectangle `(p0,p1)-(p2,p3)` (left, top, right, bottom, right/bottom exclusive) o
 | 2 | `surf#N.ReleaseDC`: the whole surface, read after the real `ReleaseDC` returned (what GDI drew, e.g. text) | the `ReleaseDC` line |
 | 3, 4 | the source of a `Blt` / `BltFast` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `Blt` / `BltFast` line |
 | 5 | the texture of a `SetTexture` that an earlier `Blt` / `BltFast` wrote to and that has not been stored since: the whole surface | the `SetTexture` line |
+| 6 | the present that arms a `DDT_ARM_FILE` capture: every live texture / 2D surface once, whatever happened to it before the window (most textures of a running game were filled before it opened) | a `# snapshot surf#N blob=...` line right after `# armed` |
 
-Origins 2 to 5 read the pixels with a read-only `Lock` on the real surface that the plugin cannot see (it is not traced). Primary,
+Origins 2 to 6 read the pixels with a read-only `Lock` on the real surface that the plugin cannot see (it is not traced). Primary,
 back-buffer, 3D-device and Z-buffer surfaces are never stored. A surface's current pixels at any point of the trace are the
 records of its lines applied in trace order, each over the rectangle it names (a later `Blt` onto a surface that is never used as
 a source or texture again is not read back; the replayer replays or ignores it).
@@ -276,6 +277,13 @@ a source or texture again is not read back; the replayer replays or ignores it).
 * `Unlock`, `ReleaseDC`, `Blt`, `BltFast`, `SetTexture`: ` blob=@<offset>+<length>` at the end of the line, only when pixels were
   stored or found already stored by this call (an unchanged surface: no suffix on `Blt`/`SetTexture`; an `Unlock` of unchanged
   content refers to the old record). `blob=failed`: the cap was exceeded; `blob=unavailable`: the read-back lock failed.
+* `# snapshot surf#N blob=@<offset>+<length>`: a comment line (no `T<n>` prefix; only with `DDT_DATA` and `DDT_ARM_FILE`) written
+  right after `# armed`, one per live non-primary, non-back-buffer, non-3D-device, non-Z-buffer surface in id order, naming the
+  origin-6 record that holds its pixels at the arming. `blob=unavailable` (the surface was locked, had a DC out, or the read-back
+  `Lock` failed): the surface stays marked as changed and its first `Blt` source / `SetTexture` use in the window stores it (origin
+  3 to 5), retried on each use until it works; `blob=failed`: the cap was exceeded (the capture is over). Strip these lines, like
+  the `# data:` header and the `blob=` suffixes, to compare a data capture with a trace taken without `DDT_DATA`; there are none
+  without it. A loader applies the record to the surface exactly as it does for an `Unlock` line.
 * Draw calls (`DrawPrimitive`, `DrawIndexedPrimitive`, `DrawPrimitiveVB`, `DrawIndexedPrimitiveVB`): ` blob={vertices=@O+L,
   indices=@O+L}` (no `indices` for the non-indexed calls; `vertices=none` as above). Strided draws are not captured.
 * Vertex-buffer `Lock` and `Unlock` lines carry no blob: the data is stored by the draws that read it.
