@@ -130,12 +130,23 @@ static void write_callers_locked(void) {
     CloseHandle(h);
 }
 
+static int g_data_werr; /* a write to the data file failed or was short: data_put turns it into a failed capture */
+
+static void dwrite_locked(const void *p, DWORD n) {
+    DWORD done = 0;
+    if (g_data_werr || g_data == INVALID_HANDLE_VALUE)
+        return;
+    if (ddt_fault("data-write") || !WriteFile(g_data, p, n, &done, NULL) || done != n)
+        g_data_werr = 1;
+}
+
 static void dflush_locked(void) {
-    DWORD done;
-    if (g_data != INVALID_HANDLE_VALUE && g_dbuf_len)
-        WriteFile(g_data, g_dbuf, g_dbuf_len, &done, NULL);
+    if (g_dbuf_len)
+        dwrite_locked(g_dbuf, g_dbuf_len);
     g_dbuf_len = 0;
 }
+
+static void data_check_werr_locked(void);
 
 static void flush_locked(void) {
     DWORD done;
@@ -143,6 +154,7 @@ static void flush_locked(void) {
     if (g_file != INVALID_HANDLE_VALUE && g_out_len)
         WriteFile(g_file, g_out, g_out_len, &done, NULL);
     g_out_len = 0;
+    data_check_werr_locked();
 }
 
 static void put_locked(const char *s, unsigned n) {
@@ -393,30 +405,57 @@ static void dput_locked(const void *p, size_t n) {
     if (g_dbuf_len + n > sizeof g_dbuf)
         dflush_locked();
     if (n > sizeof g_dbuf) {
-        DWORD done;
-        WriteFile(g_data, p, (DWORD)n, &done, NULL);
+        dwrite_locked(p, (DWORD)n);
         return;
     }
     memcpy(g_dbuf + g_dbuf_len, p, n);
     g_dbuf_len += (unsigned)n;
 }
 
-/* The cap (or an I/O error) makes the capture unusable: say so in the trace, end it, and leave a marker instead of .done. */
-static void data_fail_locked(const char *why, unsigned need) {
-    char line[256], path[MAX_PATH + 8];
+/* The cap, an I/O error or an allocation failure makes the capture unusable: say so in the trace, end it, and leave a marker
+ * instead of .done.  `line` is the complete ERROR line. */
+static void data_fail_line_locked(const char *line) {
+    char path[MAX_PATH + 8];
     HANDLE h;
-    int n = snprintf(line, sizeof line, "# ERROR: data cap of %u bytes exceeded (%s: record %u needs %u more bytes after %u written); capture invalid\n",
-                     g_cfg.data_max, why, g_data_seq, need, g_data_off);
-    put_locked(line, (unsigned)n);
+    g_data_failed = 1; /* first: the flush below must not report the same failure again */
+    put_locked(line, (unsigned)strlen(line));
     flush_locked();
     write_callers_locked();
     g_capped = 1;
-    g_data_failed = 1;
     snprintf(path, sizeof path, "%s.failed", g_cfg.trace_path);
     h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h != INVALID_HANDLE_VALUE)
         CloseHandle(h);
     OutputDebugStringA(line);
+}
+
+static void data_fail_locked(const char *why, unsigned need) {
+    char line[256];
+    snprintf(line, sizeof line, "# ERROR: data cap of %u bytes exceeded (%s: record %u needs %u more bytes after %u written); capture invalid\n",
+             g_cfg.data_max, why, g_data_seq, need, g_data_off);
+    data_fail_line_locked(line);
+}
+
+static void data_fail_alloc_locked(const char *what) {
+    char line[256];
+    snprintf(line, sizeof line, "# ERROR: data allocation failed (%s: record %u after %u bytes written); capture invalid\n", what,
+             g_data_seq, g_data_off);
+    data_fail_line_locked(line);
+}
+
+static void data_check_werr_locked(void) {
+    char line[256];
+    if (!g_data_werr || g_data_failed || !g_cfg.data_prefix[0])
+        return;
+    snprintf(line, sizeof line, "# ERROR: data write failed (record %u after %u bytes written); capture invalid\n", g_data_seq, g_data_off);
+    data_fail_line_locked(line);
+}
+
+void data_fail(const char *what) {
+    lock();
+    if (!g_data_failed && active_locked())
+        data_fail_alloc_locked(what);
+    unlock();
 }
 
 static DEnt *dfind_locked(uint64_t key) {
@@ -433,7 +472,7 @@ static int dinsert_locked(uint64_t key, unsigned off, unsigned len) {
     unsigned i;
     if (!g_dtab || (g_data_n + 1) * 2 > g_data_cap_n) { /* grow at half load */
         unsigned ncap = g_data_cap_n ? g_data_cap_n * 2 : 4096, k;
-        DEnt *nt = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ncap * sizeof *nt);
+        DEnt *nt = ddt_fault("data-alloc") ? NULL : HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ncap * sizeof *nt);
         if (!nt)
             return 0;
         for (k = 0; k < g_data_cap_n; k++)
@@ -508,12 +547,16 @@ int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], cons
         *off = g_data_off;
         *len = (unsigned)total;
         if (!dinsert_locked(key, *off, *len)) {
-            data_fail_locked("out of memory", (unsigned)total);
+            data_fail_alloc_locked("record index");
             rc = DATA_FAIL;
         }
         g_data_off += (unsigned)total;
         if (g_cfg.flush_each)
             dflush_locked();
+        if (rc == DATA_OK && g_data_werr) {
+            data_check_werr_locked();
+            rc = DATA_FAIL;
+        }
     }
     unlock();
     return rc;

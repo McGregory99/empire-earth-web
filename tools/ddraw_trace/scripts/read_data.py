@@ -36,6 +36,8 @@ def fnv1a64(data):
 
 def parse_header(buf, off):
     """The 96-byte record header at buf[off:] as a dict."""
+    if off < 0:
+        raise FormatError("negative offset %d (record offsets count from the start of the file)" % off)
     if off + REC_HDR > len(buf):
         raise FormatError("truncated record header at offset %d" % off)
     magic, kind, total, seq, obj, plen, phash = struct.unpack_from("<6IQ", buf, off)

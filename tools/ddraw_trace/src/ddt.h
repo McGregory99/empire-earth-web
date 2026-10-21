@@ -15,6 +15,7 @@ typedef struct DdtConfig {
     int flush_each;            /* flush the trace after every line (debugging) */
     char data_prefix[MAX_PATH]; /* if set: side data file "<prefix>.data" holding the bytes the trace only hashes (README, "Data file") */
     unsigned data_max;         /* cap on the data file in bytes; exceeding it fails the capture loudly */
+    char test_fault[32];       /* tests only (DDT_TEST_FAULT): inject one failure, see ddt_fault; never set by the drivers */
     char arm_file[MAX_PATH];   /* if set: nothing is traced (nor counted) until this file exists; see trace_present */
 } DdtConfig;
 
@@ -23,6 +24,7 @@ void ddt_init(void);               /* idempotent, thread safe */
 HMODULE ddt_next_module(void);     /* the module forwarded to, loaded on first use; NULL if it cannot be loaded */
 FARPROC ddt_next_proc(const char *name);
 void ddt_shutdown(void);           /* flush the trace (process detach) */
+int ddt_fault(const char *name);   /* DDT_TEST_FAULT names this failure: "data-write", "data-alloc" or "shadow-alloc" */
 
 /* ---- text buffers ----------------------------------------------------------------------------- */
 typedef struct Buf {
@@ -51,6 +53,8 @@ int data_enabled(void);                           /* DDT_DATA is configured */
  * capture (an ERROR line is in the trace). */
 int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], const void *base, size_t pitch, size_t rows,
              size_t rowbytes, unsigned *off, unsigned *len);
+/* An allocation or I/O failure of the capture itself (not the cap): says why in the trace, ends it and leaves the .failed marker. */
+void data_fail(const char *what);
 uint64_t fnv1a64(const void *data, size_t n);
 uint64_t fnv1a64_update(uint64_t h, const void *data, size_t n);
 #define FNV1A64_INIT 0xcbf29ce484222325ull

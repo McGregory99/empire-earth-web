@@ -789,9 +789,8 @@ static int readback(Wrap *w, unsigned origin, unsigned *off, unsigned *len) {
 
     memset(&sd, 0, sizeof sd);
     sd.dwSize = sizeof sd;
-    w->dirty = 0;
     if (FAILED(s->lpVtbl->Lock(s, NULL, &sd, DDLOCK_WAIT | DDLOCK_READONLY, NULL)))
-        return DATA_UNAVAILABLE;
+        return DATA_UNAVAILABLE; /* still dirty: the next use tries again */
     if (d[9]) {
         note_format(w, d);
         surf_geometry(d, NULL, &pitch, &rows, &rowbytes);
@@ -799,6 +798,8 @@ static int readback(Wrap *w, unsigned origin, unsigned *off, unsigned *len) {
             st = put_surface(w, (void *)(uintptr_t)d[9], pitch, rows, rowbytes, NULL, origin, off, len);
     }
     s->lpVtbl->Unlock(s, NULL);
+    if (st == DATA_OK)
+        w->dirty = 0; /* only a stored record clears it; a failed or empty read-back leaves the pixels to a later use */
     return st;
 }
 
@@ -835,10 +836,12 @@ static void pre_unlock(CallRec *c) {
         h = fnv1a64(w->lock_ptr, w->lock_bytes);
         if (data_enabled()) { /* the draws read ranges of this buffer after Unlock, when the pointer is no longer valid */
             DWORD n = w->vb_bytes > w->lock_bytes ? w->vb_bytes : w->lock_bytes;
-            if (!w->vb_shadow)
+            if (!w->vb_shadow && !ddt_fault("shadow-alloc"))
                 w->vb_shadow = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, n);
             if (w->vb_shadow)
                 memcpy(w->vb_shadow, w->lock_ptr, w->lock_bytes < n ? w->lock_bytes : n);
+            else
+                data_fail("vertex shadow buffer"); /* the draws would store nothing for this buffer: the capture is invalid */
         }
         snprintf(c->suffix, sizeof c->suffix, " locked={bytes=%u, hash=fnv1a64:%08x%08x}", (unsigned)w->lock_bytes,
                  (unsigned)(h >> 32), (unsigned)h);
@@ -856,7 +859,10 @@ static void pre_unlock(CallRec *c) {
             int st = put_surface(w, w->lock_ptr, w->lock_pitch, w->lock_rows, w->lock_rowbytes, w->lock_has_rect ? &w->lock_rect : NULL, 1,
                                  &off, &len);
             add_blob(c->suffix, sizeof c->suffix, st, off, len);
-            w->dirty = 0;
+            /* A rectangle only stores the rectangle: pixels a Blt wrote elsewhere stay unstored until the surface is used. */
+            if (st == DATA_OK && (!w->lock_has_rect || (w->lock_rect.left <= 0 && w->lock_rect.top <= 0 &&
+                                                         (DWORD)w->lock_rect.right >= w->surf_w && (DWORD)w->lock_rect.bottom >= w->surf_h)))
+                w->dirty = 0;
         }
     }
 }

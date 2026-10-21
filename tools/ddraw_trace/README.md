@@ -288,7 +288,12 @@ The file never grows past `DDT_DATA_MAX` bytes (default 512 MiB; the golden's co
 draws over 60 presents, should need a small fraction of that; most draws are 4-vertex quads of 144 bytes). When a record would
 pass the cap the proxy writes `# ERROR: data cap of <n> bytes exceeded (...)` to the trace, ends the trace (no more lines or data),
 creates `<trace>.failed` instead of `<trace>.done`, and calls `OutputDebugString`. `game-trace.sh` stops waiting when it sees
-`.failed` and fails the run. A data file that cannot be created is an error line and the same failure.
+`.failed` and fails the run. A data file that cannot be created is an error line and the same failure. A failed or short write to the data file (`# ERROR: data write failed (...)`) and an allocation failure of the capture itself
+(`# ERROR: data allocation failed (record index | vertex shadow buffer ...)`) end the trace the same way, with the real reason.
+A surface whose read-back could not lock it stays marked as changed (`blob=unavailable` on that line) and is stored at its next use;
+a rectangle Unlock stores only the rectangle and leaves a Blt-changed surface marked until a whole-surface record is stored.
+`DDT_TEST_FAULT` (`data-write`, `data-alloc`, `shadow-alloc`) injects those failures for the offline tests; nothing sets it in a
+game run. `scripts/read_data.py` refuses a negative record offset.
 
 ### Reference reader
 
