@@ -28,8 +28,11 @@ through the shared game-run library (`tools/game_run`: lock, verified snapshot, 
   it lives in `~/Games/EmpireEarth-re/scenarios/`, the driver refuses to run if the checksum differs, copies it into the game's
   `Data/Saved Games` for the run only and the snapshot restore removes it again (a copy of the user's own is put back byte for byte).
 * Environment: `EE_SIMHASH=1` (per-tick object hash lines in `ee-version.log`, used to see the simulation stop), `EE_SIM_FIXED_MS=33`.
-* Pause: the save does NOT come up paused (the simulation runs at about 28 ticks a second). Once the game loop runs, the driver presses F3
-  (scancode `3d`, `ee-key.exe`, SendInput), waits 6 s, and requires that no new simulation tick line appears for 5 s; otherwise the run fails.
+* Pause: the save does NOT come up paused (the simulation runs at about 28 ticks a second). The driver waits for the first EE_SIMHASH
+  tick line (the game loop), waits `PRE_KEY_DELAY` (9 s) more so that the in-game form takes input (two real runs that pressed 2-4 s after the
+  loop came up never paused), presses F3 (scancode `3d`, `ee-key.exe`, SendInput), waits 6 s, and requires that no new simulation tick line
+  appears for 5 s. If the tick lines keep rising it presses F3 once more and checks again; if they still rise the run fails. The log records
+  the tick counts and the last tick number at each check.
   Only then does it create the arm file the proxy waits for (`DDT_ARM_FILE`): the capture window opens at the next frame boundary.
   Holding the key from the moment the game's window exists (so that the pause lands at the loop's first poll) was tried in two real runs
   and had no effect; that code was reverted.

@@ -317,7 +317,7 @@ rm -f "$W/key.log" "$W/paused"
 run_keys >"$W/run10e.out" 2>&1
 check_eq "a lost first press is retried once and the run succeeds" "0" "$?"
 check_eq "... with two key presses in total" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
-check "... saying the simulation was still running after the first" grep -q "still running after the first" "$W/run10e.out"
+check "... saying the simulation was still running after the first press" grep -q "is still running" "$W/run10e.out"
 check "... and that it stopped after the second" grep -q "the simulation stopped" "$W/run10e.out"
 check "... the proxy was armed only then (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
 check "... and the game directory is restored" same_game

@@ -69,6 +69,7 @@ SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the p
 KEY_BUILD=1
 KEY_EXE=""
 LOOP_WAIT=180        # seconds to wait for the game loop (EE_SIMHASH's "tick 0" line) after the launcher returns
+PRE_KEY_DELAY=9      # seconds between the first tick line and the keys: the form must be taking input (two real runs lost F3 at 2-4 s)
 SETTLE_SECONDS=6     # seconds between the keys and the check that the simulation stopped
 PAUSE_WINDOW=5       # seconds without a new tick line that prove it stopped (a tick line comes every 50 ticks, ~1.8 s)
 if [ -n "$SCENARIO_FILE" ]; then
@@ -134,10 +135,29 @@ scenario_build_helpers() {
 # The simulation's tick lines (EE_SIMHASH) in the game's ee-version.log.
 tick_lines() { grep -c 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null || true; }
 
-# With keys: wait for the game loop, press the keys, prove from the tick lines that the simulation stopped, then arm the proxy by
-# creating its arm file.  Returns non-zero (and says why) if the loop never starts or the simulation keeps running.
+# The last tick line (its number) the game wrote, for the log.
+last_tick() { grep 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null | tail -1 | sed 's/.*simhash: tick \([0-9]*\).*/\1/'; }
+
+# Press the scenario's keys, wait, and say whether the simulation has stopped: no new tick line in PAUSE_WINDOW seconds.
+press_and_check() {
+  local before after
+  # shellcheck disable=SC2086
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
+    { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
+  sleep "$SETTLE_SECONDS"
+  before="$(tick_lines)"
+  sleep "$PAUSE_WINDOW"
+  after="$(tick_lines)"
+  [ "$after" = "$before" ] && { gr_log "the simulation stopped ($after tick lines, last tick $(last_tick), none new in ${PAUSE_WINDOW}s)"; return 0; }
+  gr_log "the simulation is still running ${SETTLE_SECONDS}s after the keys ($before -> $after tick lines in ${PAUSE_WINDOW}s, last tick $(last_tick))"
+  return 1
+}
+
+# With keys: wait for the game loop and for the form to take input, press the keys, prove from the tick lines that the simulation
+# stopped (once more if it did not: the pause key may not have taken), then arm the proxy by creating its arm file.  Returns
+# non-zero (and says why) if the loop never starts or the simulation keeps running.
 scenario_pause_and_arm() {
-  local arm="$1" waited=0 before after
+  local arm="$1" waited=0 rc
   until [ "$(tick_lines)" -gt 0 ]; do
     if [ "$waited" -ge "$LOOP_WAIT" ]; then
       gr_log "FAIL: the game loop never started (no simhash tick line in ee-version.log after ${LOOP_WAIT}s)"
@@ -147,19 +167,16 @@ scenario_pause_and_arm() {
     sleep 1
     waited=$((waited + 1))
   done
-  gr_log "the game loop runs; pressing scancode(s) $SCN_KEYS"
-  # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
-    { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 1; }
-  sleep "$SETTLE_SECONDS"
-  before="$(tick_lines)"
-  sleep "$PAUSE_WINDOW"
-  after="$(tick_lines)"
-  if [ "$after" != "$before" ]; then
-    gr_log "FAIL: the simulation is still running ${SETTLE_SECONDS}s after the keys ($before -> $after tick lines in ${PAUSE_WINDOW}s)"
-    return 1
+  gr_log "the game loop runs (first tick line after ${waited}s); waiting ${PRE_KEY_DELAY}s before pressing scancode(s) $SCN_KEYS"
+  sleep "$PRE_KEY_DELAY"
+  press_and_check; rc=$?
+  if [ "$rc" -eq 1 ]; then
+    gr_log "pressing again (once): the first press did not stop the simulation"
+    press_and_check; rc=$?
+    [ "$rc" -eq 1 ] && gr_log "FAIL: the simulation is still running after the second press"
   fi
-  gr_log "the simulation stopped ($after tick lines, none new in ${PAUSE_WINDOW}s); arming the proxy"
+  [ "$rc" -eq 0 ] || return 1
+  gr_log "arming the proxy"
   : >"$arm"
 }
 
