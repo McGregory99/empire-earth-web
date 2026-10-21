@@ -1102,6 +1102,56 @@ static void cycle_arm_snapshot_dead(HMODULE plugin, HWND hwnd) {
     expect("# end: 2 presents");
 }
 
+/* Default (no DDT_SNAPSHOT, no DDT_DATA_EARLY): arming never locks a live surface and stores nothing before the window. */
+static void cycle_arm_default(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_n(plugin, hwnd);
+    expect_count("# armed*", 1);
+    expect_count("# snapshot*", 0);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path) && g_nrecs == 0, "no record at all: the pre-window Unlocks are not stored, the live surfaces are not read");
+    check_same_as_off();
+}
+
+/* DDT_DATA_EARLY: the pixels are stored as the game writes them, before the window; the arming only names the records
+ * ("# snapshot surf#N blob=@O+L"), in the order they were stored, and never locks a surface. */
+static void cycle_arm_early(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    unsigned a[64], x, y;
+    unsigned short b565[16];
+    static const unsigned argb[4] = {0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000}, m565[4] = {0xf800, 0x07e0, 0x001f, 0};
+    static const unsigned full8[4] = {0, 0, 8, 8}, full4[4] = {0, 0, 4, 4};
+    int armed, s3, s4;
+
+    run_scenario_n(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 2, "2 records, written at the game's own Unlock calls before the arming");
+    if (g_nrecs != 2)
+        return;
+    armed = snapshot_index("# armed*");
+    s3 = snapshot_index("# snapshot surf#3 blob=@*");
+    s4 = snapshot_index("# snapshot surf#4 blob=@*");
+    check(armed >= 0 && s3 == armed + 1 && s4 == armed + 2, "right after '# armed': the stored records of surf#3 and surf#4, no progress lines");
+    expect_count("# snapshot-begin*", 0);
+    fill_texture((unsigned char *)a, 32);
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            b565[y * 4 + x] = s565_pixel(x, y);
+    surf_rec(0, 3, 1, full8, 8, 8, 32, 0x41, argb, (unsigned char *)a, "texture a, stored at its Unlock (origin 1)");
+    surf_rec(1, 4, 1, full4, 4, 4, 16, 0x40, m565, (unsigned char *)b565, "texture b, stored at its Unlock (origin 1)");
+    check_ref(g_lines[s3], "blob=", 0, "the line of surf#3");
+    check_ref(g_lines[s4], "blob=", 1, "the line of surf#4");
+    check_same_as_off();
+}
+
+static void cycle_arm_early_cap(HMODULE plugin, HWND hwnd) {
+    run_scenario_n(plugin, hwnd);
+    check_failed_capture("# ERROR: data cap of 400 bytes exceeded*", "early records over the cap");
+}
+
 /* Data capture off: arming writes no snapshot line and no data file. */
 static void cycle_arm_snapshot_off(HMODULE plugin, HWND hwnd) {
     run_scenario_n(plugin, hwnd);
@@ -1145,6 +1195,12 @@ int main(int argc, char **argv) {
             cycle_arm_snapshot_retry(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-cap"))
             cycle_arm_snapshot_cap(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-default"))
+            cycle_arm_default(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-early"))
+            cycle_arm_early(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-early-cap"))
+            cycle_arm_early_cap(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-dead"))
             cycle_arm_snapshot_dead(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-off"))

@@ -153,7 +153,7 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    "$(WINE)" harness.exe data-arm-off 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
-	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_SNAPSHOT=1 \
 	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm.txt' \
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm.txt' \
@@ -161,21 +161,45 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    "$(WINE)" harness.exe data-arm 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-retry.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
-	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 MOCK_FAIL_RO_LOCK=1 \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 MOCK_FAIL_RO_LOCK=1 DDT_SNAPSHOT=1 \
 	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-retry.txt' \
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-retry.txt' \
 	    "$(WINE)" harness.exe data-arm-retry 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-dead.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
-	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 N_DEAD=1 \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 N_DEAD=1 DDT_SNAPSHOT=1 \
 	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-dead.txt' \
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-dead.txt' \
 	    "$(WINE)" harness.exe data-arm-dead 2>/dev/null
+	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-default.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \
+	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-default.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-default.txt' \
+	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-off.txt' \
+	    "$(WINE)" harness.exe data-arm-default 2>/dev/null
+	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-early.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_EARLY=1 \
+	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early.txt' \
+	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-off.txt' \
+	    "$(WINE)" harness.exe data-arm-early 2>/dev/null
+	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-early-cap.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_EARLY=1 DDT_DATA_MAX=400 \
+	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early-cap.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early-cap.txt' \
+	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-off.txt' \
+	    "$(WINE)" harness.exe data-arm-early-cap 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-cap.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
-	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_MAX=400 \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_MAX=400 DDT_SNAPSHOT=1 \
 	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-cap.txt' \
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-cap.txt' \
