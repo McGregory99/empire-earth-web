@@ -201,7 +201,11 @@ struct IDirect3DDevice7Vtbl {
     HRESULT_(__attribute__((stdcall)) * SetLight)(IDirect3DDevice7*, DWORD_ index, const void* light7);          // 18
     void* getLight;                                                                                              // 19
     HRESULT_(__attribute__((stdcall)) * SetRenderState)(IDirect3DDevice7*, DWORD_ state, DWORD_ value);          // 20
-    void* slots21to34[14];                                                                                       // 21 GetRenderState .. 34 GetTexture
+    void* slots21to30[10];                                                                                       // 21 GetRenderState .. 30 GetClipStatus
+    HRESULT_(__attribute__((stdcall)) * DrawPrimitiveVB)(IDirect3DDevice7*, DWORD_ type, IDirect3DVertexBuffer7* buffer, DWORD_ start, DWORD_ count, DWORD_ flags);  // 31
+    HRESULT_(__attribute__((stdcall)) * DrawIndexedPrimitiveVB)(IDirect3DDevice7*, DWORD_ type, IDirect3DVertexBuffer7* buffer, DWORD_ start, DWORD_ count,
+                                                                const unsigned short* indices, DWORD_ indexCount, DWORD_ flags);  // 32
+    void* slots33to34[2];                                                                                        // 33 ComputeSphereVisibility, 34 GetTexture
     HRESULT_(__attribute__((stdcall)) * SetTexture)(IDirect3DDevice7*, DWORD_ stage, IDirectDrawSurface7* surface);  // 35
     void* getTextureStageState;                                                                                  // 36
     HRESULT_(__attribute__((stdcall)) * SetTextureStageState)(IDirect3DDevice7*, DWORD_ stage, DWORD_ type, DWORD_ value);  // 37
@@ -212,6 +216,8 @@ struct IDirect3DDevice7Vtbl {
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, BeginScene) == 0x14, "BeginScene is slot 5");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetRenderTarget) == 0x20, "SetRenderTarget is slot 8");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, Clear) == 0x28, "Clear is slot 10");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, DrawPrimitiveVB) == 0x7c, "DrawPrimitiveVB is slot 31");
+static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, DrawIndexedPrimitiveVB) == 0x80, "DrawIndexedPrimitiveVB is slot 32");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetTexture) == 0x8c, "SetTexture is slot 35");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, SetTextureStageState) == 0x94, "SetTextureStageState is slot 37");
 static_assert(__builtin_offsetof(IDirect3DDevice7Vtbl, ValidateDevice) == 0x98, "ValidateDevice is slot 38");

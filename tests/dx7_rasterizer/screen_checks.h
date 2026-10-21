@@ -80,7 +80,7 @@ struct FakeDD {
     int vb_null_lock_times;              /* the next n Lock calls succeed without storing a pointer */
 };
 
-enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT };
+enum { FD_BEGIN, FD_END, FD_CLEAR, FD_SRT, FD_DRAW_PRIMITIVE, FD_DRAW_INDEXED };
 enum { FV_LOCK, FV_UNLOCK };
 
 typedef struct FakeD3D {
@@ -738,6 +738,27 @@ static long FAKE_DD_STDCALL fake_dev_validate(FakeDevice *device, DWORD *passes)
     return device->dd->validate_result;
 }
 
+/* IDirect3DDevice7::DrawPrimitiveVB and DrawIndexedPrimitiveVB (P2.6.7b): the log shows the primitive type, the buffer, the first vertex, the
+ * vertex count, the indices (and their count) and the flags; the result can be scripted. */
+static long FAKE_DD_STDCALL fake_dev_draw_primitive_vb(FakeDevice *device, DWORD type, FakeVB *vb, DWORD start, DWORD count, DWORD flags)
+{
+    fake_dev_log(device, "DPVB(%lx,v%d,%lu,%lu,%lx)", (unsigned long)type, vb ? vb->id : -1, (unsigned long)start, (unsigned long)count, (unsigned long)flags);
+    return fake_dev_scripted(device, FD_DRAW_PRIMITIVE);
+}
+
+static long FAKE_DD_STDCALL fake_dev_draw_indexed_vb(FakeDevice *device, DWORD type, FakeVB *vb, DWORD start, DWORD count, const unsigned short *indices,
+                                                     DWORD index_count, DWORD flags)
+{
+    char text[256] = "";
+    for (DWORD i = 0; i < index_count && i < 24; i++) {
+        size_t used = strlen(text);
+        snprintf(text + used, sizeof text - used, "%s%u", i ? "," : "", (unsigned)indices[i]);
+    }
+    fake_dev_log(device, "DIPVB(%lx,v%d,%lu,%lu,[%s],%lu,%lx)", (unsigned long)type, vb ? vb->id : -1, (unsigned long)start, (unsigned long)count, text,
+                 (unsigned long)index_count, (unsigned long)flags);
+    return fake_dev_scripted(device, FD_DRAW_INDEXED);
+}
+
 static void fake_dd_init(FakeDD *dd)
 {
     static const void *vtbl[30];
@@ -781,6 +802,8 @@ static void fake_dd_init(FakeDD *dd)
     device_vtbl[6] = (const void *)fake_dev_end_scene;
     device_vtbl[8] = (const void *)fake_dev_set_render_target;
     device_vtbl[10] = (const void *)fake_dev_clear;
+    device_vtbl[31] = (const void *)fake_dev_draw_primitive_vb;
+    device_vtbl[32] = (const void *)fake_dev_draw_indexed_vb;
     device_vtbl[35] = (const void *)fake_dev_set_texture;
     device_vtbl[37] = (const void *)fake_dev_set_texture_stage_state;
     device_vtbl[38] = (const void *)fake_dev_validate;
@@ -1163,6 +1186,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "texture_checks.h"   /* SetTexture, CanDoCurrentState and the texture handle slots (P2.6.6) */
 #include "ring_checks.h"      /* the ring vertex buffer's LockVB and UnlockVB (P2.6.6) */
 #include "array_checks.h"     /* CreatePolygonArray, CreateVertexArray and the arrays they build (P2.6.7a) */
+#include "draw2d_checks.h"    /* Draw(GEBitmap), Draw(GELine), Draw(GEPoint) and Draw(GERhombus) (P2.6.7b) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1191,6 +1215,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_textures(e, h, &api, get_rasterizer());
         check_ring(e, h, &api, get_rasterizer());
         check_arrays(e, h, &api, get_rasterizer());
+        check_draw2d(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
