@@ -448,4 +448,56 @@ check "--out-dir: trace and data are in that folder" bash -c "ls '$W/elsewhere'/
 check "--out-dir: the raw trace marker is kept there (.done)" test -e "$W/elsewhere/run.raw.done"
 rm -rf "$W/elsewhere"
 
+# ---- 14. reference screenshots: SCN_SHOTS screenshots of the paused game, spaced SCN_SHOT_GAP s apart, after the capture window -----------------------------
+# The simulation is paused and the proxy has armed, so every shot shows the frame the trace describes.  SHOT_CMD is `screencapture` in
+# the real world (a read-only watcher: it only reads the display); a failing one fails the run loudly, after the game was closed and
+# restored.  A scenario without SCN_SHOTS takes none.
+cat >"$W/fake-shot" <<'SH'
+#!/bin/bash
+# fake screencapture: usage "-x <file>"; logs the call and the time, fails when asked to
+echo "shot $* at $(date +%s)" >>"$FAKE_SHOT_LOG"
+[ ! -e "$FAKE_SHOT_FAILS" ] || exit 1
+printf 'PNG-%s' "$2" >"$2"
+SH
+chmod +x "$W/fake-shot"
+cat >"$W/scn-shots.env" <<SCN
+$(cat "$W/scn-keys.env")
+SCN_SHOTS=3
+SCN_SHOT_GAP=1
+SCN
+{ cat "$W/config-keys.sh"; cat <<CONF
+SHOT_CMD="$W/fake-shot"
+export FAKE_SHOT_LOG="$W/shot.log" FAKE_SHOT_FAILS="$W/shot-fails"
+CONF
+} >"$W/config-shots.sh"
+run_shots() { bash "$DRIVER" --test-config "$W/config-shots.sh" --scenario "$W/scn-shots.env" "$W/proxy.dll" "$@"; }
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/shot.log" "$W/shot-fails"; : >"$W/ticking"
+run_shots >"$W/run14a.out" 2>&1
+check_eq "a scenario with SCN_SHOTS exits 0" "0" "$?"
+check_eq "... three screenshots were taken" "3" "$(wc -l <"$W/shot.log" | tr -d ' ')"
+check "... into the output folder as shot-0.png .. shot-2.png" bash -c "test -s '$W/out/shot-0.png' -a -s '$W/out/shot-1.png' -a -s '$W/out/shot-2.png'"
+check "... with the silent flag (-x)" grep -q "^shot -x $W/out/shot-0.png" "$W/shot.log"
+t1="$(sed -n '1s/.* at //p' "$W/shot.log")"; t3="$(sed -n '3s/.* at //p' "$W/shot.log")"
+check "... spaced SCN_SHOT_GAP (1 s) apart (first $t1, last $t3)" test "$((t3 - t1))" -ge 2
+check "... after the capture was complete (the trace was saved first)" grep -q "capture complete" "$W/run14a.out"
+check "... and the log names them" grep -q "screenshot 3 of 3" "$W/run14a.out"
+check "... the game was still closed and the directory restored" same_game
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/shot.log"; : >"$W/ticking"; : >"$W/shot-fails"
+run_shots >"$W/run14b.out" 2>&1
+check "a failing screenshot command fails the run (non-zero: $?)" test $? -ne 0
+check "... saying so" grep -q "screenshot" "$W/run14b.out"
+check "... after the game was closed and the directory restored" same_game
+check "... the lock is released" test ! -e "$GAME_RUN_LOCK"
+rm -f "$W/shot-fails"
+
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/shot.log"; : >"$W/ticking"
+run_keys >"$W/run14c.out" 2>&1
+check_eq "a scenario without SCN_SHOTS exits 0" "0" "$?"
+check "... and takes no screenshot" test ! -e "$W/shot.log"
+
 summary
