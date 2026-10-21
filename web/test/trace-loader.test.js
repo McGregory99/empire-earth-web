@@ -272,3 +272,41 @@ test('GDI read-back of a non-screen surface stays a plain texture update (no ove
   const { sequence } = load();
   assert.equal(sequence.frames.flatMap((f) => f.commands).filter((c) => c.op === 'gdiOverlay').length, 0);
 });
+
+// A capture armed late has no Lock/Unlock for textures filled before the window: the arming stores each one once and names it
+// in a "# snapshot surf#N blob=..." comment line (tools/ddraw_trace/README.md, "Trace lines").
+function withSnapshot(blobFor) {
+  const f = build();
+  const lines = f.trace.split('\n');
+  const lock = lines.findIndex((l) => /^T1 surf#3\.Lock\(/.test(l));
+  const unlock = lines.findIndex((l, i) => i > lock && /^T1 surf#3\.Unlock\(/.test(l));
+  const ref = lines[unlock].match(/blob=(@\d+\+\d+)/)[1];
+  lines.splice(lock, unlock - lock + 1, '# armed', `# snapshot surf#3 blob=${blobFor(ref)}`);
+  return { text: lines.join('\n'), data: new Uint8Array(f.data), original: f };
+}
+
+test('a "# snapshot surf#N blob=@O+L" line gives the texture its pixels, as an Unlock would', () => {
+  const s = withSnapshot((ref) => ref);
+  const { sequence } = loadTrace(s.text, s.data);
+  const ref = loadTrace(s.original.trace, s.data).sequence;
+  const create = (seq) => seq.frames[0].commands.find((c) => c.op === 'createTexture' && c.id === 3);
+  assert.ok(create(sequence), 'texture 3 is created');
+  assert.deepEqual(create(sequence), { ...create(ref), line: create(sequence).line });
+});
+
+test('a snapshot that could not be read is not an error until the texture is used', () => {
+  const s = withSnapshot(() => 'unavailable');
+  assert.throws(() => loadTrace(s.text, s.data), /texture surf#3 is used but the trace carries no pixels/);
+  const unused = s.text.replace(/^T1 dev7#1\.SetTexture\(stage=0, surface=surf#3\).*$/gm, 'T1 dev7#1.SetTexture(stage=0, surface=NULL) = DD_OK');
+  assert.doesNotThrow(() => loadTrace(unused, s.data));
+});
+
+test('a failed snapshot fails the load loudly', () => {
+  const s = withSnapshot(() => 'failed');
+  assert.throws(() => loadTrace(s.text, s.data), /surf#3: blob=failed/);
+});
+
+test('a snapshot line that names another surface than its record is rejected', () => {
+  const s = withSnapshot((ref) => ref);
+  assert.throws(() => loadTrace(s.text.replace('# snapshot surf#3', '# snapshot surf#4'), s.data), /belongs to surf#3, not surf#4/);
+});
