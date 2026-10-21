@@ -471,6 +471,56 @@ __declspec(dllexport) int WINAPI scenario_s(HWND hwnd, ScenarioS *r) {
     return 0;
 }
 
+/* Scenario N: textures created and filled BEFORE the capture is armed (DDT_ARM_FILE).  The arm file is made after the second
+ * present; the present that sees it opens the window; inside it a Blt reads texture a as its source.  The back buffer has the
+ * 3D device cap, so only a (surf#3) and b (surf#4) are textures to snapshot. */
+__declspec(dllexport) int WINAPI scenario_n(HWND hwnd, ScenarioS *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL, a, b;
+    DDSURFACEDESC2 sd;
+    char arm[MAX_PATH];
+    unsigned x, y;
+    int i;
+#define R(call) (r->hr[r->n++] = (call))
+
+    if (FAILED(DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL)))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL); /* surf#1 */
+    sd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE;
+    IDirectDraw7_CreateSurface(dd, &sd, &back, NULL);    /* surf#2 */
+    a = make_surface(dd, 8, 8, 0);                       /* surf#3: 8x8 ARGB */
+    b = make_surface(dd, 4, 4, 1);                       /* surf#4: 4x4 RGB565 */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(a, NULL, &sd, DDLOCK_WAIT, NULL));
+    fill_texture((unsigned char *)sd.lpSurface, (unsigned)sd.lPitch);
+    R(IDirectDrawSurface7_Unlock(a, NULL));
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(b, NULL, &sd, DDLOCK_WAIT, NULL));
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            ((unsigned short *)((unsigned char *)sd.lpSurface + y * sd.lPitch))[x] = s565_pixel(x, y);
+    R(IDirectDrawSurface7_Unlock(b, NULL));
+    for (i = 0; i < 5; i++) {
+        if (i == 2 && GetEnvironmentVariableA("DDT_ARM_FILE", arm, sizeof arm)) {
+            HANDLE h = CreateFileA(arm, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (h != INVALID_HANDLE_VALUE)
+                CloseHandle(h);
+        }
+        if (i == 3)
+            R(IDirectDrawSurface7_Blt(back, NULL, a, NULL, DDBLT_WAIT, NULL)); /* inside the window: a is a Blt source */
+        R(IDirectDrawSurface7_Blt(primary, NULL, back, NULL, DDBLT_WAIT, NULL));
+    }
+#undef R
+    return 0;
+}
+
 /* Scenario P: a surface changed by a Blt, then partly rewritten through a rectangle Lock; it is read as a Blt source afterwards.
  * The partial Unlock stores only the rectangle, so the Blt-written pixels outside it still have to be stored when it is used. */
 __declspec(dllexport) int WINAPI scenario_p(HWND hwnd, ScenarioS *r) {

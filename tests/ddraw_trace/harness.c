@@ -683,7 +683,7 @@ static void check_same_as_off(void) {
         int same = 1;
         for (i = 0; i < g_nlines; i++) {
             char tmp[8600], *cut;
-            if (!strncmp(g_lines[i], "# data:", 7))
+            if (!strncmp(g_lines[i], "# data:", 7) || !strncmp(g_lines[i], "# snapshot ", 11))
                 continue;
             strncpy(tmp, g_lines[i], sizeof tmp - 1);
             tmp[sizeof tmp - 1] = 0;
@@ -1008,6 +1008,92 @@ static void cycle_surf_partial(HMODULE plugin, HWND hwnd) {
     check_ref(nth_line("T1 surf#3.BltFast(*", 0), "blob=", 1, "BltFast from a, after the partial Unlock");
 }
 
+/* Textures created and filled before the capture is armed: the arming stores each one once ("# snapshot surf#N blob=..."). */
+static void run_scenario_n(HMODULE plugin, HWND hwnd) {
+    ScenarioS r;
+    ScenarioSFn fn = (ScenarioSFn)GetProcAddress(plugin, "scenario_n");
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_n");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario N ran to the end");
+    load_trace_again();
+}
+
+static int snapshot_index(const char *pat) {
+    int i;
+    for (i = 0; i < g_nlines; i++)
+        if (glob(pat, g_lines[i]))
+            return i;
+    return -1;
+}
+
+static void cycle_arm_snapshot(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    unsigned a[64], b[16], x, y;
+    unsigned short b565[16];
+    static const unsigned argb[4] = {0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000}, m565[4] = {0xf800, 0x07e0, 0x001f, 0};
+    static const unsigned full8[4] = {0, 0, 8, 8}, full4[4] = {0, 0, 4, 4};
+    int armed, s3, s4;
+
+    run_scenario_n(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 2, "2 records: the two textures filled before the arming (surf#2 is the 3D target, surf#1 the primary: none)");
+    if (g_nrecs != 2)
+        return;
+    armed = snapshot_index("# armed*");
+    s3 = snapshot_index("# snapshot surf#3 blob=@*");
+    s4 = snapshot_index("# snapshot surf#4 blob=@*");
+    check(armed >= 0 && s3 == armed + 1 && s4 == armed + 2, "right after '# armed': one '# snapshot' line for surf#3, then surf#4, in id order");
+    expect_count("# snapshot *", 2);
+    fill_texture((unsigned char *)a, 32);
+    (void)b;
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            b565[y * 4 + x] = s565_pixel(x, y);
+    surf_rec(0, 3, 6, full8, 8, 8, 32, 0x41, argb, (unsigned char *)a, "texture a as it was when the capture was armed (origin 6)");
+    surf_rec(1, 4, 6, full4, 4, 4, 16, 0x40, m565, (unsigned char *)b565, "texture b as it was when the capture was armed (origin 6)");
+    check_ref(g_lines[s3], "blob=", 0, "the snapshot line of surf#3");
+    check_ref(g_lines[s4], "blob=", 1, "the snapshot line of surf#4");
+    check(strstr(nth_line("T1 surf#2.Blt(*", 0), "blob=") == NULL, "a Blt from a texture that was snapshotted and not changed stores nothing");
+    check_same_as_off();
+}
+
+/* The read-back of the first texture fails (a busy surface): its snapshot says so, it stays dirty, and its first use retries. */
+static void cycle_arm_snapshot_retry(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_n(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(snapshot_index("# snapshot surf#3 blob=unavailable") >= 0, "the failed read-back of surf#3 is reported as blob=unavailable");
+    check(snapshot_index("# snapshot surf#4 blob=@*") >= 0, "the other texture is stored all the same");
+    check(g_nrecs == 2, "2 records: b at the arming, a when its first use retried");
+    check_ref(nth_line("T1 surf#2.Blt(*", 0), "blob=", 1, "the Blt that reads a retries the read-back and stores it");
+    sprintf(path, "%s.failed", trace ? trace : "");
+    check(GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES, "an unavailable read-back is not a failed capture");
+}
+
+/* DDT_DATA_MAX is respected by the snapshots: the one that does not fit ends the capture loudly. */
+static void cycle_arm_snapshot_cap(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_n(plugin, hwnd);
+    check_failed_capture("# ERROR: data cap of 400 bytes exceeded*", "snapshot over the cap");
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path) && g_nrecs == 1 && g_data_len <= 400, "only the record that fits under the cap was written");
+}
+
+/* Data capture off: arming writes no snapshot line and no data file. */
+static void cycle_arm_snapshot_off(HMODULE plugin, HWND hwnd) {
+    run_scenario_n(plugin, hwnd);
+    expect_count("# armed*", 1);
+    expect_count("# snapshot*", 0);
+    expect_count("*blob=*", 0);
+}
+
 int main(int argc, char **argv) {
     HWND hwnd = make_window();
     HMODULE plugin = LoadLibraryA("fakeplugin.dll");
@@ -1037,6 +1123,14 @@ int main(int argc, char **argv) {
             cycle_data_shadow_fail(plugin, hwnd);
         else if (!strcmp(argv[1], "data-surf-retry"))
             cycle_surf_retry(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm"))
+            cycle_arm_snapshot(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-retry"))
+            cycle_arm_snapshot_retry(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-cap"))
+            cycle_arm_snapshot_cap(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-off"))
+            cycle_arm_snapshot_off(plugin, hwnd);
         else if (!strcmp(argv[1], "data-partial"))
             cycle_surf_partial(plugin, hwnd);
         else
