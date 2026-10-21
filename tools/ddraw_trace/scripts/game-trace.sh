@@ -140,19 +140,11 @@ last_tick() { grep 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null | tail 
 
 # Press the scenario's keys, wait, and say whether the simulation has stopped: no new tick line in PAUSE_WINDOW seconds.
 press_and_check() {
-  local before after rc
-  # The game runs on the Wine virtual desktop DESKTOP_NAME; SendInput goes to the desktop of the calling thread, so the helper is
-  # told to use that one (two real runs and a retry without it never paused the game).  Exit 3: there is no such desktop.
+  local before after
+  # ee-key.exe lists the windows of its desktop and the foreground one before it presses: a run that loses its keys says where they went.
   # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" --desktop "$DESKTOP_NAME" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1
-  rc=$?
-  if [ "$rc" -eq 3 ]; then
-    gr_log "no desktop $DESKTOP_NAME to press the keys on (ee-key.exe exit 3): pressing on the helper's own desktop"
-    # shellcheck disable=SC2086
-    WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1
-    rc=$?
-  fi
-  [ "$rc" -eq 0 ] || { gr_log "FAIL: the key helper failed with status $rc (see $OUT/ee-key.out)"; return 2; }
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
+    { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
   sleep "$PAUSE_WINDOW"
