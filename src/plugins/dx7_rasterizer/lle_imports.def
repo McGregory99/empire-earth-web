@@ -53,3 +53,4 @@ EXPORTS
     ?Apply@GETransformation@@QBEXABV1@AAV1@@Z
     ?Enter@TSCriticalSection@@QAEXXZ
     ?Leave@TSCriticalSection@@QAEXXZ
+    ?Apply@GETransformation@@QBEXABVGE3DPoint@@AAV2@@Z
