@@ -44,7 +44,7 @@ static struct {
     int named_count;
     void *ge[48]; /* the surfaces of the engine's per-screen state and the ones the tests make, in order of appearance */
     int ge_count;
-    char extra[512];
+    char extra[24576];
     char label[96];
     LifeSnap before;
 } g_life;
@@ -189,6 +189,7 @@ static const struct {
 #include "texture_expected.inc"
 #include "ring_expected.inc"
 #include "array_expected.inc"
+#include "draw2d_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -201,6 +202,7 @@ static const struct {
 #include "texture_expected_ours.inc"
 #include "ring_expected_ours.inc"
 #include "array_expected_ours.inc"
+#include "draw2d_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)
@@ -229,7 +231,7 @@ static void life_compare(const char *name, const char *actual)
 
 static void life_step_end(const char *name, long ret, int with_diff)
 {
-    char actual[8192];
+    char actual[32768];
     const char *log = g_life.dd->log;
     size_t n = strlen(log);
     size_t used = 0;
