@@ -1188,6 +1188,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "array_checks.h"     /* CreatePolygonArray, CreateVertexArray and the arrays they build (P2.6.7a) */
 #include "draw2d_checks.h"    /* Draw(GEBitmap), Draw(GELine), Draw(GEPoint) and Draw(GERhombus) (P2.6.7b) */
 #include "poly_checks.h"      /* Draw(GEPolygonArray, GEVertexArray, ...) (P2.6.7c) */
+#include "line3d_checks.h"    /* Draw3DLine (P2.6.7d) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1218,6 +1219,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_arrays(e, h, &api, get_rasterizer());
         check_draw2d(e, h, &api, get_rasterizer());
         check_poly(e, h, &api, get_rasterizer());
+        check_line3d(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
