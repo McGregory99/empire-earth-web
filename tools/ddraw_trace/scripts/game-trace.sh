@@ -65,6 +65,7 @@ GAME_EXE_NAME="Empire Earth.exe"
 SCENARIO_DIR="$HOME/Games/EmpireEarth-re/scenarios" # the saves the scenarios load; outside the repository, never committed
 SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV=""
 SCN_NORMALIZE="" # "structure": two captures must be identical in normalize.py's --structure form (see there for what it leaves out)
+SCN_KEY_WINDOW="" # class of the game's window: ee-key.exe gives it the focus (or posts the keys to it) before pressing
 SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
 KEY_BUILD=1
 KEY_EXE=""
@@ -143,7 +144,7 @@ press_and_check() {
   local before after
   # ee-key.exe lists the windows of its desktop and the foreground one before it presses: a run that loses its keys says where they went.
   # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
     { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
