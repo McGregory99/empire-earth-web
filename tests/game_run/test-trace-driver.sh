@@ -384,11 +384,17 @@ run_flags --data >"$W/run13b.out" 2>&1
 check_eq "a --data run exits 0" "0" "$?"
 check "--data: the config names the raw trace path as the data prefix" grep -qE '^DDT_DATA=Z:.*run\.raw$' "$W/cfg.seen"
 check_not "--data: no cap in the config unless DDT_DATA_MAX is set" grep -q DDT_DATA_MAX "$W/cfg.seen"
+check_not "--data without keys (no arm file): no early flag" grep -q DDT_DATA_EARLY "$W/cfg.seen"
 check "--data: the data file is saved next to the trace" bash -c "cat '$W/out'/trace.*.data | grep -q FAKEDATA"
 check "--data: the game directory is byte-for-byte what it was" same_game
 fresh
 DDT_DATA_MAX=123456 run_flags --data >"$W/run13c.out" 2>&1
 check "--data with DDT_DATA_MAX: the cap reaches the config" grep -qxF 'DDT_DATA_MAX=123456' "$W/cfg.seen"
+fresh
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/not-paused"; : >"$W/ticking"
+run_keys --data >"$W/run13e.out" 2>&1
+check "a keyed scenario with --data stores the pixels early (DDT_DATA_EARLY=1 in the config)" grep -qxF 'DDT_DATA_EARLY=1' "$W/cfg.seen"
 fresh
 DDT_DATA_MAX=123456 run_driver >"$W/run13d.out" 2>&1
 check_not "DDT_DATA_MAX without --data configures nothing" grep -q DDT_DATA "$W/cfg.seen"

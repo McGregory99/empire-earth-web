@@ -158,6 +158,12 @@ reset
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm' 'Z:\tmp\t.raw' 1048576
 check "swap-in: arm file, data prefix and data cap together" bash -c "grep -qxF 'DDT_ARM_FILE=Z:\\tmp\\t.arm' '$W_GAME/ddraw_trace.cfg' && grep -qxF 'DDT_DATA=Z:\\tmp\\t.raw' '$W_GAME/ddraw_trace.cfg' && grep -qxF DDT_DATA_MAX=1048576 '$W_GAME/ddraw_trace.cfg'"
 reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm' 'Z:\tmp\t.raw' '' 1
+check "swap-in: a data cap left empty and the early flag given: DDT_DATA_EARLY=1, no cap" bash -c "grep -qxF DDT_DATA_EARLY=1 '$W_GAME/ddraw_trace.cfg' && ! grep -q DDT_DATA_MAX '$W_GAME/ddraw_trace.cfg'"
+reset
+bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77 'Z:\tmp\t.arm' 'Z:\tmp\t.raw' 1048576
+check_not "swap-in: no early flag unless asked for" grep -q DDT_DATA_EARLY "$W_GAME/ddraw_trace.cfg"
+reset
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
 # idempotent: the launcher retries a launch that dies early, and the wrapper's hook runs again
 bash "$SWAP_IN" "$W_GAME" "$W/proxy.dll" 'Z:\tmp\t.raw' 77
