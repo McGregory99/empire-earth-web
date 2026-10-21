@@ -50,11 +50,11 @@ public:
     GEPolygonArray * CreatePolygonArray(unsigned long) override;  // 10 (dx7_arrays.cpp)
     GEVertexArray * CreateVertexArray(unsigned long, unsigned long) override;  // 11 (dx7_arrays.cpp)
     long Deactivate() override;  // 12
-    long Draw(GEBitmap *, unsigned long) override;  // 21
-    long Draw(GELine *, unsigned long, unsigned long) override;  // 20
+    long Draw(GEBitmap *, unsigned long) override;  // 21 (dx7_draw2d.cpp)
+    long Draw(GELine *, unsigned long, unsigned long) override;  // 20 (dx7_draw2d.cpp)
     long Draw(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 19
-    long Draw(GEPoint *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 18
-    long Draw(GERhombus *, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 17
+    long Draw(GEPoint *, unsigned long, unsigned long) override;  // 18 (dx7_draw2d.cpp)
+    long Draw(GERhombus *, unsigned long) override;  // 17 (dx7_draw2d.cpp)
     long Draw(GEText *text, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 16
     long Draw(GEText *text, GERectangle const &, GESurface *) override { return Verdict(EEWebCheckText(text), EEWEB_NOT_SUPPORTED); }  // 15
     long Draw(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 14
@@ -154,6 +154,10 @@ private:
     // buffer's start (the caller adds cursor * 0x24); the DLL exports them under the original's names for the harness.
     long LockVB(unsigned long count, unsigned long screen, void *&vertices);
     long UnlockVB(unsigned long screen);
+
+    // The tail every 2D draw shares (dx7_draw2d.cpp): unlock the ring, draw the vertices just written (an indexed quad list when `indexed`,
+    // else a plain list of `primitive` type) retrying while Direct3D is busy, and move the cursor on.  Answers the unlock's status.
+    long UnlockAndDraw(unsigned long screen, unsigned long primitive, unsigned long vertices, bool indexed);
 
     // Behind the vptr come the engine's GERasterizer fields (0x4..0x68) and the plugin's (0x68..0x7c), whose
     // bytes are the engine's and the layouts' to define; nothing of this class touches them directly.

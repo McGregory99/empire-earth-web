@@ -347,16 +347,6 @@ long EEWebNullRasterizer::GetAvailableVideoMemory(unsigned long screen, unsigned
     return result;
 }
 
-long EEWebNullRasterizer::Draw(GEBitmap*, unsigned long mode)
-{
-    return EEWEB_DRAW_BITMAP_BASE + static_cast<long>(mode);
-}
-
-long EEWebNullRasterizer::Draw(GELine*, unsigned long first, unsigned long second)
-{
-    return EEWEB_DRAW_LINE_BASE + static_cast<long>(first + second);
-}
-
 void RunClassSelfCheck(EEWebNullRasterizer& shared)
 {
     DX7RasterizerAbi* made = g_factory();

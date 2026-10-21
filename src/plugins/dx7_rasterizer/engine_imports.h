@@ -21,6 +21,8 @@
 //   ?Promote@GETexture@@QAEJXZ                    marks a texture promoted (its manager's PromoteTexture sets the flag)
 //   ??0GETransformation@@QAE@XZ                   builds an identity transformation (16 floats)
 //   ?Apply@GETransformation@@QBEXABV1@AAV1@@Z     output = this applied to input (the product of two transformations)
+//   ?Enter@TSCriticalSection@@QAEXXZ              the rasterizer's lock (GERasterizer field 0x38) that every draw of the original holds
+//   ?Leave@TSCriticalSection@@QAEXXZ              while it writes the ring
 #ifndef EEWEB_ENGINE_IMPORTS_H
 #define EEWEB_ENGINE_IMPORTS_H
 
@@ -64,6 +66,8 @@ long __attribute__((thiscall)) EEWebTexturePromote(void* self) __asm__("?Promote
 void __attribute__((thiscall)) EEWebRoundRectangle(float* rectangle) __asm__("?RoundToNearest@GERectangle@@QAEXXZ");
 void __attribute__((thiscall)) EEWebTransformationConstruct(void* self) __asm__("??0GETransformation@@QAE@XZ");
 void __attribute__((thiscall)) EEWebTransformationApply(const void* self, const void* input, void* output) __asm__("?Apply@GETransformation@@QBEXABV1@AAV1@@Z");
+void __attribute__((thiscall)) EEWebCriticalSectionEnter(void* self) __asm__("?Enter@TSCriticalSection@@QAEXXZ");
+void __attribute__((thiscall)) EEWebCriticalSectionLeave(void* self) __asm__("?Leave@TSCriticalSection@@QAEXXZ");
 }
 
 #endif
