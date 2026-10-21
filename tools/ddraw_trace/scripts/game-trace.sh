@@ -71,6 +71,9 @@ KEY_BUILD=1
 KEY_EXE=""
 LOOP_WAIT=180        # seconds to wait for the game loop (EE_SIMHASH's "tick 0" line) after the launcher returns
 PRE_KEY_DELAY=9      # seconds between the first tick line and the keys: the form must be taking input (two real runs lost F3 at 2-4 s)
+KEY_TIMEOUT=40       # seconds the key helper may take (it presses a key and returns in about a second); then it is killed
+LIVE_WAIT=60         # seconds to wait, after the first tick line, for LIVE_TICKS more of them
+LIVE_TICKS=3         # tick lines (one per ~1.8 s) that must follow the first one before the key is pressed: the loop is running
 SETTLE_SECONDS=6     # seconds between the keys and the check that the simulation stopped
 PAUSE_WINDOW=5       # seconds without a new tick line that prove it stopped (a tick line comes every 50 ticks, ~1.8 s)
 if [ -n "$SCENARIO_FILE" ]; then
@@ -143,9 +146,24 @@ last_tick() { grep 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null | tail 
 press_and_check() {
   local before after
   # ee-key.exe lists the windows of its desktop and the foreground one before it presses: a run that loses its keys says where they went.
+  # It runs in the background with a limit: a Wine process that hung after its last line once held the whole run for ten minutes.
+  local kpid waited=0 krc
   # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 ||
-    { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 &
+  kpid=$!
+  while kill -0 "$kpid" 2>/dev/null; do
+    if [ "$waited" -ge "$KEY_TIMEOUT" ]; then
+      pkill -KILL -P "$kpid" 2>/dev/null; kill -KILL "$kpid" 2>/dev/null
+      pkill -KILL -f "$KEY_EXE" 2>/dev/null
+      wait "$kpid" 2>/dev/null
+      gr_log "the key helper did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out)"
+      return 3
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$kpid"; krc=$?
+  [ "$krc" -eq 0 ] || { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
   sleep "$PAUSE_WINDOW"
@@ -169,13 +187,28 @@ scenario_pause_and_arm() {
     sleep 1
     waited=$((waited + 1))
   done
-  gr_log "the game loop runs (first tick line after ${waited}s); waiting ${PRE_KEY_DELAY}s before pressing scancode(s) $SCN_KEYS"
-  sleep "$PRE_KEY_DELAY"
+  local first_at base lw=0
+  first_at=$(date +%s)
+  base="$(tick_lines)"
+  until [ "$(tick_lines)" -ge $((base + LIVE_TICKS)) ]; do
+    if [ "$lw" -ge "$LIVE_WAIT" ]; then
+      gr_log "FAIL: the game loop never became live (fewer than ${LIVE_TICKS} tick lines after the first one in ${LIVE_WAIT}s)"
+      return 1
+    fi
+    gr_game_running || { gr_log "FAIL: the game exited before its game loop became live"; return 1; }
+    sleep 1
+    lw=$((lw + 1))
+  done
+  gr_log "the game loop is live (${LIVE_TICKS} more tick lines after the first, $lw s; last tick $(last_tick))"
+  gr_log "the game loop runs (first tick line after ${waited}s); at least ${PRE_KEY_DELAY}s after it, pressing scancode(s) $SCN_KEYS"
+  local rest=$((PRE_KEY_DELAY - ($(date +%s) - first_at)))
+  [ "$rest" -le 0 ] || sleep "$rest"
   press_and_check; rc=$?
-  if [ "$rc" -eq 1 ]; then
+  if [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
     gr_log "pressing again (once): the first press did not stop the simulation"
     press_and_check; rc=$?
     [ "$rc" -eq 1 ] && gr_log "FAIL: the simulation is still running after the second press"
+    [ "$rc" -eq 3 ] && gr_log "FAIL: the key helper did not finish in ${KEY_TIMEOUT}s twice"
   fi
   [ "$rc" -eq 0 ] || return 1
   gr_log "arming the proxy"
