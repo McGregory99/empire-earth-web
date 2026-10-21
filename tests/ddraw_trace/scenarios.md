@@ -30,7 +30,7 @@ through the shared game-run library (`tools/game_run`: lock, verified snapshot, 
 * Environment: `EE_SIMHASH=1` (per-tick object hash lines in `ee-version.log`, used to see the simulation stop), `EE_SIM_FIXED_MS=33`.
 * Pause: the save does NOT come up paused (the simulation runs at about 28 ticks a second). The driver waits for the first EE_SIMHASH
   tick line (the game loop), waits `PRE_KEY_DELAY` (9 s) more so that the in-game form takes input (two real runs that pressed 2-4 s after the
-  loop came up never paused), presses F3 (scancode `3d`, `ee-key.exe`, SendInput), waits 6 s, and requires that no new simulation tick line
+  loop came up never paused), presses F3 (scancode `3d`, `ee-key.exe --desktop EmpireEarth`: the game runs on a Wine virtual desktop and SendInput goes to the caller's desktop; without it the keys never arrived), waits 6 s, and requires that no new simulation tick line
   appears for 5 s. If the tick lines keep rising it presses F3 once more and checks again; if they still rise the run fails. The log records
   the tick counts and the last tick number at each check.
   Only then does it create the arm file the proxy waits for (`DDT_ARM_FILE`): the capture window opens at the next frame boundary.

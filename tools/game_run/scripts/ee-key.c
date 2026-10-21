@@ -3,7 +3,8 @@
  *
  *   ee-key.exe [--desktop <name>] <scancode in hex> [<scancode> ...]
  *
- * Each key goes down, stays down 60 ms, goes up, and the next one follows 150 ms later.  With --desktop the input goes to that
+ * Before pressing, it lists the visible top-level windows of the desktop it uses and marks the foreground one, so that a run
+ * that loses its keys says where they went.  Each key goes down, stays down 60 ms, goes up, and the next one follows 150 ms later.  With --desktop the input goes to that
  * desktop (the tests use one of their own).  Exit status: 0 pressed, 2 usage or a scancode that is not hex, 3 the desktop
  * cannot be used, 4 SendInput failed.
  * Build: i686-w64-mingw32-gcc -mcrtdll=msvcrt-os -D_WIN32_WINNT=0x0600 -o ee-key.exe ee-key.c -luser32 */
@@ -19,6 +20,16 @@ static int send_key(WORD scan, DWORD flags) {
   in.ki.wScan = scan;
   in.ki.dwFlags = KEYEVENTF_SCANCODE | flags;
   return SendInput(1, &in, sizeof in) == 1;
+}
+
+static BOOL CALLBACK list_window(HWND h, LPARAM l) {
+  char title[80] = "", cls[48] = "";
+  (void)l;
+  if (!IsWindowVisible(h)) return TRUE;
+  GetWindowTextA(h, title, sizeof title);
+  GetClassNameA(h, cls, sizeof cls);
+  printf("ee-key:   window %p class '%s' title '%s'%s\n", (void *)h, cls, title, h == GetForegroundWindow() ? " [foreground]" : "");
+  return TRUE;
 }
 
 int main(int argc, char **argv) {
@@ -43,6 +54,8 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
+  printf("ee-key: visible windows of this desktop:\n");
+  EnumDesktopWindows(GetThreadDesktop(GetCurrentThreadId()), list_window, 0);
   for (; i < argc; i++) {
     WORD scan = (WORD)strtoul(argv[i], NULL, 16);
     if (!send_key(scan, 0)) return 4;
