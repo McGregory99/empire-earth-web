@@ -277,6 +277,9 @@ LOOP_WAIT=4
 SETTLE_SECONDS=1
 PAUSE_WINDOW=1
 PRE_KEY_DELAY=3
+KEY_TIMEOUT=3
+LIVE_WAIT=4
+LIVE_TICKS=3
 CONF
 } >"$W/config-keys.sh"
 printf 'key' >"$W/scn-bin/ee-key.exe"
@@ -324,6 +327,47 @@ check "... and that it stopped after the second" grep -q "the simulation stopped
 check "... the proxy was armed only then (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
 check "... and the game directory is restored" same_game
 rm -f "$W/needs-two-presses"
+
+# the key helper hangs (it printed its line and never returned): it is killed after KEY_TIMEOUT s; the press is retried once
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/key-hangs"
+: >"$W/ticking"
+: >"$W/key-hangs-once"
+run_keys >"$W/run10f.out" 2>&1
+check_eq "a key helper that hangs once is killed and the press retried: exit 0" "0" "$?"
+check "... the log says it did not finish and was killed" grep -q "key helper did not finish in 3s" "$W/run10f.out"
+check_eq "... two calls of the helper" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... the simulation stopped after the second" grep -q "the simulation stopped" "$W/run10f.out"
+check "... and the game directory is restored" same_game
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/key-hangs"
+run_keys >"$W/run10g.out" 2>&1
+check "a key helper that always hangs fails the run (non-zero: $?)" test $? -ne 0
+check "... saying so" grep -q "key helper did not finish" "$W/run10g.out"
+check_eq "... after exactly two attempts" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... the proxy was never armed" bash -c "! ls '$W/out'/trace.*.txt >/dev/null 2>&1"
+check "... and the game directory is restored" same_game
+rm -f "$W/key-hangs"
+
+# the key is pressed only once the loop is demonstrably live: LIVE_TICKS new tick lines after the first one
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+run_keys >"$W/run10h.out" 2>&1
+check_eq "a live game loop: exit 0" "0" "$?"
+check "... the log says the loop is live (3 more tick lines)" grep -q "the game loop is live (3 more tick lines" "$W/run10h.out"
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/one-tick"
+run_keys >"$W/run10i.out" 2>&1
+check "a loop that prints tick 0 and stalls fails the run (non-zero: $?)" test $? -ne 0
+check "... saying it never became live" grep -q "never became live" "$W/run10i.out"
+check "... without pressing any key" test ! -e "$W/key.log"
+check "... and the game directory is restored" same_game
+rm -f "$W/one-tick"
 
 fresh
 rm -f "$W/key.log" "$W/paused" "$W/ticking"

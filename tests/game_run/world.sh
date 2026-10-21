@@ -124,6 +124,9 @@ fi
 case "${1:-}" in
   *ee-key.exe)
     echo "key-helper $* at $(date +%s)" >>"$FAKE_WORLD/key.log"
+    # "key-hangs": the helper never returns (a Wine process stuck after its last line); "key-hangs-once": only the first call
+    if [ -e "$FAKE_WORLD/key-hangs-once" ]; then rm -f "$FAKE_WORLD/key-hangs-once"; sleep 300; exit 0; fi
+    [ -e "$FAKE_WORLD/key-hangs" ] && { sleep 300; exit 0; }
     # the fake game stops ticking when it gets its pause key; "not-paused": never; "needs-two-presses": the first one is lost
     [ -e "$FAKE_WORLD/not-paused" ] || { [ -e "$FAKE_WORLD/needs-two-presses" ] && [ "$(wc -l <"$FAKE_WORLD/key.log")" -lt 2 ]; } ||
       : >"$FAKE_WORLD/paused"
@@ -174,6 +177,7 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
         printf 'ee-version: simhash: tick 0: 00000000 over 90 objects\n' >>"$game_dir/ee-version.log"
         date +%s >"$FAKE_WORLD/tick0.time"
         n=0
+        [ -e "$FAKE_WORLD/one-tick" ] && n=100 # "one-tick": the loop prints tick 0 and then nothing (a game stuck loading)
         while [ ! -e "$FAKE_WORLD/paused" ] && [ "$n" -lt 100 ] && grep -q 'Empire Earth.exe' "$FAKE_PS_FILE" 2>/dev/null; do
           sleep 0.2; n=$((n + 1))
           [ -e "$FAKE_WORLD/paused" ] || printf 'ee-version: simhash: tick %s: 00000000 over 90 objects\n' "$((n * 50))" >>"$game_dir/ee-version.log"
