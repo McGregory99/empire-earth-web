@@ -36,6 +36,7 @@ check_eq "pressing three scancodes: exit 0" "0" "$?"
 wait_for 100 test -e "$T/victim.rc"
 check_eq "the window got them, in order (F3, H, Esc)" "3d 23 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' 2>/dev/null | sed 's/ $//')"
 check "the helper said what it pressed" grep -q "pressed 3d" "$T/k1.out"
+check "... and which window had the focus (the game's, when it is used)" grep -q "title 'victim'.*\[foreground\]" "$T/k1.out"
 
 wine "$T/ee-key.exe" >"$T/k2.out" 2>&1
 check "no scancode: usage and a non-zero exit" test $? -ne 0

@@ -286,7 +286,7 @@ rm -f "$W/key.log" "$W/paused" "$W/not-paused"
 : >"$W/ticking"
 run_keys >"$W/run10.out" 2>&1
 check_eq "a scenario with keys exits 0" "0" "$?"
-check "the key helper was asked for the pause key (scancode 3d)" grep -q "ee-key.exe 3d" "$W/key.log"
+check "the key helper was asked for the pause key (scancode 3d) on the game's desktop (the game runs on the Wine virtual desktop EmpireEarth)" grep -q "ee-key.exe --desktop EmpireEarth 3d" "$W/key.log"
 check "the simulation was seen to stop" grep -q "the simulation stopped" "$W/run10.out"
 t0="$(cat "$W/tick0.time")"; tk="$(sed -n 's/.* at \([0-9]*\)$/\1/p' "$W/key.log" | head -1)"
 check "the key waits PRE_KEY_DELAY (3 s) after the first tick line (tick $t0, key $tk)" test "$((tk - t0))" -ge 3
@@ -308,6 +308,18 @@ check "... the log says the key is pressed again" grep -q "pressing again" "$W/r
 check "... the proxy was never armed (no trace)" bash -c "! ls '$W/out'/trace.*.txt >/dev/null 2>&1"
 check "... and the game directory is restored" same_game
 rm -f "$W/not-paused"
+
+# no such desktop (the game runs on the default one): the key is pressed on the helper's own desktop instead, and the log says so
+fresh
+rm -f "$W/key.log" "$W/key-refused.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/no-desktop"
+run_keys >"$W/run10f.out" 2>&1
+check_eq "a missing virtual desktop does not fail the run" "0" "$?"
+check "... the helper was refused the named desktop once" test -s "$W/key-refused.log"
+check "... and the key was pressed without --desktop" grep -q "ee-key.exe 3d" "$W/key.log"
+check "... the log says it fell back" grep -q "no desktop EmpireEarth" "$W/run10f.out"
+rm -f "$W/no-desktop" "$W/key-refused.log"
 
 # the first press is lost (a toggle that did not take, a key that landed before the form took input): the second one pauses
 fresh

@@ -123,6 +123,8 @@ if [ "${1:-}" = reg ]; then
 fi
 case "${1:-}" in
   *ee-key.exe)
+    # "no-desktop": the named desktop does not exist (exit 3), as the real helper reports; the attempt is not a key press
+    [ -e "$FAKE_WORLD/no-desktop" ] && [ "${2:-}" = --desktop ] && { echo "key-helper $* refused" >>"$FAKE_WORLD/key-refused.log"; exit 3; }
     echo "key-helper $* at $(date +%s)" >>"$FAKE_WORLD/key.log"
     # the fake game stops ticking when it gets its pause key; "not-paused": never; "needs-two-presses": the first one is lost
     [ -e "$FAKE_WORLD/not-paused" ] || { [ -e "$FAKE_WORLD/needs-two-presses" ] && [ "$(wc -l <"$FAKE_WORLD/key.log")" -lt 2 ]; } ||
