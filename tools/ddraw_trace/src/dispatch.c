@@ -827,6 +827,14 @@ static int by_id(const void *x, const void *y) {
     return a < b ? -1 : a > b;
 }
 
+/* DDraw frees implicit children (mip levels, attached surfaces) with their root without a Release the proxy sees, so a wrapper
+ * can outlive its object: call through the real object only if it, its vtable and the Lock / Unlock slots can be read. */
+static int real_alive(const Wrap *w) {
+    const IDirectDrawSurface7 *s = (const IDirectDrawSurface7 *)w->real;
+    return s && !IsBadReadPtr(s, sizeof *s) && s->lpVtbl && !IsBadReadPtr(s->lpVtbl, sizeof *s->lpVtbl) &&
+           s->lpVtbl->Lock && s->lpVtbl->Unlock && !IsBadCodePtr((FARPROC)s->lpVtbl->Lock) && !IsBadCodePtr((FARPROC)s->lpVtbl->Unlock);
+}
+
 static void snapshot_surfaces(void) {
     Wrap **list = NULL, *w;
     unsigned b, n = 0, cap = 0, i;
@@ -864,7 +872,11 @@ static void snapshot_surfaces(void) {
         int st = DATA_UNAVAILABLE;
         w = list[i];
         w->dirty = 1;
-        if (!w->locked) /* a surface the plugin holds locked is not locked again */
+        /* The progress line is flushed first: if the read-back takes the process down, the trace names the surface. */
+        snprintf(line, sizeof line, "snapshot-begin %s", wrap_label(w, lbl));
+        trace_comment(line);
+        trace_flush();
+        if (!w->locked && real_alive(w)) /* a surface the plugin holds locked is not locked again */
             st = readback(w, 6, &off, &len);
         snprintf(line, sizeof line, "snapshot %s", wrap_label(w, lbl));
         add_blob(line, sizeof line, st, off, len);

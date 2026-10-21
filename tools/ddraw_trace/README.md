@@ -283,7 +283,9 @@ a source or texture again is not read back; the replayer replays or ignores it).
   `Lock` failed): the surface stays marked as changed and its first `Blt` source / `SetTexture` use in the window stores it (origin
   3 to 5), retried on each use until it works; `blob=failed`: the cap was exceeded (the capture is over). Strip these lines, like
   the `# data:` header and the `blob=` suffixes, to compare a data capture with a trace taken without `DDT_DATA`; there are none
-  without it. A loader applies the record to the surface exactly as it does for an `Unlock` line.
+  without it. Each is preceded by a flushed `# snapshot-begin surf#N` progress line (a crash during the read-back leaves it as
+  the last line of the trace; loaders ignore it), and a surface whose real object, vtable or `Lock` slot cannot be read (DDraw freed
+  it behind the proxy) is `blob=unavailable` without a call. A loader applies the record to the surface exactly as it does for an `Unlock` line.
 * Draw calls (`DrawPrimitive`, `DrawIndexedPrimitive`, `DrawPrimitiveVB`, `DrawIndexedPrimitiveVB`): ` blob={vertices=@O+L,
   indices=@O+L}` (no `indices` for the non-indexed calls; `vertices=none` as above). Strided draws are not captured.
 * Vertex-buffer `Lock` and `Unlock` lines carry no blob: the data is stored by the draws that read it.

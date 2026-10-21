@@ -310,3 +310,9 @@ test('a snapshot line that names another surface than its record is rejected', (
   const s = withSnapshot((ref) => ref);
   assert.throws(() => loadTrace(s.text.replace('# snapshot surf#3', '# snapshot surf#4'), s.data), /belongs to surf#3, not surf#4/);
 });
+
+test('"# snapshot-begin" progress lines are ignored', () => {
+  const s = withSnapshot((ref) => ref);
+  const t = s.text.replace('# snapshot surf#3', '# snapshot-begin surf#3\n# snapshot surf#3');
+  assert.deepEqual(loadTrace(t, s.data).stats.snapshots, 1);
+});
