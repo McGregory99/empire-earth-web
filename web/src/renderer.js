@@ -8,9 +8,14 @@ import { primitiveMode, unpackColor, UnsupportedError } from './d3d-tables.js';
 import { VERTEX_STRIDE, CLEAR, validateCommand } from './frame-model.js';
 
 export class Renderer {
-  /** @param {HTMLCanvasElement|OffscreenCanvas} canvas */
-  constructor(canvas) {
+  /**
+   * @param {HTMLCanvasElement|OffscreenCanvas} canvas
+   * @param {{applyLodBias?: boolean}} [opts] applyLodBias (default false): the original, as captured under Wine / macOS OpenGL, does
+   *   not apply TSS_MIPMAPLODBIAS (measured against skirmish-7: whole frame mean abs difference 2.77 with it, 0.92 without)
+   */
+  constructor(canvas, opts = {}) {
     this.canvas = canvas;
+    this.applyLodBias = opts.applyLodBias ?? false;
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: false, preserveDrawingBuffer: true });
     if (!gl) throw new Error('WebGL2 is not available in this browser');
     this.gl = gl;
@@ -62,7 +67,7 @@ export class Renderer {
     const gl = this.gl;
     for (const t of this.textures.values()) this._freeVariants(t);
     this.textures.clear();
-    this.state = new DeviceState();
+    this.state = new DeviceState({ applyLodBias: this.applyLodBias });
     this.vbData = new Uint8Array(VERTEX_STRIDE * 1024);
     this.vbCapacityUploaded = 0;
     this.dirty = null;

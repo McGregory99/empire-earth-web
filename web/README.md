@@ -118,8 +118,16 @@ texture argument modifiers, ADDSMOOTH / bump / dot3 ops, BORDER addressing, poin
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are
 generated from level 0 (the trace carries none); a stage-0 `TEXTURE` argument with no texture bound is opaque
 white; lighting transforms normals by the world-view matrix without an inverse transpose (exact for uniform
-scale); the canvas has no destination alpha; a keyed `blit2D` also skips source texels of alpha 0; dithering is
+scale); `MIPMAPLODBIAS` is ignored by default (the reference game under Wine / macOS GL does not apply it; `new Renderer(canvas, { applyLodBias: true })` applies it); the canvas has no destination alpha; a keyed `blit2D` also skips source texels of alpha 0; dithering is
 ignored.
+
+## Late-armed captures
+
+A capture armed after the game started (`# armed` in the header) never sees the `SetDisplayMode` / `CreateSurface` calls of the screen or
+the device-creation render states. The loader infers: the surface that GDI reads back whole (`ReleaseDC` with a pixel record) and that
+the trace never creates is the screen, and its size is the canvas size; the render states the game sets once at device creation
+(ALPHAFUNC GREATER, NORMALIZENORMALS, SHADEMODE, ...; not fog) seed the device before the capture's own calls. A colour-keyed blit whose
+key was set before the window (the software cursor) is skipped and counted (`stats.skippedKeyedBlits`).
 
 ## Tests
 

@@ -31,7 +31,9 @@ function stageDefaults(stage) {
 const isIdentity = (m) => m.length === 16 && m.every((v, i) => v === IDENTITY[i]);
 
 export class DeviceState {
-  constructor() {
+  /** @param {{applyLodBias?: boolean}} [opts] applyLodBias (default true): honour TSS_MIPMAPLODBIAS; false resolves it to 0 */
+  constructor(opts = {}) {
+    this.applyLodBias = opts.applyLodBias ?? true;
     this._init();
   }
 
@@ -132,7 +134,7 @@ export class DeviceState {
         alphaOp: s0[TSS.ALPHAOP], alphaArg1: s0[TSS.ALPHAARG1], alphaArg2: s0[TSS.ALPHAARG2],
       },
       sampler: { mag: magFilter(s0[TSS.MAGFILTER]), min: minFilter(s0[TSS.MINFILTER], s0[TSS.MIPFILTER]), wrapS, wrapT },
-      lodBias: f32FromBits(s0[TSS.MIPMAPLODBIAS]),
+      lodBias: this.applyLodBias ? f32FromBits(s0[TSS.MIPMAPLODBIAS]) : 0,
       texture0: this.textures[0],
     };
   }
