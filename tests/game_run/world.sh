@@ -123,8 +123,10 @@ if [ "${1:-}" = reg ]; then
 fi
 case "${1:-}" in
   *ee-key.exe)
-    echo "key-helper $*" >>"$FAKE_WORLD/key.log"
-    [ -e "$FAKE_WORLD/not-paused" ] || : >"$FAKE_WORLD/paused"   # the fake game stops ticking when it gets its pause key
+    echo "key-helper $* at $(date +%s)" >>"$FAKE_WORLD/key.log"
+    # the fake game stops ticking when it gets its pause key; "not-paused": never; "needs-two-presses": the first one is lost
+    [ -e "$FAKE_WORLD/not-paused" ] || { [ -e "$FAKE_WORLD/needs-two-presses" ] && [ "$(wc -l <"$FAKE_WORLD/key.log")" -lt 2 ]; } ||
+      : >"$FAKE_WORLD/paused"
     exit 0
     ;;
   *ee-close.exe)
@@ -170,6 +172,7 @@ if [ "${1:-}" = start ] && [ "${2:-}" = /unix ]; then
       rm -f "$FAKE_WORLD/paused"
       [ -e "$FAKE_WORLD/ticking" ] && (
         printf 'ee-version: simhash: tick 0: 00000000 over 90 objects\n' >>"$game_dir/ee-version.log"
+        date +%s >"$FAKE_WORLD/tick0.time"
         n=0
         while [ ! -e "$FAKE_WORLD/paused" ] && [ "$n" -lt 100 ] && grep -q 'Empire Earth.exe' "$FAKE_PS_FILE" 2>/dev/null; do
           sleep 0.2; n=$((n + 1))

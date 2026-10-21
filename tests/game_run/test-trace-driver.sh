@@ -275,6 +275,7 @@ KEY_EXE="$W/scn-bin/ee-key.exe"
 LOOP_WAIT=4
 SETTLE_SECONDS=1
 PAUSE_WINDOW=1
+PRE_KEY_DELAY=3
 CONF
 } >"$W/config-keys.sh"
 printf 'key' >"$W/scn-bin/ee-key.exe"
@@ -287,6 +288,10 @@ run_keys >"$W/run10.out" 2>&1
 check_eq "a scenario with keys exits 0" "0" "$?"
 check "the key helper was asked for the pause key (scancode 3d)" grep -q "ee-key.exe 3d" "$W/key.log"
 check "the simulation was seen to stop" grep -q "the simulation stopped" "$W/run10.out"
+t0="$(cat "$W/tick0.time")"; tk="$(sed -n 's/.* at \([0-9]*\)$/\1/p' "$W/key.log" | head -1)"
+check "the key waits PRE_KEY_DELAY (3 s) after the first tick line (tick $t0, key $tk)" test "$((tk - t0))" -ge 3
+check "... and the log says what it waited for" grep -q "first tick line" "$W/run10.out"
+check_eq "a pause that held needs exactly one key press" "1" "$(wc -l <"$W/key.log" | tr -d ' ')"
 check "the proxy was armed only after that (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
 check "the arm file is in the output folder, not in the game directory" test -e "$W/out/run.raw.arm"
 check "the game directory is what it was (ee-version.log included)" same_game
@@ -298,9 +303,25 @@ rm -f "$W/key.log" "$W/paused"
 run_keys >"$W/run10b.out" 2>&1
 check "a game that keeps ticking after the key fails the run (non-zero: $?)" test $? -ne 0
 check "... saying the simulation did not stop" grep -q "still running" "$W/run10b.out"
+check_eq "... after the key was pressed exactly twice (once more, not more)" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... the log says the key is pressed again" grep -q "pressing again" "$W/run10b.out"
 check "... the proxy was never armed (no trace)" bash -c "! ls '$W/out'/trace.*.txt >/dev/null 2>&1"
 check "... and the game directory is restored" same_game
 rm -f "$W/not-paused"
+
+# the first press is lost (a toggle that did not take, a key that landed before the form took input): the second one pauses
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/needs-two-presses"
+run_keys >"$W/run10e.out" 2>&1
+check_eq "a lost first press is retried once and the run succeeds" "0" "$?"
+check_eq "... with two key presses in total" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... saying the simulation was still running after the first" grep -q "still running after the first" "$W/run10e.out"
+check "... and that it stopped after the second" grep -q "the simulation stopped" "$W/run10e.out"
+check "... the proxy was armed only then (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
+check "... and the game directory is restored" same_game
+rm -f "$W/needs-two-presses"
 
 fresh
 rm -f "$W/key.log" "$W/paused" "$W/ticking"
