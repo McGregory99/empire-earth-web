@@ -507,6 +507,10 @@ __declspec(dllexport) int WINAPI scenario_n(HWND hwnd, ScenarioS *r) {
         for (x = 0; x < 4; x++)
             ((unsigned short *)((unsigned char *)sd.lpSurface + y * sd.lPitch))[x] = s565_pixel(x, y);
     R(IDirectDrawSurface7_Unlock(b, NULL));
+    if (GetEnvironmentVariableA("N_BLT", arm, sizeof arm)) { /* a surface written by a Blt and then read as a Blt source, before the window */
+        R(IDirectDrawSurface7_Blt(b, NULL, a, NULL, DDBLT_WAIT, NULL));
+        R(IDirectDrawSurface7_Blt(back, NULL, b, NULL, DDBLT_WAIT, NULL));
+    }
     if (GetEnvironmentVariableA("N_DEAD", arm, sizeof arm)) { /* surf#5: freed by DDraw behind the proxy's back (see the mock) */
         LPDIRECTDRAWSURFACE7 dead = make_surface(dd, 13, 13, 0);
         IDirectDrawSurface7_Release(dead);

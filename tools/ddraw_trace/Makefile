@@ -189,6 +189,14 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early.txt' \
 	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-off.txt' \
 	    "$(WINE)" harness.exe data-arm-early 2>/dev/null
+	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-early-blt.txt*
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_EARLY=1 N_BLT=1 \
+	    DDT_ARM_FILE='Z:$(subst /,\,$(abspath $(TESTBED)))\arm.flag' \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early-blt.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-early-blt.txt' \
+	    DDT_OFF_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-arm-off.txt' \
+	    "$(WINE)" harness.exe data-arm-early-blt 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-early-cap.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
 	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 DDT_DATA_EARLY=1 DDT_DATA_MAX=400 \

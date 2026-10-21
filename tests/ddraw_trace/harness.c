@@ -1147,6 +1147,18 @@ static void cycle_arm_early(HMODULE plugin, HWND hwnd) {
     check_same_as_off();
 }
 
+/* A Blt-written surface read as a Blt source before the window (the 2D screen surface, every frame, in the real game) is not
+ * stored then: that would fill the cap with superseded full-surface records.  It stays dirty and is stored at its first use
+ * inside the window. */
+static void cycle_arm_early_blt(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    run_scenario_n(plugin, hwnd);
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path) && g_nrecs == 2, "only the 2 Unlock records: the Blt-source read-back before the window stored nothing");
+    check(g_nrecs < 3 || g_recs[2].p[8] != 3, "no origin-3 record");
+}
+
 static void cycle_arm_early_cap(HMODULE plugin, HWND hwnd) {
     run_scenario_n(plugin, hwnd);
     check_failed_capture("# ERROR: data cap of 400 bytes exceeded*", "early records over the cap");
@@ -1199,6 +1211,8 @@ int main(int argc, char **argv) {
             cycle_arm_default(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-early"))
             cycle_arm_early(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-arm-early-blt"))
+            cycle_arm_early_blt(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-early-cap"))
             cycle_arm_early_cap(plugin, hwnd);
         else if (!strcmp(argv[1], "data-arm-dead"))
