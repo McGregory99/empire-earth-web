@@ -339,6 +339,13 @@ static void td_terrain_draws(void)
     TD_DRAW("terrain draw: Draw(GETerrainMesh) of two materials on screen 1", 1, 7, 0);
     td_terrain(0, kInside, kOverlap, 1);
     TD_DRAW("terrain draw: Draw(GETerrainMesh) with no material", 0, 140, 0);
+    {
+        static const unsigned kNoInside[4] = {0, 0, 0, 0};
+        static const unsigned kSome[4] = {2, 2, 2, 2};
+        td_terrain(1, kNoInside, kSome, 1);
+        TD_DRAW("terrain draw: Draw(GETerrainMesh) answers the status of the last material draw", 0, 145, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+                g_life.dd->vb_script[FV_UNLOCK].times = 1);
+    }
     td_terrain(3, kInside, kOverlap, 1);
     TD_DRAW("terrain draw: Draw(GETerrainMesh) with room for the first material only", 0, 0x98a - 9, 0);
     td_terrain(3, kInside, kOverlap, 1);
@@ -441,6 +448,13 @@ static void td_water_draws(void)
     TD_WATER("terrain draw: DrawWater of two materials on screen 1", 1, 7, 0);
     td_water(0, kInside, kOverlap, 1, 0);
     TD_WATER("terrain draw: DrawWater with an empty list of materials", 0, 140, 0);
+    {
+        static const unsigned kNoInside[4] = {0, 0, 0, 0};
+        static const unsigned kSome[4] = {2, 2, 2, 2};
+        td_water(1, kNoInside, kSome, 1, 0);
+        TD_WATER("terrain draw: DrawWater answers the status of the last material draw", 0, 145, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+                 g_life.dd->vb_script[FV_UNLOCK].times = 1);
+    }
     td_water(0, kInside, kOverlap, 1, 1);
     TD_WATER("terrain draw: DrawWater with no list of materials", 0, 150, 0);
     td_water(3, kInside, kOverlap, 0, 0);
@@ -545,6 +559,9 @@ static void td_grid_draws(void)
     TD_GRID("terrain draw: DrawTerrainGrid when DrawPrimitiveVB fails", DrawTerrainGrid, 0, 360, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
     td_grid_mesh(3, 2, 2, 2, 0, 1);
     TD_GRID("terrain draw: DrawTerrainGrid when the vertex buffer unlock fails once", DrawTerrainGrid, 0, 380, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+            g_life.dd->vb_script[FV_UNLOCK].times = 1);
+    td_grid_mesh(3, 2, 0, 0, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid answers the status of the last unlock", DrawTerrainGrid, 0, 400, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
             g_life.dd->vb_script[FV_UNLOCK].times = 1);
 }
 
