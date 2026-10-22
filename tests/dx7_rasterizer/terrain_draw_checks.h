@@ -247,11 +247,15 @@ static void td_viewport(int screen, float x, float y, float z, float rear)
     void *viewport = &life_state(screen)->viewport;
     GETransformationLayout camera;
     memset(&camera, 0, sizeof camera);
+    /* turned 30 degrees about the vertical axis and tilted 20 degrees: the camera's directions have a vertical part */
     camera.m[0] = 0.8660254f;
-    camera.m[1] = -0.5f;
+    camera.m[1] = -0.5f * 0.9396926f;
+    camera.m[2] = 0.5f * 0.3420201f;
     camera.m[4] = 0.5f;
-    camera.m[5] = 0.8660254f;
-    camera.m[10] = 1.0f;
+    camera.m[5] = 0.8660254f * 0.9396926f;
+    camera.m[6] = -0.8660254f * 0.3420201f;
+    camera.m[9] = 0.3420201f;
+    camera.m[10] = 0.9396926f;
     camera.m[15] = 1.0f;
     camera.m[3] = x;
     camera.m[7] = y;
