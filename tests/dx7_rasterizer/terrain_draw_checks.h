@@ -624,6 +624,125 @@ static void td_highlight_draws(void)
                  g_life.dd->vb_script[FV_UNLOCK].times = 1);
 }
 
+/* ---- DrawGridLines(GETerrainMesh &, lines, texture, v, screen, orthographic), slot 23 ---- */
+
+typedef long(THISCALL *GridLinesFn)(void *self, void *mesh, void *lines, void *texture, float v, unsigned long screen, unsigned char orthographic);
+
+static GETMPointRowLayout g_line_rows[101];
+static GETMPointLayout *g_line_points[101];
+static int32_t g_lines[1400 * 4];
+static StdVectorLayout g_lines_vector;
+
+/* A mesh with a window, a visibility pattern and point rows: row r holds the columns from r % 4, heights of both signs, zero and one
+ * that is not a number. */
+static void td_lines_mesh(unsigned x0, unsigned y0, unsigned width, unsigned height, unsigned zero_every)
+{
+    td_grid_mesh(x0, y0, width, height, zero_every, 1);
+    GETerrainMeshLayout *mesh = g_tdm.mesh;
+    uint32_t state = 303;
+    for (unsigned r = 0; r < 101; r++) {
+        free(g_line_points[r]);
+        g_line_points[r] = (GETMPointLayout *)calloc(105, sizeof(GETMPointLayout));
+        g_line_rows[r].firstIndex = r % 4;
+        g_line_rows[r].count = 101 - r % 4;
+        g_line_rows[r].points = g_line_points[r];
+        for (unsigned c = 0; c < 105; c++) {
+            float z = td_value(&state, -10.0f, 20.0f);
+            uint32_t pick = (r * 5 + c) % 17;
+            if (pick == 0) {
+                z = 0.0f;
+            } else if (pick == 1) {
+                z = -0.0f;
+            } else if (pick == 2) {
+                z = __builtin_nanf("");
+            }
+            g_line_points[r][c].z = z;
+        }
+    }
+    mesh->pointRows = g_line_rows;
+    mesh->pointRowCount = 101;
+}
+
+/* The lines as four longs each: (x1, y1, x2, y2). */
+static StdVectorLayout *td_lines(const int32_t *values, unsigned count)
+{
+    memcpy(g_lines, values, count * 16);
+    memset(&g_lines_vector, 0, sizeof g_lines_vector);
+    g_lines_vector.first = count ? g_lines : NULL;
+    g_lines_vector.last = count ? g_lines + 4 * count : NULL;
+    g_lines_vector.end = g_lines_vector.last;
+    return &g_lines_vector;
+}
+
+#define TD_LINES(name, screen, cursor, lines, texture, v, ortho, ...)                                                                       \
+    do {                                                                                                                                    \
+        d2_prepare(screen, cursor);                                                                                                         \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            ret = ((GridLinesFn)LIFE_SLOT(DrawGridLines))(g_life.obj, g_tdm.mesh, (lines), (texture), (v), (unsigned long)(screen), (ortho));\
+            td_dump_hash(screen, cursor);                                                                                                   \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_lines_draws(void)
+{
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_viewport(1, -30.0f, 5.0f, 12.0f, 500.0f);
+    GETextureLayout *texture0 = d2_texture(0, 1.0f, 0.0f, 0.0f);
+    GETextureLayout *texture1 = d2_texture(1, 1.0f, 0.0f, 0.0f);
+    static const int32_t kInside[] = {3, 2, 4, 2, 4, 2, 4, 3, 5, 3, 3, 5, 6, 4, 6, 5};
+    static const int32_t kEdges[] = {
+        2, 2, 4, 2,   /* x below the window */
+        3, 1, 4, 2,   /* y below */
+        3, 2, 4, 7,   /* y2 above */
+        3, 2, 8, 2,   /* x2 above */
+        3, 2, 7, 6,   /* the last column and row of the window: x0 + width + 1 is outside */
+        3, 2, 6, 5,   /* the last that is inside */
+        3, 2, 3, 2,   /* a line of one point */
+    };
+    td_lines_mesh(3, 2, 4, 3, 7);
+    TD_LINES("terrain draw: DrawGridLines of lines inside the window", 0, 0, td_lines(kInside, 8), texture0, 0.25f, 0);
+    td_lines_mesh(3, 2, 4, 3, 7);
+    TD_LINES("terrain draw: DrawGridLines orthographic", 0, 100, td_lines(kInside, 8), texture0, 0.25f, 1);
+    td_lines_mesh(3, 2, 4, 3, 7);
+    TD_LINES("terrain draw: DrawGridLines without a texture", 0, 200, td_lines(kInside, 8), NULL, -1.5f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines with lines at the edges of the window", 0, 300, td_lines(kEdges, 7), texture0, 2.75f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines on screen 1", 1, 5, td_lines(kInside, 8), texture1, 0.0f, 0);
+    td_lines_mesh(3, 2, 4, 3, 2);
+    TD_LINES("terrain draw: DrawGridLines of lines whose points are not visible", 0, 400, td_lines(kInside, 8), texture0, 0.5f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines of an empty list of lines", 0, 500, td_lines(kInside, 0), texture0, 0.5f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines of lines that are all outside moves the cursor all the same", 0, 520, td_lines(kEdges, 3), texture0, 0.5f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines without visible rows does nothing", 0, 540, td_lines(kInside, 8), texture0, 0.5f, 0, g_tdm.mesh->visibleRows.last = g_tdm.mesh->visibleRows.first);
+    /* a lot of lines: the ring holds 1221 of them */
+    static int32_t many[1400 * 4];
+    for (int i = 0; i < 1400; i++) {
+        many[4 * i] = 3 + i % 4;
+        many[4 * i + 1] = 2 + i % 3;
+        many[4 * i + 2] = 4 + i % 3;
+        many[4 * i + 3] = 3 + i % 4;
+    }
+    td_lines_mesh(0, 0, 8, 8, 0);
+    TD_LINES("terrain draw: DrawGridLines of 1221 lines fills the ring", 0, 0, td_lines(many, 1221), texture0, 0.1f, 0);
+    td_lines_mesh(0, 0, 8, 8, 0);
+    TD_LINES("terrain draw: DrawGridLines of 1222 lines is cut to the ring", 0, 7, td_lines(many, 1222), texture0, 0.1f, 0);
+    td_lines_mesh(0, 0, 8, 8, 0);
+    TD_LINES("terrain draw: DrawGridLines of 1400 lines is cut to the ring", 0, 9, td_lines(many, 1400), texture0, 0.1f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines with the ring nearly full starts it again", 0, 0x98a - 8, td_lines(kInside, 8), texture0, 0.5f, 0);
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines while DrawPrimitiveVB is busy twice", 0, 600, td_lines(kInside, 8), texture0, 0.5f, 0, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines when DrawPrimitiveVB fails", 0, 650, td_lines(kInside, 8), texture0, 0.5f, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+    td_lines_mesh(3, 2, 4, 3, 0);
+    TD_LINES("terrain draw: DrawGridLines when the vertex buffer unlock fails", 0, 700, td_lines(kInside, 8), texture0, 0.5f, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+             g_life.dd->vb_script[FV_UNLOCK].times = 1);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -642,5 +761,6 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_water_draws();
     td_grid_draws();
     td_highlight_draws();
+    td_lines_draws();
     life_end();
 }
