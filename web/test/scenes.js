@@ -175,4 +175,50 @@ SCENES.push(
   },
 );
 
+// ---- specular --------------------------------------------------------------------------------------------------------
+const at = (cx, cy) => [Math.round(((cx + 1) / 2) * SIZE), Math.round(((1 - cy) / 2) * SIZE)];
+const COS = Math.cos(Math.PI / 6); // N.H for a light 60 degrees off the normal seen by a viewer on the normal: cos(theta / 2)
+const MAT_SPEC = [1, 0.5, 0.25];
+const quad = (cx, cy, h, extra = {}) => rectVerts(cx - h, cy - h, cx + h, cy + h, 0.5).map((v) => ({ ...v, ...extra }));
+const material = (power, specular = [...MAT_SPEC, 1]) => cmd.setMaterial({ diffuse: [0, 0, 0, 1], ambient: [0, 0, 0, 1], specular, emissive: [0, 0, 0, 0], power });
+/** A light at 60 degrees from the surface normal (0, 0, -1): the vector to the light is (sin 60, 0, -cos 60). Only its specular colour is non-black. */
+const specLight = () => [cmd.setLight(0, { type: 'directional', diffuse: [0, 0, 0, 1], ambient: [0, 0, 0, 1], specular: [1, 1, 1, 1], direction: [-Math.sin(Math.PI / 3), 0, 0.5] }), cmd.lightEnable(0, true)];
+const specStates = (extra = []) => plain([[RS.LIGHTING, 1], [RS.COLORVERTEX, 0], [RS.SPECULARENABLE, 1], [RS.LOCALVIEWER, 0], [RS.AMBIENT, 0], ...extra]);
+const scaled = (rgb, k) => rgb.map((v) => Math.round(v * k * 255));
+
+SCENES.push(
+  {
+    name: 'specular highlight is (N.H)^power x light specular x material specular',
+    commands: () => [...specStates(), ...specLight(),
+      material(4), ...draw(quad(-0.5, 0, 0.3)), material(2), ...draw(quad(0.5, 0, 0.3))],
+    probes: [[...at(-0.5, 0), scaled(MAT_SPEC, COS ** 4), 'N.H = cos 30 = 0.866, power 4: 0.5625 of the material specular (1, 0.5, 0.25)'],
+      [...at(0.5, 0), scaled(MAT_SPEC, COS ** 2), 'power 2: 0.75 of the material specular']],
+  },
+  {
+    name: 'SPECULARENABLE 0 adds no specular colour',
+    commands: () => [...specStates([[RS.SPECULARENABLE, 0]]), ...specLight(), material(4), ...draw(quad(0, 0, 0.3))],
+    probes: [[...at(0, 0), [0, 0, 0], 'the lit colour is black (no diffuse, no ambient) and the specular is not added']],
+  },
+  {
+    name: 'LOCALVIEWER: the view vector points from the vertex to the eye',
+    commands: () => [...specStates([[RS.LOCALVIEWER, 1]]), ...specLight(), material(4), ...draw(quad(0.8, 0, 0.1))],
+    probes: [[...at(0.8, 0), scaled(MAT_SPEC, 0.997), 'at x = 0.8, depth 0.5 the eye vector is (-0.85, 0, -0.53), almost the half angle of the light: N.H = 0.9998 (an infinite viewer would give 0.5625)']],
+    tol: 3,
+  },
+  {
+    name: 'the vertex specular colour is added after texturing when SPECULARENABLE is on (unlit)',
+    commands: () => [...plain([[RS.SPECULARENABLE, 1]]),
+      ...draw(quad(-0.5, 0, 0.3, { diffuse: ARGB(255, 50, 50, 50), specular: ARGB(0, 100, 150, 200) }), undefined, undefined, 0x1d2),
+      cmd.setRenderState(RS.SPECULARENABLE, 0),
+      ...draw(quad(0.5, 0, 0.3, { diffuse: ARGB(255, 50, 50, 50), specular: ARGB(0, 100, 150, 200) }), undefined, undefined, 0x1d2)],
+    probes: [[...at(-0.5, 0), [150, 200, 250], 'diffuse 50 + specular (100, 150, 200)'], [...at(0.5, 0), [50, 50, 50], 'SPECULARENABLE 0: the vertex specular colour is ignored']],
+  },
+  {
+    name: 'SPECULARMATERIALSOURCE COLOR2 lights with the vertex specular colour instead of the material',
+    commands: () => [...specStates([[RS.COLORVERTEX, 1], [RS.SPECULARMATERIALSOURCE, 2]]), ...specLight(), material(4, [1, 1, 1, 1]),
+      ...draw(quad(0, 0, 0.3, { specular: ARGB(0, 200, 100, 0) }), undefined, undefined, 0x1d2)],
+    probes: [[...at(0, 0), scaled([200 / 255, 100 / 255, 0], COS ** 4), 'material source COLOR2: (200, 100, 0) * 0.5625, not the white material specular']],
+  },
+);
+
 export { lerp, mix, TSS };
