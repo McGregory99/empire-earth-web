@@ -9,6 +9,7 @@
 import { cmd } from '../src/frame-model.js';
 import * as FM from '../src/frame-model.js';
 import { RS, TSS } from '../src/d3d-tables.js';
+import * as LIGHTING from '../src/lighting.js';
 
 export const SIZE = 64;
 const ARGB = (a, r, g, b) => (((a << 24) | (r << 16) | (g << 8) | b) >>> 0);
@@ -218,6 +219,49 @@ SCENES.push(
     commands: () => [...specStates([[RS.COLORVERTEX, 1], [RS.SPECULARMATERIALSOURCE, 2]]), ...specLight(), material(4, [1, 1, 1, 1]),
       ...draw(quad(0, 0, 0.3, { specular: ARGB(0, 200, 100, 0) }), undefined, undefined, 0x1d2)],
     probes: [[...at(0, 0), scaled([200 / 255, 100 / 255, 0], COS ** 4), 'material source COLOR2: (200, 100, 0) * 0.5625, not the white material specular']],
+  },
+);
+
+// ---- point and spot lights -------------------------------------------------------------------------------------------
+const white = (l) => ({ diffuse: [1, 1, 1, 1], specular: [0, 0, 0, 0], ambient: [0, 0, 0, 0], ...l });
+const litStates = () => plain([[RS.LIGHTING, 1], [RS.COLORVERTEX, 0], [RS.AMBIENT, 0]]);
+const whiteMaterial = () => cmd.setMaterial({ diffuse: [1, 1, 1, 1], ambient: [0, 0, 0, 1], specular: [0, 0, 0, 0], emissive: [0, 0, 0, 0], power: 0 });
+const lightOn = (i, l) => [cmd.setLight(i, l), cmd.lightEnable(i, true)];
+const gray = (k) => { const v = Math.round(Math.min(1, Math.max(0, k)) * 255); return [v, v, v]; };
+/** A tiny square around (cx, 0) at depth 0.5, normal (0, 0, -1). */
+const speck = (cx, h = 0.02) => rectVerts(cx - h, -h, cx + h, h, 0.5);
+/** The lit value at the pixel centre of a speck: the centre lies on the diagonal v0-v2, so it is the mean of those two vertices. */
+const expectedLit = (light, cx, h = 0.02) => {
+  const v = speck(cx, h);
+  return (lightFactor(light, v[0].pos, [0, 0, -1]).diffuse + lightFactor(light, v[2].pos, [0, 0, -1]).diffuse) / 2;
+};
+const lightFactor = (...a) => LIGHTING.lightFactor(...a);
+const clipX = (px) => (2 * px) / SIZE - 1;
+
+const pointLight = (z, extra) => white({ type: 'point', position: [0, 0, z], range: 100, attenuation: [1, 0, 0], ...extra });
+const spotLight = white({ type: 'spot', position: [0, 0, -0.1], direction: [0, 0, 1], range: 100, attenuation: [1, 0, 0], falloff: 1, theta: Math.PI * 40 / 180, phi: Math.PI * 80 / 180 });
+
+SCENES.push(
+  {
+    name: 'point light: attenuation 1 / (a0 + a1 d + a2 d^2) and the range cut-off',
+    commands: () => {
+      const a = pointLight(-1.5, { attenuation: [1, 0.5, 0.25] }); // distance 2 straight ahead of the quads below
+      const quads = (cx) => draw(speck(cx));
+      return [...litStates(), whiteMaterial(),
+        ...lightOn(0, { ...a, position: [clipX(16), 0, -1.5] }), ...quads(clipX(16)),
+        ...lightOn(0, { ...a, position: [clipX(32), 0, -1.5], range: 1.5 }), ...quads(clipX(32)),
+        ...lightOn(0, { ...a, position: [clipX(48), 0, -1.5], attenuation: [1, 0, 0] }), ...quads(clipX(48))];
+    },
+    probes: [[16, 32, gray(1 / 3), 'distance 2, attenuation (1, 0.5, 0.25): 1 / (1 + 1 + 1) = 0.333, N.L = 1'],
+      [32, 32, [0, 0, 0], 'the vertex is 2 away, the range is 1.5: no light'], [48, 32, gray(1), 'attenuation (1, 0, 0): full diffuse']],
+  },
+  {
+    name: 'spot light: full inside theta, none outside phi, the falloff curve between, times N.L',
+    commands: () => [...litStates(), whiteMaterial(), ...lightOn(0, spotLight),
+      ...draw(speck(clipX(32))), ...draw(speck(clipX(43))), ...draw(speck(clipX(52)))],
+    probes: [[32, 32, gray(expectedLit(spotLight, clipX(32))), 'on the axis: spot 1, N.L 1'],
+      [43, 32, gray(expectedLit(spotLight, clipX(43))), 'about 30 degrees off axis (between the 20 and 40 degree half angles): spot (rho - cos 40) / (cos 20 - cos 40), times N.L = cos 30'],
+      [52, 32, [0, 0, 0], 'more than 40 degrees off axis: outside the cone']],
   },
 );
 
