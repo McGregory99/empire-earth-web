@@ -195,6 +195,7 @@ static const struct {
 #include "text_expected.inc"
 #include "terrain_expected.inc"
 #include "model_expected.inc"
+#include "terrain_draw_expected.inc"
 };
 
 /* The steps where our build intentionally differs from the original: the original leaves the surfaces and the Direct3D object of a
@@ -213,6 +214,7 @@ static const struct {
 #include "text_expected_ours.inc"
 #include "terrain_expected_ours.inc"
 #include "model_expected_ours.inc"
+#include "terrain_draw_expected_ours.inc"
     {NULL, NULL}};
 
 static void life_compare(const char *name, const char *actual)

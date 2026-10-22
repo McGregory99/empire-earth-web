@@ -1193,6 +1193,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "text_checks.h"      /* Draw(GEText, ...) (P2.6.7e) */
 #include "terrain_checks.h"   /* TransformToCamera (P2.6.7g) */
 #include "model_checks.h"     /* the model draws (P2.6.7h) */
+#include "terrain_draw_checks.h" /* the terrain draws (P2.6.7i) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1227,6 +1228,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_text(e, h, &api, get_rasterizer());
         check_terrain(e, h, &api, get_rasterizer());
         check_model(e, h, &api, get_rasterizer());
+        check_terrain_draws(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
