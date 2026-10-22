@@ -137,6 +137,220 @@ static void td_material(void)
     });
 }
 
+/* ---- Draw(GETerrainMesh &, screen, orthographic), slot 14 ---- */
+
+typedef long(THISCALL *TerrainDrawFn)(void *self, void *mesh, unsigned long screen, unsigned char orthographic);
+
+/* The nodes of a std::map<GETexture *, ulong> as the MSVC 6 library lays them out: left, parent, right, the pair (key, value), colour,
+ * "is the head".  The test builds a small tree by hand: the plugin only walks it in order. */
+typedef struct TdNode {
+    struct TdNode *left, *parent, *right;
+    void *key;
+    uint32_t value;
+    uint8_t color, isnil;
+    uint8_t pad[2];
+} TdNode;
+
+static struct {
+    GETerrainMeshLayout *mesh;
+    GETMMaterialLayout materials[4];
+    GETMPolygonLayout *inside[4][TD_POLYGONS + 4];
+    GETMPolygonLayout *overlap[4][TD_POLYGONS + 4];
+    TdNode head, nodes[4];
+    GETMTileRowLayout rows[2];
+    GETextureLayout *textures[4];
+} g_tdm;
+
+/* The list of polygons [first, first + count) in a vector whose last slot holds the count. */
+static void td_fill_list(StdVectorLayout *vector, GETMPolygonLayout **storage, unsigned first, unsigned count)
+{
+    memset(storage, 0, sizeof(GETMPolygonLayout *) * (TD_POLYGONS + 4));
+    for (unsigned i = 0; i < count; i++) {
+        storage[i] = &g_td.polygons[(first + i) % TD_POLYGONS];
+    }
+    storage[TD_POLYGONS + 3] = (GETMPolygonLayout *)(uintptr_t)count;
+    memset(vector, 0, sizeof *vector);
+    vector->first = storage;
+    vector->last = storage + TD_POLYGONS + 4;
+    vector->end = vector->last;
+}
+
+/* A mesh whose material map has `count` entries (the textures 0..count-1, value = the index of the material), the materials
+ * holding the given numbers of polygons in their inside and overlap lists. */
+static void td_terrain(unsigned count, const unsigned *inside, const unsigned *overlap, int visible_rows)
+{
+    td_pool(21);
+    free(g_tdm.mesh);
+    g_tdm.mesh = (GETerrainMeshLayout *)calloc(1, sizeof(GETerrainMeshLayout) + 64);
+    GETerrainMeshLayout *mesh = g_tdm.mesh;
+    mesh->vptr = vftable("GETerrainMesh");
+    mesh->pointRows = (struct GETMPointRowLayout *)calloc(1, sizeof(GETMPointRowLayout));
+    mesh->pointRowCount = 1;
+    memset(g_tdm.rows, 0, sizeof g_tdm.rows);
+    mesh->visibleRows.first = g_tdm.rows;
+    mesh->visibleRows.last = visible_rows ? g_tdm.rows + 2 : g_tdm.rows;
+    mesh->visibleRows.end = g_tdm.rows + 2;
+    memset(g_tdm.materials, 0, sizeof g_tdm.materials);
+    for (unsigned m = 0; m < 4; m++) {
+        td_fill_list(&g_tdm.materials[m].polygons, g_tdm.inside[m], m * 2, m < count ? inside[m] : 0);
+        td_fill_list(&g_tdm.materials[m].overlayPolygons, g_tdm.overlap[m], m * 3 + 1, m < count ? overlap[m] : 0);
+    }
+    mesh->materials.first = g_tdm.materials;
+    mesh->materials.last = g_tdm.materials + 4;
+    mesh->materials.end = mesh->materials.last;
+    /* the map: in-order nodes 0..count-1 as a tree (root = the middle one) */
+    memset(&g_tdm.head, 0, sizeof g_tdm.head);
+    memset(g_tdm.nodes, 0, sizeof g_tdm.nodes);
+    g_tdm.head.isnil = 1;
+    g_tdm.head.left = g_tdm.head.right = g_tdm.head.parent = &g_tdm.head;
+    if (count) {
+        for (unsigned i = 0; i < count; i++) {
+            g_tdm.nodes[i].key = g_tdm.textures[i];
+            g_tdm.nodes[i].value = i;
+            g_tdm.nodes[i].left = g_tdm.nodes[i].right = &g_tdm.head;
+            g_tdm.nodes[i].parent = &g_tdm.head;
+        }
+        unsigned root = count / 2;
+        g_tdm.head.parent = &g_tdm.nodes[root];
+        g_tdm.nodes[root].parent = &g_tdm.head;
+        for (unsigned i = 0; i < count; i++) {
+            if (i == root) {
+                continue;
+            }
+            if (i < root) {
+                /* a chain to the left of the root */
+                g_tdm.nodes[i].parent = i + 1 == root ? &g_tdm.nodes[root] : &g_tdm.nodes[i + 1];
+                if (i + 1 == root) {
+                    g_tdm.nodes[root].left = &g_tdm.nodes[i];
+                } else {
+                    g_tdm.nodes[i + 1].left = &g_tdm.nodes[i];
+                }
+            } else {
+                g_tdm.nodes[i].parent = i == root + 1 ? &g_tdm.nodes[root] : &g_tdm.nodes[i - 1];
+                if (i == root + 1) {
+                    g_tdm.nodes[root].right = &g_tdm.nodes[i];
+                } else {
+                    g_tdm.nodes[i - 1].right = &g_tdm.nodes[i];
+                }
+            }
+        }
+        g_tdm.head.left = &g_tdm.nodes[0];
+        g_tdm.head.right = &g_tdm.nodes[count - 1];
+    }
+    mesh->materialMap.head = &g_tdm.head;
+    mesh->materialMap.size = count;
+}
+
+/* The viewport the screen draws with, set up by the engine: a camera that turns and moves, a field of view, the clip distances. */
+static void td_viewport(int screen, float x, float y, float z, float rear)
+{
+    void *viewport = &life_state(screen)->viewport;
+    GETransformationLayout camera;
+    memset(&camera, 0, sizeof camera);
+    camera.m[0] = 0.8660254f;
+    camera.m[1] = -0.5f;
+    camera.m[4] = 0.5f;
+    camera.m[5] = 0.8660254f;
+    camera.m[10] = 1.0f;
+    camera.m[15] = 1.0f;
+    camera.m[3] = x;
+    camera.m[7] = y;
+    camera.m[11] = z;
+    static const float kOrthographic[4] = {100.0f, -100.0f, 100.0f, -100.0f};
+    static const float kView[4] = {480.0f, 0.0f, 640.0f, 0.0f};
+    typedef void(THISCALL * Ptr)(void *, const void *);
+    typedef void(THISCALL * Flt)(void *, float);
+    typedef void(THISCALL * Flt2)(void *, float, float);
+    ((Ptr)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetOrthographicRectangle@GEViewport@@QAEXABVGERectangle@@@Z"))(viewport, kOrthographic);
+    ((Ptr)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetViewRectangle@GEViewport@@QAEXABVGERectangle@@@Z"))(viewport, kView);
+    ((Ptr)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetCamera@GEViewport@@QAEXABVGETransformation@@@Z"))(viewport, &camera);
+    ((Flt)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetFieldOfView@GEViewport@@QAEXM@Z"))(viewport, 0.9f);
+    ((Flt)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetFrontClippingDistance@GEViewport@@QAEXM@Z"))(viewport, 1.0f);
+    ((Flt)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetRearClippingDistance@GEViewport@@QAEXM@Z"))(viewport, rear);
+    ((Flt2)proc_address(GetModuleHandleA("Low-Level Engine.dll"), "?SetDepthRange@GEViewport@@QAEXMM@Z"))(viewport, 0.0f, 1.0f);
+}
+
+static void td_dump(int screen, unsigned long cursor)
+{
+    unsigned long after = life_record(screen)->vertexCursor;
+    char text[4096] = "";
+    life_extra(" after=%lu", after);
+    if (after >= cursor && after - cursor <= 24) {
+        arr_words(text, sizeof text, g_d2.vb[screen] + cursor * 0x24, (after - cursor) * 0x24);
+    } else if (after < cursor && after <= 24) {
+        life_extra(" restart");
+        arr_words(text, sizeof text, g_d2.vb[screen], after * 0x24);
+    }
+    life_extra(" ring=%s", text);
+}
+
+#define TD_DRAW(name, screen, cursor, ortho, ...)                                                                                           \
+    do {                                                                                                                                    \
+        d2_prepare(screen, cursor);                                                                                                         \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            ret = ((TerrainDrawFn)LIFE_SLOT(Draw_2))(g_life.obj, g_tdm.mesh, (unsigned long)(screen), (ortho));                             \
+            td_dump(screen, cursor);                                                                                                        \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_terrain_draws(void)
+{
+    for (int i = 0; i < 4; i++) {
+        g_tdm.textures[i] = i == 3 ? NULL : d2_texture(0, 1.0f, 0.0f, 0.0f);
+    }
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_viewport(1, -30.0f, 5.0f, 12.0f, 500.0f);
+    static const unsigned kInside[4] = {2, 3, 0, 1};
+    static const unsigned kOverlap[4] = {1, 0, 2, 3};
+
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) of three materials", 0, 0, 0);
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) of three materials orthographic", 0, 40, 1);
+    td_terrain(4, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) of four materials, one without a texture", 0, 80, 0);
+    td_terrain(1, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) of one material", 0, 120, 0);
+    td_terrain(2, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) of two materials on screen 1", 1, 7, 0);
+    td_terrain(0, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) with no material", 0, 140, 0);
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) with room for the first material only", 0, 0x98a - 9, 0);
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) while DrawPrimitiveVB is busy twice", 0, 150, 0, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) when DrawPrimitiveVB fails", 0, 190, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+    td_terrain(3, kInside, kOverlap, 1);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) when the vertex buffer unlock fails", 0, 230, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+            g_life.dd->vb_script[FV_UNLOCK].times = 1);
+
+    /* no visible row: a black cover is drawn from the camera */
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows draws the cover", 0, 300, 0);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows orthographic", 0, 320, 1);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows on screen 1", 1, 20, 0);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows and a rear plane of 40", 0, 340, 0, td_viewport(0, 10.0f, 20.0f, 5.0f, 40.0f));
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows and a camera elsewhere", 0, 360, 0, td_viewport(0, -75.5f, 13.25f, -2.0f, 1200.0f));
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows with room for the cover only", 0, 0x98a - 12, 0);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows starts the ring again", 0, 0x98a - 11, 0);
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows while DrawPrimitiveVB is busy twice", 0, 380, 0, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows when DrawPrimitiveVB fails", 0, 400, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+    td_terrain(3, kInside, kOverlap, 0);
+    TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows when the vertex buffer unlock fails", 0, 420, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+            g_life.dd->vb_script[FV_UNLOCK].times = 1);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -150,5 +364,7 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     g_d2.vb[0] = ((FakeVB *)g_life.dd->vbs[0])->memory;
     g_d2.vb[1] = ((FakeVB *)g_life.dd->vbs[1])->memory;
     td_material();
+    memset(&g_tdm, 0, sizeof g_tdm);
+    td_terrain_draws();
     life_end();
 }
