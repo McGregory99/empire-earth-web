@@ -7,6 +7,7 @@
 // replayed), instead of drawing something else.
 
 import { cmd } from '../src/frame-model.js';
+import * as FM from '../src/frame-model.js';
 import { RS, TSS } from '../src/d3d-tables.js';
 
 export const SIZE = 64;
@@ -44,8 +45,9 @@ export function rectVerts(x0, y0, x1, y1, z, diffuse = 0xffffffff) {
 }
 
 /** Upload `verts` at the start of the vertex buffer and draw them with `indices` (default: a quad of 4 vertices). */
-export function draw(verts, indices = [0, 1, 2, 0, 2, 3], primitive = 'triangleList') {
-  return [cmd.uploadVertices(pack152(verts), 0),
+export function draw(verts, indices = [0, 1, 2, 0, 2, 3], primitive = 'triangleList', fvf = 0x152) {
+  const bytes = fvf === 0x152 ? pack152(verts) : FM.packVertices(fvf, verts);
+  return [fvf === 0x152 ? cmd.uploadVertices(bytes, 0) : cmd.uploadVertices(bytes, 0, fvf),
     cmd.draw({ primitive, startVertex: 0, vertexCount: verts.length, indices: Uint16Array.from(indices) })];
 }
 
@@ -117,5 +119,60 @@ export const SCENES = [
     probes: [[32, 32, mix(WHITE, BLACK, (0.8 - 0.5) / 0.6), 'table linear 0.2..0.8 at depth 0.5: f = 0.5; the vertex exp fog with density 100 would give black']],
   },
 ];
+
+// ---- multitexture (stage 1) ------------------------------------------------------------------------------------------
+const TOP_ = { SELECTARG1: 2, SELECTARG2: 3, MODULATE: 4, MODULATE2X: 5, ADD: 7 };
+const xrgb = (...texels) => Uint8Array.from(texels.flatMap(([r, g, b]) => [b, g, r, 0]));
+const texture = (id, w, h, ...texels) => cmd.createTexture(id, w, h, 'XRGB8888', xrgb(...texels));
+const ts = (stage, id, v) => cmd.setTextureStageState(stage, id, v);
+/** Point sampling, clamp, no mips: texel values come out exactly. */
+const pointSampling = (stage) => [[16, 1], [17, 1], [18, 1], [12, 3]].map(([id, v]) => ts(stage, id, v));
+const rect2 = (x0, y0, x1, y1, uv0, uv1, diffuse = 0xffffffff) => [
+  { pos: [x0, y1, 0.5], diffuse, uv: uv0, uv1 }, { pos: [x1, y1, 0.5], diffuse, uv: uv0, uv1 },
+  { pos: [x1, y0, 0.5], diffuse, uv: uv0, uv1 }, { pos: [x0, y0, 0.5], diffuse, uv: uv0, uv1 }];
+/** Stage 0: texture 1 as is. Stage 1: texture 2 combined with the stage 0 result by `op`. */
+const twoStages = () => [
+  ts(0, 1, TOP_.SELECTARG1), ts(0, 2, 2), ts(0, 4, TOP_.SELECTARG1), ts(0, 5, 2), ...pointSampling(0),
+  ts(1, 2, 2), ts(1, 3, 1), ts(1, 4, 1), ...pointSampling(1), cmd.bindTexture(0, 1), cmd.bindTexture(1, 2)];
+const A = [100, 200, 50];
+const B = [150, 100, 255];
+const clamp8 = (v) => Math.min(255, Math.round(v));
+const per = (f) => A.map((a, i) => clamp8(f(a / 255, B[i] / 255) * 255));
+
+SCENES.push(
+  {
+    name: 'stage 1 colour operations combine the stage 0 result (CURRENT) with the stage 1 texture',
+    commands: () => {
+      const q = (cx, cy) => draw(rect2(cx - 0.4, cy - 0.4, cx + 0.4, cy + 0.4, [0.5, 0.5], [0.5, 0.5]), undefined, undefined, 0x252);
+      return [...plain(), texture(1, 1, 1, A), texture(2, 1, 1, B), ...twoStages(),
+        ts(1, 1, TOP_.MODULATE), ...q(-0.5, 0.5), ts(1, 1, TOP_.MODULATE2X), ...q(0.5, 0.5),
+        ts(1, 1, TOP_.ADD), ...q(-0.5, -0.5), ts(1, 1, TOP_.SELECTARG1), ...q(0.5, -0.5)];
+    },
+    probes: [[16, 16, per((a, b) => a * b), 'MODULATE: A * B per channel'], [48, 16, per((a, b) => 2 * a * b), 'MODULATE2X: 2 * A * B, clamped'],
+      [16, 48, per((a, b) => a + b), 'ADD: A + B, clamped to 255'], [48, 48, B, 'SELECTARG1 (the stage 1 texture): B']],
+  },
+  {
+    name: 'stage 1 SELECTARG2 passes the stage 0 result through',
+    commands: () => [...plain(), texture(1, 1, 1, A), texture(2, 1, 1, B), ...twoStages(), ts(1, 1, TOP_.SELECTARG2),
+      ...draw(rect2(-0.5, -0.5, 0.5, 0.5, [0.5, 0.5], [0.5, 0.5]), undefined, undefined, 0x252)],
+    probes: [[32, 32, A, 'SELECTARG2 = COLORARG2 = CURRENT = the stage 0 texture A']],
+  },
+  {
+    name: 'stage 1 reads the second texture coordinate set (TEXCOORDINDEX 1) and stage 0 can read it too',
+    commands: () => [...plain(), texture(1, 2, 1, [255, 255, 255], [255, 255, 255]), texture(2, 2, 1, [255, 0, 0], [0, 0, 255]), ...twoStages(),
+      ts(1, 1, TOP_.MODULATE), ts(1, 11, 1),
+      ...draw(rect2(-0.9, -0.4, -0.1, 0.4, [0.25, 0.5], [0.75, 0.5]), undefined, undefined, 0x252),
+      ts(1, 11, 0),
+      ...draw(rect2(0.1, -0.4, 0.9, 0.4, [0.25, 0.5], [0.75, 0.5]), undefined, undefined, 0x252)],
+    probes: [[16, 32, [0, 0, 255], 'set 1 is (0.75, 0.5): the right texel of the 2x1 texture, blue; white * blue'],
+      [48, 32, [255, 0, 0], 'TEXCOORDINDEX 0 reads set 0 (0.25, 0.5): the left texel, red']],
+  },
+  {
+    name: 'a disabled stage 0 ends the cascade: stage 1 is not processed',
+    commands: () => [...plain(), texture(1, 1, 1, A), texture(2, 1, 1, B), ...twoStages(), ts(0, 1, 1), ts(1, 1, TOP_.MODULATE),
+      ...draw(rect2(-0.5, -0.5, 0.5, 0.5, [0.5, 0.5], [0.5, 0.5], ARGB(255, 200, 100, 50)), undefined, undefined, 0x252)],
+    probes: [[32, 32, [200, 100, 50], 'COLOROP DISABLE at stage 0: the vertex colour is the output, whatever stage 1 says']],
+  },
+);
 
 export { lerp, mix, TSS };

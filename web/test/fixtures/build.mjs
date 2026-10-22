@@ -52,8 +52,8 @@ export class DataWriter {
     return ref;
   }
 
-  vertices(bytes, count, source = 0, start = 0) {
-    return this.add(1, 0, [0x152, 36, start, count, source], bytes);
+  vertices(bytes, count, source = 0, start = 0, fvf = 0x152, stride = 36) {
+    return this.add(1, 0, [fvf, stride, start, count, source], bytes);
   }
 
   indices(arr) {
