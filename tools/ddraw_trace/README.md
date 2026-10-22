@@ -209,6 +209,12 @@ file is made and the trace is byte-identical to a trace of the same run with the
 with and without it). With it on, the trace differs only by the `# data: <file> max=<n>` header line and the ` blob=...`
 suffixes below, which are always the last text of a line (strip from ` blob=` to remove them).
 
+**Which path is the default for a late-armed (keyed) scenario.** `game-trace.sh --data` with `SCN_KEYS` sets `DDT_DATA_EARLY=1`: pixels
+are stored as the game writes them, before the arming, and the arming only writes the `# snapshot ... blob=` index lines. That is the
+default and the only path used for real captures (`skirmish-6`: 0 `blob=unavailable`, no crash). `DDT_SNAPSHOT=1` (origin 6, a `Lock`
+of our own on every live surface at the arming) is opt-in and **unsafe on live game surfaces**: it crashed the real game on stale
+surfaces (surf#71, a 64x64 7-level texture), so `game-trace.sh` never sets it. It remains only for the mock-ddraw tests.
+
 In the real game, `game-trace.sh --data [--out-dir <dir>]` does this: the launcher scrubs the environment, so `swap-in.sh`
 writes `DDT_DATA=<raw trace path>` (and `DDT_DATA_MAX` when the caller's environment has it) into `ddraw_trace.cfg`. The run
 keeps the data as `trace.<tag>.data` next to `trace.<tag>.txt`; it fails if the data file was not written. `--out-dir` sends all
