@@ -6,7 +6,7 @@
 // See web/README.md for what is parsed and what fails loudly.
 
 import { cmd, vertexLayout } from './frame-model.js';
-import { formatFromPixelFormat } from './formats.js';
+import { formatFromPixelFormat, textureByteSize } from './formats.js';
 import { TraceError, ObjRef, parseCall, parseBlob, dataFileFromHeader } from './trace-parse.js';
 import { DataFile, KIND } from './data-file.js';
 
@@ -190,7 +190,7 @@ class Loader {
     if (r.kind !== KIND.SURFACE) this.fail(`record at ${blob.offset} is not a surface record`);
     if (r.object !== s.id) this.fail(`record at ${blob.offset} belongs to surf#${r.object}, not surf#${s.id}`);
     const [l, t, rt, b, w, h, rowBytes, rows, , , fourcc, bpp, rm, gm, bm, am] = r.params;
-    if (fourcc) this.fail(`unsupported: block-compressed surface surf#${s.id} (fourcc 0x${fourcc.toString(16)})`);
+    if (fourcc) { this.applyCompressedBlob(s, blob, r, fourcc); return; }
     const px = bpp / 8;
     if (!Number.isInteger(px) || px < 1 || rowBytes !== (rt - l) * px || rows !== b - t || r.payload.length !== rowBytes * rows) {
       this.fail(`surf#${s.id}: inconsistent surface record at ${blob.offset}`);
@@ -204,6 +204,23 @@ class Loader {
     }
     s.masks = { rgbBitCount: bpp, rMask: rm, gMask: gm, bMask: bm, aMask: am };
     for (let y = 0; y < rows; y++) s.pixels.set(r.payload.subarray(y * rowBytes, (y + 1) * rowBytes), ((t + y) * w + l) * px);
+    s.dirty = true;
+  }
+
+  // A block-compressed surface (DXT): the record is one contiguous run of blocks covering the whole surface, replacing the previous pixels.
+  applyCompressedBlob(s, blob, r, fourcc) {
+    const [l, t, rt, b, w, h, runBytes, rows] = r.params;
+    let format;
+    try { format = formatFromPixelFormat({ fourcc }); } catch (e) { this.fail(`surf#${s.id}: ${e.message}`); }
+    const expected = textureByteSize(format, w, h);
+    if (l !== 0 || t !== 0 || rt !== w || b !== h || rows !== 1 || runBytes !== expected || r.payload.length !== expected) {
+      this.fail(`surf#${s.id}: ${format} record at ${blob.offset} is not the whole ${w}x${h} surface (${expected} bytes expected)`);
+    }
+    if (s.pixels && s.lastWhole === blob.offset && s.width === w && s.height === h && s.masks?.fourcc === fourcc) return; // same content again
+    s.lastWhole = blob.offset;
+    s.width = w; s.height = h; s.bpp = 0;
+    s.pixels = r.payload.slice();
+    s.masks = { fourcc };
     s.dirty = true;
   }
 

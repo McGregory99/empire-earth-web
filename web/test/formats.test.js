@@ -78,7 +78,7 @@ test('bytesPerPixel and unknown formats fail loudly', () => {
   assert.equal(bytesPerPixel('RGB565'), 2);
   assert.equal(bytesPerPixel('ARGB8888'), 4);
   assert.throws(() => bytesPerPixel('DXT1'), /unsupported texture format/i);
-  assert.throws(() => convertToRGBA8('DXT1', 4, 4, new Uint8Array(8)), /unsupported texture format/i);
+  assert.throws(() => convertToRGBA8('PVRTC', 4, 4, new Uint8Array(8)), /unsupported texture format/i);
 });
 
 test('too few bytes is an error, not a silent partial upload', () => {
@@ -94,5 +94,5 @@ test('formatFromPixelFormat identifies the six formats of the golden summary', (
   assert.equal(f(16, 0xf00, 0xf0, 0xf, 0xf000), 'ARGB4444');
   assert.equal(f(32, 0xff0000, 0xff00, 0xff, 0xff000000), 'ARGB8888');
   assert.throws(() => f(24, 0xff0000, 0xff00, 0xff, 0), /unsupported pixel format/i);
-  assert.deepEqual([...TEX_FORMATS].sort(), ['ARGB1555', 'ARGB4444', 'ARGB8888', 'RGB555', 'RGB565', 'XRGB8888']);
+  assert.deepEqual([...TEX_FORMATS].sort(), ['ARGB1555', 'ARGB4444', 'ARGB8888', 'DXT1', 'DXT3', 'DXT5', 'RGB555', 'RGB565', 'XRGB8888']);
 });

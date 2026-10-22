@@ -3,7 +3,7 @@
 
 import { MAIN_VS, MAIN_FS, BLIT_VS, BLIT_FS } from './shaders.js';
 import { DeviceState } from './state.js';
-import { convertToRGBA8, bytesPerPixel } from './formats.js';
+import { convertToRGBA8, bytesPerPixel, isCompressed, textureByteSize } from './formats.js';
 import { primitiveMode, unpackColor, UnsupportedError } from './d3d-tables.js';
 import { FVF, CLEAR, validateCommand, vertexLayout } from './frame-model.js';
 
@@ -141,10 +141,13 @@ export class Renderer {
   }
 
   _createTexture(c) {
-    const bpp = bytesPerPixel(c.format);
+    const compressed = isCompressed(c.format);
+    const bpp = compressed ? 0 : bytesPerPixel(c.format);
     const pitch = c.pitch ?? c.width * bpp;
-    const raw = new Uint8Array(c.width * c.height * bpp); // tightly packed copy of the source
-    for (let y = 0; y < c.height; y++) raw.set(c.bytes.subarray(y * pitch, y * pitch + c.width * bpp), y * c.width * bpp);
+    // tightly packed copy of the source (compressed: the whole run of blocks)
+    const raw = new Uint8Array(textureByteSize(c.format, c.width, c.height));
+    if (compressed) raw.set(c.bytes.subarray(0, raw.length));
+    else for (let y = 0; y < c.height; y++) raw.set(c.bytes.subarray(y * pitch, y * pitch + c.width * bpp), y * c.width * bpp);
     const old = this.textures.get(c.id);
     if (old) this._freeVariants(old);
     this.textures.set(c.id, { width: c.width, height: c.height, format: c.format, bpp, raw, key: c.colorKey, variants: new Map() });
@@ -152,6 +155,12 @@ export class Renderer {
 
   _updateTexture(c) {
     const t = this._tex(c.id);
+    if (isCompressed(t.format)) {
+      if (c.rect || c.bytes.length < t.raw.length) throw new Error(`updateTexture ${c.id}: a ${t.format} texture is replaced whole (${t.raw.length} bytes)`);
+      t.raw.set(c.bytes.subarray(0, t.raw.length));
+      this._freeVariants(t);
+      return;
+    }
     const r = c.rect ?? { x: 0, y: 0, w: t.width, h: t.height };
     if (r.x < 0 || r.y < 0 || r.x + r.w > t.width || r.y + r.h > t.height) throw new Error(`updateTexture ${c.id}: rect outside the texture`);
     if (c.bytes.length < r.w * r.h * t.bpp) throw new Error(`updateTexture ${c.id}: needs ${r.w * r.h * t.bpp} bytes`);

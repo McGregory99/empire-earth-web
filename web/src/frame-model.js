@@ -5,7 +5,7 @@
 // recorded call it cares about, in order. Commands are plain objects tagged by `op`, built with the `cmd`
 // constructors below, which validate their arguments and throw FrameModelError on malformed input.
 
-import { TEX_FORMATS, bytesPerPixel } from './formats.js';
+import { TEX_FORMATS, bytesPerPixel, isCompressed, textureByteSize } from './formats.js';
 
 export class FrameModelError extends Error {
   constructor(message) { super(message); this.name = 'FrameModelError'; }
@@ -126,8 +126,8 @@ const CHECKS = {
     if (!TEX_FORMATS.includes(c.format)) fail(`createTexture: unsupported texture format "${c.format}"`);
     if (!(c.width > 0 && c.height > 0)) fail('createTexture: size must be positive');
     if (!isU8(c.bytes)) fail('createTexture: bytes must be a Uint8Array');
-    const pitch = c.pitch ?? c.width * bytesPerPixel(c.format);
-    const need = pitch * (c.height - 1) + c.width * bytesPerPixel(c.format);
+    const pitch = isCompressed(c.format) ? 0 : (c.pitch ?? c.width * bytesPerPixel(c.format));
+    const need = isCompressed(c.format) ? textureByteSize(c.format, c.width, c.height) : pitch * (c.height - 1) + c.width * bytesPerPixel(c.format);
     if (c.bytes.length < need) fail(`createTexture: ${c.format} ${c.width}x${c.height} needs ${need} bytes, got ${c.bytes.length}`);
   },
   updateTexture(c) {
