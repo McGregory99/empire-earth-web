@@ -265,4 +265,38 @@ SCENES.push(
   },
 );
 
+// ---- block-compressed textures ---------------------------------------------------------------------------------------
+const dxtRow = (...idx) => idx.reduce((m, v, i) => m | (v << (2 * i)), 0);
+const dxtColors = (c0, c1, rows) => [c0 & 255, c0 >> 8, c1 & 255, c1 >> 8, ...rows];
+const dxtAlpha5 = (a0, a1, indices) => {
+  let bits = 0n;
+  indices.forEach((v, i) => { bits |= BigInt(v) << BigInt(3 * i); });
+  return [a0, a1, ...Array.from({ length: 6 }, (_, i) => Number((bits >> BigInt(8 * i)) & 255n))];
+};
+/** Clip coordinates of a rectangle given in D3D screen coordinates (pixel centres on integers), with texture coordinates 0..1. */
+const screenRect = (sx0, sy0, sx1, sy1) => {
+  const cx = (x) => (2 * x) / SIZE - 1, cy = (y) => 1 - (2 * y) / SIZE;
+  return rectVerts(cx(sx0), cy(sy1), cx(sx1), cy(sy0), 0.5);
+};
+const blendOn = [[RS.ALPHABLENDENABLE, 1], [RS.SRCBLEND, 5], [RS.DESTBLEND, 6]];
+const oneTexture = (id) => [ts(0, 1, 2), ts(0, 2, 2), ts(0, 4, 2), ts(0, 5, 2), ...pointSampling(0), cmd.bindTexture(0, id)];
+
+SCENES.push(
+  {
+    name: 'DXT1 texture: four colour block decoded on the CPU, one texel per pixel',
+    commands: () => [...plain(), cmd.createTexture(1, 4, 4, 'DXT1', Uint8Array.from(dxtColors(0xf800, 0x001f, [dxtRow(0, 1, 2, 3), 0, 0, 0]))),
+      ...oneTexture(1), ...draw(screenRect(7.5, 7.5, 11.5, 11.5))],
+    probes: [[8, 8, [255, 0, 0], 'index 0 is c0 (red)'], [9, 8, [0, 0, 255], 'index 1 is c1 (blue)'],
+      [10, 8, [170, 0, 85], 'index 2 is (2 c0 + c1) / 3'], [11, 8, [85, 0, 170], 'index 3 is (c0 + 2 c1) / 3'], [8, 11, [255, 0, 0], 'the other rows use index 0']],
+  },
+  {
+    name: 'DXT5 texture: interpolated alpha through alpha blending',
+    commands: () => [...plain(blendOn), cmd.createTexture(1, 4, 4, 'DXT5', Uint8Array.from([...dxtAlpha5(255, 0, [0, 1, 2, 3, 4, 5, 6, 7]), ...dxtColors(0xffff, 0xffff, [0, 0, 0, 0])])),
+      ...oneTexture(1), ...draw(screenRect(7.5, 7.5, 11.5, 11.5))],
+    probes: [[8, 8, gray(1), 'alpha index 0 is a0 = 255: white over black stays white'], [9, 8, [0, 0, 0], 'alpha index 1 is a1 = 0'],
+      [10, 8, [218, 218, 218], 'alpha index 2 is (6 a0 + a1) / 7 = 218'], [8, 9, [145, 145, 145], 'second row, index 4: (3 a0 + 4 a1) / 7 = 145'],
+      [11, 9, [36, 36, 36], 'index 7: (a0 + 6 a1) / 7 = 36']],
+  },
+);
+
 export { lerp, mix, TSS };

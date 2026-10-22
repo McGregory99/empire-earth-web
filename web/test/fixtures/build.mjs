@@ -66,6 +66,11 @@ export class DataWriter {
     return this.add(3, id, [l, t, r, b, w, h, (r - l) * (fmt.bpp / 8), b - t, origin, fmt.a ? 0x41 : 0x40, 0, fmt.bpp, fmt.r, fmt.g, fmt.b, fmt.a], payload);
   }
 
+  /** A block-compressed surface (DDPF_FOURCC): one contiguous run of blocks covering the whole surface. */
+  surfaceFourCC(id, w, h, fourcc, payload, origin = 1) {
+    return this.add(3, id, [0, 0, w, h, w, h, payload.length, 1, origin, 0x4, fourcc, 0, 0, 0, 0, 0], payload);
+  }
+
   buffer() { return Buffer.concat(this.parts); }
 }
 
