@@ -302,6 +302,22 @@ static void d2_ours_only(void)
           g_life.e->label, bitmap_null, bitmap_bare, bitmap_screen, rhombus_bare, lines_null, points_null, lines_screen, g_life.dd->log);
 }
 
+/* A draw whose device answers "still drawing" for ever gives up after a bound (the original waits for ever): the 30000 busy answers
+ * scripted here are more than the 10000 attempts our build makes, and the draw ends, with the cursor moved on and the error recorded. */
+static void d2_ours_busy_bound(void)
+{
+    GEBitmapLayout *bitmap = d2_bitmap(d2_texture(0, 1.0f, 0.0f, 0.0f), d2_texture(1, 1.0f, 0.0f, 0.0f), 1.0f);
+    d2_prepare(0, 8);
+    d2_script(FD_DRAW_INDEXED, D2_BUSY, 30000);
+    long ret = ((D2Bitmap)LIFE_SLOT(Draw_9))(g_life.obj, bitmap, 0);
+    int left = g_life.dd->dev_script[FD_DRAW_INDEXED].times;
+    g_life.dd->dev_script[FD_DRAW_INDEXED].times = 0;
+    CHECK(ret == 0 && 30000 - left <= 10001 && life_record(0)->vertexCursor == 12,
+          "%s: draw2d: a draw whose device is busy for ever gives up after at most 10000 retries (ret %ld, attempts %d, cursor %lu)", g_life.e->label, ret,
+          30000 - left, (unsigned long)life_record(0)->vertexCursor);
+}
+
+
 static void check_draw2d(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -320,6 +336,7 @@ static void check_draw2d(const struct Expect *e, HMODULE h, const ScreenApi *api
     d2_sweep();
     if (e->ours) {
         d2_ours_only();
+        d2_ours_busy_bound();
     }
     life_end();
 }
