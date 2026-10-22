@@ -66,3 +66,26 @@ does not check vertex or texture content: the startup scenario (full hashes) and
 * Regenerate: `make -C tools/ddraw_trace game-check-skirmish` captures once; to replace the golden after an intended change:
   `python3 -I tools/ddraw_trace/scripts/normalize.py --structure < tools/ddraw_trace/build/game-trace-skirmish-paused/last.txt | gzip -9 -n > tests/ddraw_trace/golden/skirmish-paused-n60.structure.trace.gz`,
   then update the checksum here and in `tests/ddraw_trace/test-normalize.sh`.
+
+## 3b. Replay scenes: the paused skirmish from other views
+
+Four scenes for the replay pipeline (viewer vs game), all from the same save and the same pause as scenario 3, plus
+`SCN_SETUP_ARGS`: `ee-key.exe` actions sent after the pause was proven and before the proxy is armed. The game stays paused and keeps
+presenting, so the capture window shows the new view. The driver logs `setup input ...`, requires the simulation to be still stopped
+afterwards (`SETUP_SETTLE` 3 s, then no new tick line in `PAUSE_WINDOW`), and fails the run if the helper fails or hangs (no retry:
+a half-done drag must not be repeated). Actions: `<hex scancode>[/<ms hold>]` (arrows are extended: `e04b` left, `e04d` right, `e048`
+up, `e050` down), `wheel:+n|-n`, `click:fx,fy`, `drag:fx1,fy1,fx2,fy2` (fractions 0..1 of the game window's client area).
+
+| scene | file | setup actions | what it adds to the replay |
+| --- | --- | --- | --- |
+| camera moved | `skirmish-scrolled.env` | `e04b/2500 e048/1500` | another camera position, terrain and units not in the base view |
+| zoomed | `skirmish-zoomed.env` | `wheel:+6` | another zoom (use `wheel:-6` if the game zooms the other way) |
+| units selected | `skirmish-selected.env` | `drag:0.30,0.35,0.70,0.65` | selection rings and the unit panel (box over the middle of the view) |
+| shroud edge | `skirmish-shroud.env` | `e04b/9000 e048/9000` | the map corner: unexplored shroud and fog edges |
+
+Run (real game, one at a time, takes the game-run lock): `make -C tools/ddraw_trace build/ddraw.dll`, then
+`tools/ddraw_trace/scripts/game-trace.sh --scenario tests/ddraw_trace/scenarios/<scene>.env --data --out-dir ~/Games/EmpireEarth-re/captures/replay/<scene> tools/ddraw_trace/build/ddraw.dll`.
+Not done yet: these scenes have not been captured with the real game (the keys, the zoom direction and the selection box need a first
+look at the screenshots `shot-*.png`); a different age needs another save (only `ee_p24_skirm1.ees` exists), so there is no such
+scene; there are no goldens for them (the structure form is not yet checked). The offline tests (`tests/game_run/test-trace-driver.sh`,
+`test-ee-key.sh`) cover the setup step, the helper's actions and the validity of every scenario file.

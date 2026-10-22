@@ -372,6 +372,8 @@ window of presents); `tests/ddraw_trace/scenarios.md` lists them with their comm
 goldens. `normalize.py --structure` is the form of a trace that does not depend on the history of the run before the window or on
 the tick the game was paused at (see there for what it masks and why).
 
+`SCN_SETUP_ARGS` in a scenario file sends `ee-key.exe` actions (extended keys with a hold, `wheel:`, `click:`, `drag:`) after the pause and before the arming, to capture other views of the same save; the four replay scenes (`skirmish-scrolled`, `-zoomed`, `-selected`, `-shroud`) and how to run each are in `tests/ddraw_trace/scenarios.md`, section 3b.
+
 ## Self-check
 
 `dispatch_init` checks the argument classification: every argument type string that looks like a COM interface (`LPDIRECT*`,

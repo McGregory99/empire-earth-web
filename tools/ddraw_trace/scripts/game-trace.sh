@@ -67,6 +67,8 @@ SCN_NAME="" SCN_ARGS="" SCN_SAVE="" SCN_SAVE_SHA256="" SCN_PRESENTS="" SCN_ENV="
 SCN_NORMALIZE="" # "structure": two captures must be identical in normalize.py's --structure form (see there for what it leaves out)
 SCN_KEY_WINDOW="" # class of the game's window: ee-key.exe gives it the focus (or posts the keys to it) before pressing
 SCN_KEYS="" # scancodes (hex) pressed once the simulation runs; with keys, the proxy is armed only after the simulation stopped
+SCN_SETUP_ARGS="" # ee-key actions sent after the pause was proven and before the arming (e04b/2500 = hold left arrow 2.5 s; wheel:+4; click:fx,fy; drag:fx1,fy1,fx2,fy2): the view the capture shows
+SETUP_SETTLE=3 # seconds between the setup input and the pause check: the paused game keeps presenting the new view
 SCN_SHOTS=0 # screenshots of the paused game taken after the capture window (reference frames for the viewer); 0 = none
 SCN_SHOT_GAP=4 # seconds between them
 SHOT_CMD=screencapture # read-only: it only reads the display; -x keeps it silent
@@ -145,33 +147,40 @@ tick_lines() { grep -c 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null || 
 # The last tick line (its number) the game wrote, for the log.
 last_tick() { grep 'simhash: tick' "$GR_GAME/ee-version.log" 2>/dev/null | tail -1 | sed 's/.*simhash: tick \([0-9]*\).*/\1/'; }
 
-# Press the scenario's keys, wait, and say whether the simulation has stopped: no new tick line in PAUSE_WINDOW seconds.
-press_and_check() {
-  local before after
-  # ee-key.exe lists the windows of its desktop and the foreground one before it presses: a run that loses its keys says where they went.
-  # It runs in the background with a limit: a Wine process that hung after its last line once held the whole run for ten minutes.
-  local kpid waited=0 krc timed_out=0
-  # The helper runs in a session of its own (setsid), so $kpid is also its process-group id: the timeout kills exactly the helper
-  # and the Wine processes it started, never a process that merely has its path in the command line.
-  # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" python3 -I -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 &
+# Run ee-key.exe with the given actions in the background, with a limit: a Wine process that hung after its last line once held the
+# whole run for ten minutes.  It lists the windows of its desktop and the foreground one before it presses, so a run that loses its
+# keys says where they went.  It runs in a session of its own (setsid), so $kpid is also its process-group id: the timeout kills
+# exactly the helper and the Wine processes it started, never a process that merely has its path in the command line.
+# Returns 0, or 124 when it was killed at the limit, or the helper's own non-zero status.
+run_key_helper() {
+  local kpid waited=0 krc
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" python3 -I -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} "$@" >>"$OUT/ee-key.out" 2>&1 &
   kpid=$!
   while kill -0 "$kpid" 2>/dev/null; do
     if [ "$waited" -ge "$KEY_TIMEOUT" ]; then
       kill -KILL -- "-$kpid" 2>/dev/null; kill -KILL "$kpid" 2>/dev/null
       wait "$kpid" 2>/dev/null
-      timed_out=1
-      # The helper may have pressed the key before it hung: the pause is a toggle, so whether the press took is decided by the
-      # tick lines below, never assumed.
-      gr_log "the key helper did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out); deciding from the tick lines whether the press took"
-      break
+      return 124
     fi
     sleep 1
     waited=$((waited + 1))
   done
-  if [ "$timed_out" = 0 ]; then
-    wait "$kpid"; krc=$?
-    [ "$krc" -eq 0 ] || { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
+  wait "$kpid"; krc=$?
+  return "$krc"
+}
+
+# Press the scenario's keys, wait, and say whether the simulation has stopped: no new tick line in PAUSE_WINDOW seconds.
+press_and_check() {
+  local before after krc
+  # shellcheck disable=SC2086
+  run_key_helper $SCN_KEYS; krc=$?
+  if [ "$krc" -eq 124 ]; then
+    # The helper may have pressed the key before it hung: the pause is a toggle, so whether the press took is decided by the
+    # tick lines below, never assumed.
+    gr_log "the key helper did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out); deciding from the tick lines whether the press took"
+  elif [ "$krc" -ne 0 ]; then
+    gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"
+    return 2
   fi
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
@@ -219,6 +228,19 @@ scenario_pause_and_arm() {
     [ "$rc" -eq 1 ] && gr_log "FAIL: the simulation is still running after the second press"
   fi
   [ "$rc" -eq 0 ] || return 1
+  if [ -n "$SCN_SETUP_ARGS" ]; then
+    gr_log "setup input (the game stays paused, the view changes): $SCN_SETUP_ARGS"
+    # shellcheck disable=SC2086
+    run_key_helper $SCN_SETUP_ARGS; rc=$?
+    # not a toggle, but a half-done drag or scroll must not be repeated blindly: no retry
+    [ "$rc" -ne 124 ] || { gr_log "FAIL: the setup input did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out)"; return 1; }
+    [ "$rc" -eq 0 ] || { gr_log "FAIL: the setup input failed (see $OUT/ee-key.out)"; return 1; }
+    sleep "$SETUP_SETTLE"
+    local b4 af
+    b4="$(tick_lines)"; sleep "$PAUSE_WINDOW"; af="$(tick_lines)"
+    [ "$b4" = "$af" ] || { gr_log "FAIL: the simulation ran again after the setup input ($b4 -> $af tick lines): it toggled the pause"; return 1; }
+    gr_log "the simulation is still stopped after the setup input ($af tick lines, last tick $(last_tick))"
+  fi
   gr_log "arming the proxy"
   : >"$arm"
 }
