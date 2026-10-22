@@ -213,11 +213,10 @@ scenario_pause_and_arm() {
   local rest=$((PRE_KEY_DELAY - ($(date +%s) - first_at)))
   [ "$rest" -le 0 ] || sleep "$rest"
   press_and_check; rc=$?
-  if [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ]; then
+  if [ "$rc" -eq 1 ]; then
     gr_log "pressing again (once): the first press did not stop the simulation"
     press_and_check; rc=$?
     [ "$rc" -eq 1 ] && gr_log "FAIL: the simulation is still running after the second press"
-    [ "$rc" -eq 3 ] && gr_log "FAIL: the key helper did not finish in ${KEY_TIMEOUT}s twice"
   fi
   [ "$rc" -eq 0 ] || return 1
   gr_log "arming the proxy"
