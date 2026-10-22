@@ -52,6 +52,8 @@ struct FakeDD {
     /* the device's state methods (state_checks.h, P2.6.4) */
     long rs_fail;                        /* the next n SetRenderState calls fail (and are still logged) */
     long set_light_result;               /* what SetLight returns */
+    DWORD get_light[8][26];              /* what GetLight hands back for each light (the D3DLIGHT7, 26 words) */
+    long get_light_result;               /* what GetLight returns */
     long enable_result;                  /* what LightEnable returns */
     /* the device and scene lifecycle (lifecycle_checks.h, P2.6.5) */
     long qi_d3d_result;                  /* what QueryInterface(IDirect3D7) returns (non-zero: no interface) */
@@ -661,6 +663,15 @@ static long FAKE_DD_STDCALL fake_dev_set_light(FakeDevice *device, DWORD index, 
     return device->dd->set_light_result;
 }
 
+static long FAKE_DD_STDCALL fake_dev_get_light(FakeDevice *device, DWORD index, DWORD *light)
+{
+    fake_dev_log(device, "GETLIGHT(%lx)", (unsigned long)index);
+    if (index < 8) {
+        memcpy(light, device->dd->get_light[index], sizeof device->dd->get_light[index]);
+    }
+    return device->dd->get_light_result;
+}
+
 static long FAKE_DD_STDCALL fake_dev_light_enable(FakeDevice *device, DWORD index, DWORD enable)
 {
     fake_dev_log(device, "ENABLE(%lx,%lx)", (unsigned long)index, (unsigned long)enable);
@@ -812,6 +823,7 @@ static void fake_dd_init(FakeDD *dd)
     device_vtbl[13] = (const void *)fake_dev_set_viewport;
     device_vtbl[16] = (const void *)fake_dev_set_material;
     device_vtbl[18] = (const void *)fake_dev_set_light;
+    device_vtbl[19] = (const void *)fake_dev_get_light;
     device_vtbl[20] = (const void *)fake_dev_set_render_state;
     device_vtbl[44] = (const void *)fake_dev_light_enable;
     for (int i = 0; i < 49; i++) {

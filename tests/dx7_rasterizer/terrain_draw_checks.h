@@ -798,6 +798,192 @@ static void td_lines_draws(void)
              g_life.dd->vb_script[FV_UNLOCK].times = 1);
 }
 
+/* ---- Light(GETerrainMesh &, screen), slot 34 ---- */
+
+typedef long(THISCALL *TerrainLightFn)(void *self, void *mesh, unsigned long screen);
+typedef long(THISCALL *AddLightFn)(void *self, const void *light, unsigned long screen, unsigned long *id);
+typedef long(THISCALL *RemoveAllLightsFn)(void *self, unsigned long screen);
+
+static GEVectorLayout g_normals[64];
+
+/* The terrain of td_lines_mesh with a normal, a colour index and a colour for every point, a colour table, a water colour and the render
+ * vertices' colours set to a pattern that no lighting writes. */
+static void td_light_mesh(unsigned x0, unsigned y0, unsigned width, unsigned height, int visible_rows)
+{
+    td_lines_mesh(x0, y0, width, height, 9);
+    GETerrainMeshLayout *mesh = g_tdm.mesh;
+    uint32_t state = 909;
+    for (int i = 0; i < 64; i++) {
+        g_normals[i].x = td_value(&state, -1.0f, 1.0f);
+        g_normals[i].y = td_value(&state, -1.0f, 1.0f);
+        g_normals[i].z = td_value(&state, -1.0f, 1.0f);
+    }
+    memset(&g_normals[5], 0, sizeof g_normals[5]);
+    for (unsigned r = 0; r < 101; r++) {
+        for (unsigned c = 0; c < 105; c++) {
+            g_line_points[r][c].normal = &g_normals[(r * 7 + c) % 64];
+            g_line_points[r][c].colorIndex = (uint8_t)((r * 3 + c) % 256);
+        }
+    }
+    for (int i = 0; i < 256; i++) {
+        mesh->colorTable[i].r = td_value(&state, 0.0f, 1.0f);
+        mesh->colorTable[i].g = td_value(&state, 0.0f, 1.0f);
+        mesh->colorTable[i].b = td_value(&state, 0.0f, 1.0f);
+    }
+    mesh->waterColor.r = 0.2f;
+    mesh->waterColor.g = 0.4f;
+    mesh->waterColor.b = 0.6f;
+    for (int i = 0; i < 101 * 101; i++) {
+        mesh->waterPointVisibility[i] = i % 3 == 0;
+        memset(&mesh->renderVertices[i].color, 0xa5, sizeof mesh->renderVertices[i].color);
+        memset(&mesh->waterRenderVertices[i].color, 0xa5, sizeof mesh->waterRenderVertices[i].color);
+    }
+    mesh->visibleRows.last = visible_rows ? g_tdm.rows + 2 : g_tdm.rows;
+}
+
+/* The light `id` as the device will hand it back: a type, a diffuse colour and a direction. */
+static void td_light_script(int id, unsigned long type, float r, float g, float b, float dx, float dy, float dz)
+{
+    DWORD *words = g_life.dd->get_light[id];
+    memset(words, 0, sizeof g_life.dd->get_light[id]);
+    words[0] = type;
+    memcpy(&words[1], &r, 4);
+    memcpy(&words[2], &g, 4);
+    memcpy(&words[3], &b, 4);
+    memcpy(&words[16], &dx, 4);
+    memcpy(&words[17], &dy, 4);
+    memcpy(&words[18], &dz, 4);
+}
+
+/* The lights 0 .. count - 1 taken in the DLL's table (the fakes hand back what td_light_script set). */
+static void td_lights_taken(int count)
+{
+    GELightLayout light;
+    ((RemoveAllLightsFn)LIFE_SLOT(RemoveAllLights))(g_life.obj, 0);
+    for (int i = 0; i < count; i++) {
+        unsigned long id = 0;
+        state_make_light(&light, 1, 1.0f + (float)i);
+        ((AddLightFn)LIFE_SLOT(AddLight))(g_life.obj, &light, 0, &id);
+    }
+    log_clear(g_life.dd);
+    memset(g_life.dd->get_light, 0, sizeof g_life.dd->get_light);
+}
+
+static void td_colors_report(const char *tag, const GETMRenderVertexLayout *vertices)
+{
+    unsigned changed = 0, first = TC_VERTICES;
+    uint32_t hash = 2166136261u;
+    for (unsigned i = 0; i < TC_VERTICES; i++) {
+        const uint32_t *w = (const uint32_t *)&vertices[i].color;
+        if (w[0] != 0xa5a5a5a5u || w[1] != 0xa5a5a5a5u || w[2] != 0xa5a5a5a5u) {
+            changed++;
+            if (first == TC_VERTICES) {
+                first = i;
+            }
+        }
+        hash = (hash ^ w[0]) * 16777619u;
+        hash = (hash ^ w[1]) * 16777619u;
+        hash = (hash ^ w[2]) * 16777619u;
+    }
+    life_extra(" %s=%08x n=%u", tag, (unsigned)hash, changed);
+    if (first < TC_VERTICES) {
+        const uint32_t *w = (const uint32_t *)&vertices[first].color;
+        life_extra(" v%u=%x,%x,%x", first, (unsigned)w[0], (unsigned)w[1], (unsigned)w[2]);
+    }
+}
+
+#define TD_LIGHT(name, ...)                                                                                                                 \
+    do {                                                                                                                                    \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            ((TerrainLightFn)LIFE_SLOT(Light))(g_life.obj, g_tdm.mesh, 0);                                                                  \
+            td_colors_report("t", g_tdm.mesh->renderVertices);                                                                              \
+            td_colors_report("w", g_tdm.mesh->waterRenderVertices);                                                                         \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_light_draws(void)
+{
+    GERasterizerLayout *base = (GERasterizerLayout *)g_life.obj;
+    base->computedAmbientColor.r = 0.2f;
+    base->computedAmbientColor.g = 0.3f;
+    base->computedAmbientColor.b = 0.4f;
+    td_lights_taken(3);
+    td_light_script(0, 3, 1.0f, 0.5f, 0.25f, 0.3f, -0.4f, -0.8f);
+    td_light_script(1, 3, 0.2f, 0.9f, 0.4f, -0.5f, 0.2f, -0.6f);
+    td_light_script(2, 3, 0.0f, 0.0f, 0.7f, 0.1f, 0.1f, 0.5f);
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light of three directional lights");
+    td_lights_taken(0);
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light without a light");
+    td_lights_taken(4);
+    td_light_script(0, 1, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, -1.0f);
+    td_light_script(1, 3, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f);
+    td_light_script(2, 3, __builtin_nanf(""), 0.0f, 0.0f, 0.0f, 0.0f, -1.0f);
+    td_light_script(3, 3, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f, -1.0f);
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light skips point lights, black lights and colours that are not a number");
+    td_lights_taken(2);
+    td_light_script(0, 3, 0.6f, 0.6f, 0.6f, 0.0f, 0.0f, 0.0f);
+    td_light_script(1, 3, 0.3f, 0.2f, 0.1f, 0.5f, 0.5f, 0.0f);
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light with directions that have no vertical part");
+    td_lights_taken(3);
+    td_light_script(0, 3, 1.0f, 0.5f, 0.25f, 0.3f, -0.4f, -0.8f);
+    td_light_script(1, 3, 0.2f, 0.9f, 0.4f, -0.5f, 0.2f, -0.6f);
+    td_light_script(2, 3, 0.0f, 0.0f, 0.7f, 0.1f, 0.1f, 0.5f);
+    td_light_mesh(3, 2, 4, 3, 0);
+    TD_LIGHT("terrain draw: Light without visible rows does nothing");
+    td_light_mesh(0, 0, 99, 99, 1);
+    TD_LIGHT("terrain draw: Light of the whole grid");
+    td_light_mesh(10, 20, 0, 0, 1);
+    TD_LIGHT("terrain draw: Light of a window of 2 x 2 points");
+    base->computedAmbientColor.r = 3.0f;
+    base->computedAmbientColor.g = 0.0f;
+    base->computedAmbientColor.b = -0.5f;
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light with an ambient colour out of range");
+    base->computedAmbientColor.r = 0.2f;
+    base->computedAmbientColor.g = 0.3f;
+    base->computedAmbientColor.b = 0.4f;
+    td_lights_taken(8);
+    for (int i = 0; i < 8; i++) {
+        td_light_script(i, 3, 0.1f + 0.1f * (float)i, 0.9f - 0.1f * (float)i, 0.05f * (float)i, 0.2f * (float)i - 0.7f, 0.5f - 0.1f * (float)i, -0.1f - 0.1f * (float)i);
+    }
+    td_light_mesh(3, 2, 4, 3, 1);
+    TD_LIGHT("terrain draw: Light of eight lights");
+
+    /* many lights and normals as a hash: the products and sums are x87 code */
+    LS("terrain draw: Light over 120 sets of lights", LIFE_NODIFF, {
+        uint32_t hash = 2166136261u;
+        uint32_t seed = 1717;
+        for (int k = 0; k < 120; k++) {
+            int lights = 1 + k % 4;
+            td_lights_taken(lights);
+            for (int i = 0; i < lights; i++) {
+                td_light_script(i, 3, td_value(&seed, 0.0f, 1.5f), td_value(&seed, 0.0f, 1.5f), td_value(&seed, 0.0f, 1.5f), td_value(&seed, -1.0f, 1.0f),
+                                td_value(&seed, -1.0f, 1.0f), td_value(&seed, -1.0f, 0.4f));
+            }
+            base->computedAmbientColor.r = td_value(&seed, 0.0f, 1.0f);
+            base->computedAmbientColor.g = td_value(&seed, 0.0f, 1.0f);
+            base->computedAmbientColor.b = td_value(&seed, 0.0f, 1.0f);
+            td_light_mesh(3, 2, 3, 3, 1);
+            ((TerrainLightFn)LIFE_SLOT(Light))(g_life.obj, g_tdm.mesh, 0);
+            for (int v = 0; v < 101 * 101; v += 7) {
+                const uint32_t *w = (const uint32_t *)&g_tdm.mesh->renderVertices[v].color;
+                const uint32_t *x = (const uint32_t *)&g_tdm.mesh->waterRenderVertices[v].color;
+                for (int i = 0; i < 3; i++) {
+                    hash = (hash ^ w[i]) * 16777619u;
+                    hash = (hash ^ x[i]) * 16777619u;
+                }
+            }
+        }
+        life_extra("hash=%08x", (unsigned)hash);
+    });
+    td_lights_taken(0);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -817,5 +1003,6 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_grid_draws();
     td_highlight_draws();
     td_lines_draws();
+    td_light_draws();
     life_end();
 }
