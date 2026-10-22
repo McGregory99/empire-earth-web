@@ -495,6 +495,12 @@ long EEWebNullRasterizer::Set3DMode(ulong screen)
 
 // ---- lights ----------------------------------------------------------------------------------------------------
 
+bool EEWebNullRasterizer::LightTaken(ulong id)
+{
+    return id < 8 && g_lightTaken[id] != 0;
+}
+
+
 long EEWebNullRasterizer::AddLight(GELight& light, ulong screen, ulong& id)
 {
     if (Note(EEWebCheckLight(&light)) != EEWEB_LAYOUT_OK) return EEWEB_LAYOUT_VIOLATION;

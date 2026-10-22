@@ -42,6 +42,7 @@ float __attribute__((cdecl)) EEWebUMCos(float) __asm__("?UMCos@@YAMM@Z");
 ulong __attribute__((thiscall)) EEWebVisibleTileRows(const void* mesh) __asm__("?GetNumVisibleTileRows@GETerrainMesh@@QBEKXZ");
 void __attribute__((thiscall)) EEWebVectorCopy(void* self, const void* other) __asm__("??0GEVector@@QAE@ABV0@@Z");
 void __attribute__((thiscall)) EEWebVectorAssign(void* self, const void* other) __asm__("??4GEVector@@QAEAAV0@ABV0@@Z");
+void __attribute__((thiscall)) EEWebColorNormalize(void* self) __asm__("?Normalize@GEColor@@QAEXXZ");
 void __attribute__((thiscall)) EEWebVectorNormalize(void* self) __asm__("?Normalize@GEVector@@QAEXXZ");
 void __attribute__((thiscall)) EEWebTransformationApplyVector(const void* self, const void* input, void* output) __asm__("?Apply@GETransformation@@QBEXABVGEVector@@AAV2@@Z");
 unsigned char __attribute__((thiscall)) EEWebPlaneBelow(const void* plane, const void* point) __asm__("?IsPointOnOrBelowPlane@GE3DPlane@@QBE_NABVGE3DPoint@@@Z");
@@ -946,4 +947,116 @@ long EEWebNullRasterizer::DrawGridLines(GETerrainMesh& meshObject, std::vector<s
     }
     record->vertexCursor += vertices - written * 2;
     return status;
+}
+
+namespace {
+
+struct LightEntry {
+    float color[3];
+    float direction[3];
+};
+
+// (dz * nz + dy * ny) + nx * dx with the sums in extended precision.  `positive` is the original's comparison of that extended value
+// with zero (above it, and ordered); the result is the float the original stores and multiplies by.
+float DotWithNormal(const float* direction, const float* normal, bool* positive)
+{
+    static const float kZero = 0.0f;
+    float stored;
+    unsigned short status;
+    __asm__ volatile("flds %2\n\tfmuls %3\n\tflds %4\n\tfmuls %5\n\tfaddp\n\tflds %6\n\tfmuls %7\n\tfaddp\n\tfsts %0\n\tfcomps %8\n\tfnstsw %1"
+                     : "=m"(stored), "=a"(status)
+                     : "m"(direction[2]), "m"(normal[2]), "m"(direction[1]), "m"(normal[1]), "m"(normal[0]), "m"(direction[0]), "m"(kZero)
+                     : "st");
+    *positive = (status & 0x4100) == 0;
+    return stored;
+}
+
+} // namespace
+
+void EEWebNullRasterizer::Light(GETerrainMesh& meshObject, ulong screen)
+{
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !device || mesh->visibleTileWidth > kColumns - 2 || mesh->visibleTileHeight > kColumns - 2 || EEWebVisibleTileRows(mesh) == 0) {
+        return;
+    }
+    // the directional lights the device holds, as {colour, minus the direction}
+    LightEntry entries[8];
+    ulong count = 0;
+    for (ulong id = 0; id < 8; id++) {
+        if (!LightTaken(id)) {
+            continue;
+        }
+        float light[26];
+        device->vtbl->GetLight(device, id, light);
+        if (reinterpret_cast<const ulong*>(light)[0] != 3) {
+            continue;
+        }
+        const float* diffuse = light + 1;
+        const float* direction = light + 16;
+        bool colored = diffuse[0] < 0.0f || diffuse[0] > 0.0f || diffuse[1] < 0.0f || diffuse[1] > 0.0f || diffuse[2] < 0.0f || diffuse[2] > 0.0f;
+        if (!colored) {
+            continue;
+        }
+        LightEntry& entry = entries[count++];
+        entry.color[0] = diffuse[0];
+        entry.color[1] = diffuse[1];
+        entry.color[2] = diffuse[2];
+        entry.direction[0] = -direction[0];
+        entry.direction[1] = -direction[1];
+        entry.direction[2] = -direction[2];
+    }
+    // the colour of the sun: the ambient colour plus every light that shines from above
+    const GEColorLayout ambient = Base()->computedAmbientColor;
+    float sun[3] = {ambient.r, ambient.g, ambient.b};
+    for (ulong i = 0; i < count; i++) {
+        const float vertical = entries[i].direction[2];
+        if (vertical > 0.0f) {
+            sun[0] = AddProduct(sun[0], entries[i].color[0], vertical);
+            sun[1] = AddProduct(sun[1], entries[i].color[1], vertical);
+            sun[2] = AddProduct(sun[2], entries[i].color[2], vertical);
+        }
+    }
+    EEWebColorNormalize(sun);
+    const ulong x0 = mesh->visibleBottomLeftX, y0 = mesh->visibleBottomLeftY;
+    const ulong xEnd = x0 + mesh->visibleTileWidth + 2, yEnd = y0 + mesh->visibleTileHeight + 2;
+    for (ulong y = y0; y < yEnd; y++) {
+        for (ulong x = x0; x < xEnd; x++) {
+            const ulong index = (x - x0) * kColumns + (y - y0);
+            if (!mesh->pointVisibility[index] || y >= mesh->pointRowCount || !mesh->pointRows[y].points || x - mesh->pointRows[y].firstIndex >= mesh->pointRows[y].count) {
+                continue;
+            }
+            const GETMPointLayout& point = mesh->pointRows[y].points[x - mesh->pointRows[y].firstIndex];
+            if (!point.normal) {
+                continue;
+            }
+            const float* normal = &point.normal->x;
+            float color[3] = {ambient.r, ambient.g, ambient.b};
+            for (ulong i = 0; i < count; i++) {
+                bool positive;
+                const float dot = DotWithNormal(entries[i].direction, normal, &positive);
+                if (positive) {
+                    color[0] = AddProduct(color[0], entries[i].color[0], dot);
+                    color[1] = AddProduct(color[1], entries[i].color[1], dot);
+                    color[2] = AddProduct(color[2], entries[i].color[2], dot);
+                }
+            }
+            EEWebColorNormalize(color);
+            const GEColorLayout& table = mesh->colorTable[point.colorIndex];
+            GEColorLayout& lit = mesh->renderVertices[index].color;
+            lit.r = Mul(table.r, color[0]);
+            lit.g = Mul(table.g, color[1]);
+            lit.b = Mul(table.b, color[2]);
+            if (mesh->waterPointVisibility[index]) {
+                GEColorLayout& water = mesh->waterRenderVertices[index].color;
+                water.r = Mul(mesh->waterColor.r, sun[0]);
+                water.g = Mul(mesh->waterColor.g, sun[1]);
+                water.b = Mul(mesh->waterColor.b, sun[2]);
+            }
+        }
+    }
 }

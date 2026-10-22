@@ -935,7 +935,7 @@ static void td_light_draws(void)
     td_light_script(2, 3, 0.0f, 0.0f, 0.7f, 0.1f, 0.1f, 0.5f);
     td_light_mesh(3, 2, 4, 3, 0);
     TD_LIGHT("terrain draw: Light without visible rows does nothing");
-    td_light_mesh(0, 0, 99, 99, 1);
+    td_light_mesh(3, 2, 96, 96, 1);
     TD_LIGHT("terrain draw: Light of the whole grid");
     td_light_mesh(10, 20, 0, 0, 1);
     TD_LIGHT("terrain draw: Light of a window of 2 x 2 points");

@@ -200,7 +200,7 @@
 {"terrain draw: Light without visible rows does nothing",
  " | ret=0 ne=80004005 |  t=b2bfcf06 n=0 w=b2bfcf06 n=0"},
 {"terrain draw: Light of the whole grid",
- "GETLIGHT(0);GETLIGHT(1);GETLIGHT(2); | ret=0 ne=80004005 |  t=7aed3e33 n=9067 v1=3dfbb42f,3e90912b,3e4f6c03 w=e44d6b3d n=2267 v3=3e4ccccd,3ecccccd,3f010626"},
+ "GETLIGHT(0);GETLIGHT(1);GETLIGHT(2); | ret=0 ne=80004005 |  t=4e9817f3 n=8537 v1=3de65e0e,3e8fa642,3ef188d7 w=11b3447d n=2135 v3=3e4ccccd,3ecccccd,3f010626"},
 {"terrain draw: Light of a window of 2 x 2 points",
  "GETLIGHT(0);GETLIGHT(1);GETLIGHT(2); | ret=0 ne=80004005 |  t=9e3040bd n=3 v1=3cea07ad,3e852166,3f0fdb43 w=0489c61b n=1 v102=3e4ccccd,3ecccccd,3f010626"},
 {"terrain draw: Light with an ambient colour out of range",

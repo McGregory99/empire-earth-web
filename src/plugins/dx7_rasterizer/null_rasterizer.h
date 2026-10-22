@@ -71,7 +71,7 @@ public:
     unsigned long GetCaps(unsigned long, unsigned long) override;  // 31
     bool GetCanModulateTextureAlpha(unsigned long) override;  // 32
     bool GetDirtyRectangleSupport(unsigned long) override;  // 33
-    void Light(GETerrainMesh &mesh, unsigned long) override { Note(EEWebCheckTerrainMesh(&mesh)); }  // 34
+    void Light(GETerrainMesh &, unsigned long) override;  // 34 (dx7_terrain.cpp)
     long RemoveAllLights(unsigned long) override;  // 35
     long RemoveLight(unsigned long, unsigned long) override;  // 36
     void SetAlphaTesting(unsigned long, unsigned long) override;  // 37
@@ -138,6 +138,7 @@ private:
     GERasterizerLayout *Base() { return reinterpret_cast<GERasterizerLayout *>(this); }
     DX7RasterizerLayout *Own() { return reinterpret_cast<DX7RasterizerLayout *>(this); }
     unsigned long RecordCount();
+    static bool LightTaken(unsigned long id);                  // AddLight took the slot and RemoveLight has not given it back (dx7_state.cpp)
     DX7ScreenRecordLayout *Record(unsigned long screen);       // null when there is no such screen
     GERScreenStateLayout *State(unsigned long screen);         // the engine's record of the screen, null when there is none
     IDirect3DDevice7 *Device(unsigned long screen);            // null until the screen has a device

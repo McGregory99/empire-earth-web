@@ -199,7 +199,7 @@ struct IDirect3DDevice7Vtbl {
     HRESULT_(__attribute__((stdcall)) * SetMaterial)(IDirect3DDevice7*, const void* material7);                  // 16
     void* getMaterial;                                                                                           // 17
     HRESULT_(__attribute__((stdcall)) * SetLight)(IDirect3DDevice7*, DWORD_ index, const void* light7);          // 18
-    void* getLight;                                                                                              // 19
+    HRESULT_(__attribute__((stdcall)) * GetLight)(IDirect3DDevice7*, DWORD_ index, void* light7);                // 19
     HRESULT_(__attribute__((stdcall)) * SetRenderState)(IDirect3DDevice7*, DWORD_ state, DWORD_ value);          // 20
     void* slots21to30[10];                                                                                       // 21 GetRenderState .. 30 GetClipStatus
     HRESULT_(__attribute__((stdcall)) * DrawPrimitiveVB)(IDirect3DDevice7*, DWORD_ type, IDirect3DVertexBuffer7* buffer, DWORD_ start, DWORD_ count, DWORD_ flags);  // 31

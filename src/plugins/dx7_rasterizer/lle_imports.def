@@ -68,3 +68,4 @@ EXPORTS
     ?IsPerspectiveModelVisible@GERasterizer@@IAEXPAVGEModel@@MPAVGEViewport@@AAVGETransformation@@AA_N3@Z
     ?sTransformStack@GERasterizer@@1V?$vector@UTransformStack@GERasterizer@@V?$allocator@UTransformStack@GERasterizer@@@std@@@std@@A DATA
     ?Apply@GETransformation@@QBEXABVGEVector@@AAV2@@Z
+    ?Normalize@GEColor@@QAEXXZ
