@@ -45,7 +45,7 @@ async function loadFiles(fileList) {
       return;
     }
     const read = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
-    const { sequence, stats } = await loadFromFiles(read);
+    const { sequence, stats } = await loadFromFiles(read, { inferColorKeys: true });
     load(sequence, `loaded ${files.map((f) => f.name).join(' + ')}: ${stats.frames} frames, ${stats.commands} commands, ` +
       `${stats.textures} textures, ${stats.uniqueVertexRecords} vertex records`);
   } catch (e) {

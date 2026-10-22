@@ -51,7 +51,7 @@ Fails loudly (a `TraceError` naming the trace line): a trace that references a d
 `unavailable`; draws or textures without data; `vertices=none`; any vertex format other than XYZ + optional NORMAL/DIFFUSE/SPECULAR + up to two 2-float texture sets (pre-transformed XYZRHW, point size, blend weights, 1/3/4-component coordinates); primitive types
 other than triangle and line lists; strided draws, `ProcessVertices`; non-32-bit display modes; `SetRenderTarget` on an offscreen
 surface; `Blt` flags other than wait, async, colour fill and source colour keys (DDFX, ROP, destination keys, alpha); screen-to-screen
-copies other than presents; colour keys other than `DDCKEY_SRCBLT`; light types other than POINT, SPOT and DIRECTIONAL; palettised surfaces, DXT2 / DXT4, and a DXT record that is not the whole surface. Unsupported render or texture-stage state is rejected by the renderer when the command is applied.
+copies other than presents; colour keys other than `DDCKEY_SRCBLT`; a keyed blit from a surface without a key (see Late-armed captures); light types other than POINT, SPOT and DIRECTIONAL; palettised surfaces, DXT2 / DXT4, and a DXT record that is not the whole surface. Unsupported render or texture-stage state is rejected by the renderer when the command is applied.
 Not replayed: `dev7.Load`/`PreLoad` (the capture does not store their results), palettes, mip data (the renderer generates mips).
 
 ## Layout
@@ -129,16 +129,26 @@ ignored.
 A capture armed after the game started (`# armed` in the header) never sees the `SetDisplayMode` / `CreateSurface` calls of the screen or
 the device-creation render states. The loader infers: the surface that GDI reads back whole (`ReleaseDC` with a pixel record) and that
 the trace never creates is the screen, and its size is the canvas size; the render states the game sets once at device creation
-(ALPHAFUNC GREATER, NORMALIZENORMALS, SHADEMODE, ...; not fog) seed the device before the capture's own calls. A colour-keyed blit whose
-key was set before the window (the software cursor) is skipped and counted (`stats.skippedKeyedBlits`).
+(ALPHAFUNC GREATER, NORMALIZENORMALS, SHADEMODE, ...) seed the device before the capture's own calls. Fog is deliberately not seeded: the game
+sets FOGVERTEXMODE once at device creation but FOGSTART / FOGEND / FOGCOLOR outside the capture window, and fog with the D3D defaults
+(range 0..1, black) would turn everything black; fog is replayed whenever the capture itself sets its state.
+
+A colour-keyed `Blt` / `BltFast` from a surface with no known key is an error (`TraceError`), because the call cannot have succeeded without one,
+except when the capture was armed late and the surface predates it: the game set its key before the window opened (the software cursor).
+That blit is skipped and counted (`stats.skippedKeyedBlits`), never drawn as an opaque square. With `loadTrace(text, data, { inferColorKeys: true })`
+(the page's file picker passes it) the key is inferred instead: the raw colour that fills more than half of the sprite (the cursor is 71 %
+one blue) becomes its key (`stats.inferredKeys`). That is a guess, not a captured fact, so the library default is off: the stored reference
+frame of the skirmish capture is the GDI read-back that precedes the cursor draw, so drawing the cursor moves the whole-frame mean difference
+from 0.20 / 0.21 / 0.15 to 0.21 / 0.22 / 0.16.
 
 ## Tests
 
-`make test-web` runs `node --test web/test/*.test.js` (65 tests: formats against hand-computed pixels, tables,
-state, replay loop, frame model, demo, JSON round trip, trace parser, data file, loader on the synthetic fixture and on the golden) and `web/test/headless-check.mjs`. The latter serves `web/`
+`make test-web` runs `node --test web/test/*.test.js` (137 tests: formats and DXT blocks against hand-computed pixels, tables, state, fog /
+light / stencil / fill-mode formulas, replay loop, frame model, demo, JSON round trip, trace parser, data file, loader on the synthetic fixture and
+on the golden, late-armed traces) and `web/test/headless-check.mjs` (shared helpers in `headless-lib.mjs`). The latter serves `web/`
 on localhost, opens the page in headless Chromium with software GL, replays the demo and checks 17 pixels computed
 by hand from the geometry (blend, depth, fog, light, 565 and 4444 textures, alpha test, colour-keyed blit, fill)
-plus the synthetic trace fixture through the real loader and renderer (18 more probe pixels over 2 frames), plus a stored regression image (`test/expected/demo-frame3.rgba.gz`, produced by this renderer, tolerance 2 per
+plus the synthetic trace fixture through the real loader and renderer (18 more probe pixels over 2 frames), plus the 29 synthetic scenes of `test/scenes.js` (65 hand-computed probe pixels: fog, stage 1, specular, point / spot lights, DXT, wireframe / point / flat, stencil; each probe states its formula; `test/scene-probes.mjs` runs them, a scene with `expectUnsupported` asserts a deliberate `UnsupportedError`), plus a stored regression image (`test/expected/demo-frame3.rgba.gz`, produced by this renderer, tolerance 2 per
 channel; regenerate with `--update` and review). It needs `playwright-core` and a headless Chromium; it looks in
 `$PLAYWRIGHT_CORE`, the global `@playwright/cli` install and the Playwright cache (`$EE_BROWSER` overrides the
 browser). If none is found it exits 77 and `make` prints SKIPPED. Manual check: `make serve-web`, open the page,

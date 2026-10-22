@@ -118,7 +118,7 @@ class Loader {
     let s = this.surfaces.get(id);
     if (!s) {
       s = { id, width: 0, height: 0, caps: 0, screen: false, primary: false, zbuffer: false, key: null, pixels: null, bpp: 0,
-        masks: null, dirty: false, created: false, format: null, keyEmitted: null };
+        masks: null, dirty: false, created: false, format: null, keyEmitted: null, createdInTrace: false };
       if (this.gdiIds.has(id)) { s.screen = true; s.inferredScreen = true; }
       this.surfaces.set(id, s);
     }
@@ -139,6 +139,7 @@ class Loader {
     const out = c.outs.lplpDDSurface;
     if (!(out instanceof ObjRef)) this.fail('CreateSurface without a surface id');
     const s = this.surf(out.id);
+    s.createdInTrace = true;
     s.inferredScreen = false;
     s.caps = desc.ddsCaps?.dwCaps ?? 0;
     s.width = desc.dwWidth ?? 0;
@@ -309,12 +310,11 @@ class Loader {
     }
     const srcRect = c.args.lpSrcRect ? rectOf(c.args.lpSrcRect) : { x: 0, y: 0, w: src.width, h: src.height };
     let key = null;
-    if (flags & BLT.KEYSRC) {
-      key = src.key;
-      // the key was set before the window opened (late arming), so it is unknown: an opaque square would be wrong
-      if (!key) { this.stats.skippedKeyedBlits++; return; }
-    }
     if (flags & BLT.KEYSRCOVERRIDE) key = keyOf(c.args.lpDDBltFx?.ddckSrcColorkey);
+    else if (flags & BLT.KEYSRC) {
+      key = this.sourceKey(src, 'Blt');
+      if (key === undefined) return;
+    }
     if (this.blit(src, srcRect, dstRect, key) && isPresent) this.present();
     else if (isPresent) this.present();
   }
@@ -330,7 +330,44 @@ class Loader {
     if (trans & ~0x1 & ~0x10 & ~0x20) this.fail(`unsupported BltFast flags 0x${trans.toString(16)}`);
     if (src.screen) this.fail('unsupported: screen-to-screen BltFast');
     const srcRect = c.args.lpSrcRect ? rectOf(c.args.lpSrcRect) : { x: 0, y: 0, w: src.width, h: src.height };
-    this.blit(src, srcRect, { x: c.args.dwX, y: c.args.dwY, w: srcRect.w, h: srcRect.h }, trans & 0x1 ? src.key : null);
+    let key = null;
+    if (trans & 0x1) {
+      key = this.sourceKey(src, 'BltFast');
+      if (key === undefined) return;
+    }
+    this.blit(src, srcRect, { x: c.args.dwX, y: c.args.dwY, w: srcRect.w, h: srcRect.h }, key);
+  }
+
+  /**
+   * The colour key a keyed Blt / BltFast uses. A surface without one is only explainable when the capture was armed late and the surface
+   * predates it (the game set its key before the window opened): then the key is unknown and the blit is skipped and counted
+   * (`undefined`), or, with `opts.inferColorKeys`, the colour that fills most of the sprite is taken as its key. Otherwise the call could not
+   * have succeeded without a key, so the trace is inconsistent.
+   */
+  sourceKey(src, what) {
+    if (src.key) return src.key;
+    if (this.lateArmed && !src.createdInTrace) {
+      const inferred = this.opts.inferColorKeys ? this.inferKey(src) : null;
+      if (inferred) { this.stats.inferredKeys = (this.stats.inferredKeys ?? 0) + 1; return inferred; }
+      this.stats.skippedKeyedBlits++;
+      return undefined;
+    }
+    return this.fail(`${what} with a source colour key from surf#${src.id}, which has no colour key`);
+  }
+
+  /** The raw pixel value that fills more than half of the surface (a sprite's background), as a one value key; null if there is none. */
+  inferKey(s) {
+    if (!s.pixels || !s.masks || s.masks.fourcc || ![16, 32].includes(s.bpp)) return null;
+    const colorMask = (s.masks.rMask | s.masks.gMask | s.masks.bMask) >>> 0;
+    const dv = new DataView(s.pixels.buffer, s.pixels.byteOffset, s.pixels.byteLength);
+    const n = s.pixels.length / (s.bpp / 8);
+    const counts = new Map();
+    for (let i = 0; i < n; i++) {
+      const raw = (s.bpp === 16 ? dv.getUint16(i * 2, true) : dv.getUint32(i * 4, true)) & colorMask;
+      counts.set(raw >>> 0, (counts.get(raw >>> 0) ?? 0) + 1);
+    }
+    const [value, count] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [0, 0];
+    return count * 2 > n ? { low: value, high: value } : null;
   }
 
   blit(src, srcRect, dstRect, key) {
@@ -484,7 +521,7 @@ async function gunzip(bytes) {
  * `.gz`). Names decide which is which.
  * @param {{name: string, bytes: Uint8Array}[]} files
  */
-export async function loadFromFiles(files) {
+export async function loadFromFiles(files, opts = {}) {
   let trace = null, data = null;
   for (const f of files) {
     const gz = /\.gz$/i.test(f.name);
@@ -494,5 +531,5 @@ export async function loadFromFiles(files) {
   }
   if (!trace) throw new TraceError('no trace file selected (expected a .trace or .trace.gz file)');
   const text = new TextDecoder().decode(trace.bytes);
-  return loadTrace(text, data);
+  return loadTrace(text, data, opts);
 }
