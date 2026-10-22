@@ -1,0 +1,12 @@
+; The names binkw32.dll exports its stdcall functions under (the decorated form, with the leading underscore), pointing at the scripted ones.
+LIBRARY binkw32
+EXPORTS
+    _BinkOpen@8=BinkOpenImpl@8
+    _BinkWait@4=BinkWaitImpl@4
+    _BinkDoFrame@4=BinkDoFrameImpl@4
+    _BinkDDSurfaceType@4=BinkDDSurfaceTypeImpl@4
+    _BinkCopyToBuffer@28=BinkCopyToBufferImpl@28
+    _BinkNextFrame@4=BinkNextFrameImpl@4
+    _BinkClose@4=BinkCloseImpl@4
+    _BinkOpenDirectSound@4=BinkOpenDirectSoundImpl@4
+    _BinkSetSoundSystem@8=BinkSetSoundSystemImpl@8

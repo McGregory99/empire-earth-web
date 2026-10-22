@@ -1207,6 +1207,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "model_checks.h"     /* the model draws (P2.6.7h) */
 #include "terrain_draw_checks.h" /* the terrain draws (P2.6.7i) */
 #include "target_checks.h"    /* ActivateRenderingSurface (P2.6.7j) */
+#include "movie_checks.h"     /* CreateMovie and DX7Movie over a scripted Bink (P2.6.7k) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1243,6 +1244,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_model(e, h, &api, get_rasterizer());
         check_terrain_draws(e, h, &api, get_rasterizer());
         check_target(e, h, &api, get_rasterizer());
+        check_movie(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;

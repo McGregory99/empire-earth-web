@@ -174,6 +174,7 @@ RAST_HEADERS   := $(wildcard $(RAST_SRC)/*.h)
 RAST_OBJECTS   := $(patsubst $(RAST_SRC)/%.cpp,$(RAST_BUILD)/%.obj,$(RAST_SOURCES))
 RAST_ORIGINAL  := $(RE_DIR)/bin/DX7HRTnLDisplay.dll
 RAST_HARNESS   := $(BUILD)/rasterizer_harness.exe
+RAST_FAKEBINK  := $(BUILD)/rasterizer/binkw32.dll
 RAST_TESTBED   := $(TESTBED)/rasterizer
 RAST_GAME_CHECK := tests/dx7_rasterizer/game_check.sh
 
@@ -233,8 +234,12 @@ $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcr
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib \
 	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib
 
-$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h tests/dx7_rasterizer/format_checks.h tests/dx7_rasterizer/state_checks.h tests/dx7_rasterizer/state_expected.inc tests/dx7_rasterizer/lifecycle_checks.h tests/dx7_rasterizer/lifecycle_expected.inc tests/dx7_rasterizer/lifecycle_expected_ours.inc tests/dx7_rasterizer/texture_checks.h tests/dx7_rasterizer/texture_expected.inc tests/dx7_rasterizer/texture_expected_ours.inc tests/dx7_rasterizer/ring_checks.h tests/dx7_rasterizer/ring_expected.inc tests/dx7_rasterizer/ring_expected_ours.inc tests/dx7_rasterizer/array_checks.h tests/dx7_rasterizer/array_expected.inc tests/dx7_rasterizer/array_expected_ours.inc tests/dx7_rasterizer/draw2d_checks.h tests/dx7_rasterizer/draw2d_expected.inc tests/dx7_rasterizer/draw2d_expected_ours.inc tests/dx7_rasterizer/poly_checks.h tests/dx7_rasterizer/poly_expected.inc tests/dx7_rasterizer/poly_expected_ours.inc tests/dx7_rasterizer/line3d_checks.h tests/dx7_rasterizer/line3d_expected.inc tests/dx7_rasterizer/line3d_expected_ours.inc tests/dx7_rasterizer/text_checks.h tests/dx7_rasterizer/text_expected.inc tests/dx7_rasterizer/text_expected_ours.inc tests/dx7_rasterizer/terrain_checks.h tests/dx7_rasterizer/terrain_expected.inc tests/dx7_rasterizer/terrain_expected_ours.inc tests/dx7_rasterizer/model_checks.h tests/dx7_rasterizer/model_expected.inc tests/dx7_rasterizer/model_expected_ours.inc tests/dx7_rasterizer/terrain_draw_checks.h tests/dx7_rasterizer/terrain_draw_expected.inc tests/dx7_rasterizer/terrain_draw_expected_ours.inc tests/dx7_rasterizer/target_checks.h tests/dx7_rasterizer/target_expected.inc tests/dx7_rasterizer/target_expected_ours.inc src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
+$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h tests/dx7_rasterizer/format_checks.h tests/dx7_rasterizer/state_checks.h tests/dx7_rasterizer/state_expected.inc tests/dx7_rasterizer/lifecycle_checks.h tests/dx7_rasterizer/lifecycle_expected.inc tests/dx7_rasterizer/lifecycle_expected_ours.inc tests/dx7_rasterizer/texture_checks.h tests/dx7_rasterizer/texture_expected.inc tests/dx7_rasterizer/texture_expected_ours.inc tests/dx7_rasterizer/ring_checks.h tests/dx7_rasterizer/ring_expected.inc tests/dx7_rasterizer/ring_expected_ours.inc tests/dx7_rasterizer/array_checks.h tests/dx7_rasterizer/array_expected.inc tests/dx7_rasterizer/array_expected_ours.inc tests/dx7_rasterizer/draw2d_checks.h tests/dx7_rasterizer/draw2d_expected.inc tests/dx7_rasterizer/draw2d_expected_ours.inc tests/dx7_rasterizer/poly_checks.h tests/dx7_rasterizer/poly_expected.inc tests/dx7_rasterizer/poly_expected_ours.inc tests/dx7_rasterizer/line3d_checks.h tests/dx7_rasterizer/line3d_expected.inc tests/dx7_rasterizer/line3d_expected_ours.inc tests/dx7_rasterizer/text_checks.h tests/dx7_rasterizer/text_expected.inc tests/dx7_rasterizer/text_expected_ours.inc tests/dx7_rasterizer/terrain_checks.h tests/dx7_rasterizer/terrain_expected.inc tests/dx7_rasterizer/terrain_expected_ours.inc tests/dx7_rasterizer/model_checks.h tests/dx7_rasterizer/model_expected.inc tests/dx7_rasterizer/model_expected_ours.inc tests/dx7_rasterizer/terrain_draw_checks.h tests/dx7_rasterizer/terrain_draw_expected.inc tests/dx7_rasterizer/terrain_draw_expected_ours.inc tests/dx7_rasterizer/target_checks.h tests/dx7_rasterizer/target_expected.inc tests/dx7_rasterizer/target_expected_ours.inc tests/dx7_rasterizer/movie_checks.h tests/dx7_rasterizer/movie_expected.inc tests/dx7_rasterizer/movie_expected_ours.inc src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
 	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine -lgdi32
+
+# The scripted Bink library both test beds get in place of the real binkw32.dll (tests/dx7_rasterizer/fakebink.c).
+$(RAST_FAKEBINK): tests/dx7_rasterizer/fakebink.c tests/dx7_rasterizer/binkw32.def | $(RAST_BUILD)
+	$(CC) -O2 -std=c99 -Wall -Wextra -D_WIN32_WINNT=0x0501 $(CRT) -shared -o $@ tests/dx7_rasterizer/fakebink.c tests/dx7_rasterizer/binkw32.def
 
 # Exports, ordinals and imports of our DLL against the contract (tests/dx7_rasterizer/).
 check-abi-rasterizer: $(RAST_DLL)
@@ -248,15 +253,16 @@ check-abi-rasterizer: $(RAST_DLL)
 RAST_REQUIRED_IMPORTS := '__RTDynamicCast' '??2@YAPAXI@Z' '??3@YAXPAX@Z'
 
 # Test beds: the engine DLLs sit next to the plugin (altered search path), like in the game dir.
-testbed-rasterizer: $(RAST_DLL) $(RAST_HARNESS)
+testbed-rasterizer: $(RAST_DLL) $(RAST_HARNESS) $(RAST_FAKEBINK)
 	mkdir -p "$(RAST_TESTBED)/original" "$(RAST_TESTBED)/ours"
 	cp "$(ENGINE_DLL)" "$(RAST_TESTBED)/original/Low-Level Engine.dll"
 	cp "$(RUNTIME_DLL)" "$(RAST_TESTBED)/original/sxlrt233.dll"
-	cp "$(GAME_DIR)/binkw32.dll" "$(RAST_TESTBED)/original/binkw32.dll"
+	cp "$(RAST_FAKEBINK)" "$(RAST_TESTBED)/original/binkw32.dll"
 	cp "$(RAST_ORIGINAL)" "$(RAST_TESTBED)/original/DX7HRTnLDisplay.dll"
 	cp $(RAST_HARNESS) "$(RAST_TESTBED)/original/rasterizer_harness.exe"
 	cp "$(ENGINE_DLL)" "$(RAST_TESTBED)/ours/Low-Level Engine.dll"
 	cp "$(RUNTIME_DLL)" "$(RAST_TESTBED)/ours/sxlrt233.dll"
+	cp "$(RAST_FAKEBINK)" "$(RAST_TESTBED)/ours/binkw32.dll"
 	cp "$(RAST_DLL)" "$(RAST_TESTBED)/ours/$(RAST_DLL_NAME)"
 	cp $(RAST_HARNESS) "$(RAST_TESTBED)/ours/rasterizer_harness.exe"
 
