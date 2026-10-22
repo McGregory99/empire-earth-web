@@ -203,6 +203,31 @@ static void tc_material(int water, int index, unsigned first, unsigned count, in
     material->overlayPolygons.end = material->overlayPolygons.last;
 }
 
+/* Every height is `z`, and the camera leaves positions as they are. */
+static void tc_flat(float z)
+{
+    for (unsigned r = 0; r < TC_COLUMNS; r++) {
+        for (unsigned c = 0; c < TC_COLUMNS + 4; c++) {
+            g_tc.points[r][c].z = z;
+        }
+    }
+    memset(g_tc.viewport->cameraInverse.m, 0, sizeof g_tc.viewport->cameraInverse.m);
+    g_tc.viewport->cameraInverse.m[0] = g_tc.viewport->cameraInverse.m[5] = g_tc.viewport->cameraInverse.m[10] = g_tc.viewport->cameraInverse.m[15] = 1.0f;
+}
+
+/* The clip distances, the orthographic rectangle (bottom, left, right, top) and the clipping scale. */
+static void tc_edges(float front, float rear, float left, float right, float top, float bottom, float scale)
+{
+    float *f = (float *)g_tc.viewport;
+    g_tc.viewport->frontClip = front;
+    g_tc.viewport->rearClip = rear;
+    f[0] = bottom;
+    f[1] = left;
+    f[2] = right;
+    f[3] = top;
+    g_tc.viewport->yClippingPlane = scale;
+}
+
 static void tc_set_materials(int water, int count)
 {
     GETMMaterialLayout *list = water ? g_tc.water_materials : g_tc.materials;
@@ -413,6 +438,15 @@ static void tc_steps(void)
     tc_world(10, 3, 2, 6, 5, 0, 3);
     TC_STEP("terrain: TransformToCamera orthographic with another clipping scale", 0.033f, 1, 1, g_tc.viewport->yClippingPlane = -1.75f;
             ((float *)g_tc.viewport)[1] = 15.0f; ((float *)g_tc.viewport)[2] = -5.0f);
+
+    /* positions that are exactly on the edges of the viewport: the camera is the identity, so a vertex sits at (column, row, height) */
+    tc_world(13, 3, 2, 6, 5, 0, 3);
+    TC_STEP("terrain: TransformToCamera orthographic with vertices exactly on the viewport's edges", 0.033f, 0, 1, tc_ripple(0.75f, 0.5f, 0.0f); tc_flat(-2.0f);
+            tc_edges(4.0f, 6.0f, 5.0f, 7.0f, 4.0f, 4.0f, 0.5f));
+    tc_world(13, 3, 2, 6, 5, 0, 3);
+    TC_STEP("terrain: TransformToCamera of the water orthographic with vertices exactly on the viewport's edges", 0.033f, 1, 1, tc_ripple(0.75f, 0.5f, 0.0f);
+            tc_flat(-2.0f); tc_edges(4.0f, 6.0f, 5.0f, 7.0f, 4.0f, 4.0f, 0.5f));
+    tc_ripple(0.75f, 0.5f, 0.25f);
 
     /* the polygon lists */
     tc_world(11, 3, 2, 2, 2, 0, 1);
