@@ -413,6 +413,24 @@ static void mm_draws(void)
     mm_children(off_screen, mm_model(&back), NULL);
     MM_STEP("model: DrawModelHierarchy of a parent out of view still draws its children", DrawModelHierarchy, 0, 420, off_screen, 1.0f, 0, );
 
+    /* the scale of a child is its own times its parent's, and decides whether it is seen and whether it needs clipping */
+    const float kParentScales[4] = {0.01f, 1.0f, 6.0f, 40.0f};
+    for (int i = 0; i < 4; i++) {
+        MmSpec scaled_parent = parent;
+        scaled_parent.x = 12.0f;
+        scaled_parent.scale = kParentScales[i];
+        scaled_parent.seed = 800 + 10 * (unsigned)i;
+        MmSpec scaled_child = child_a;
+        scaled_child.x = 0.0f;
+        scaled_child.scale = 1.0f;
+        scaled_child.seed = 810 + 10 * (unsigned)i;
+        GEModelLayout *scaled_tree = mm_model(&scaled_parent);
+        mm_children(scaled_tree, mm_model(&scaled_child), NULL);
+        char name[160];
+        snprintf(name, sizeof name, "model: DrawModelHierarchy of a hierarchy whose parent has a scale of %g", kParentScales[i]);
+        MM_STEP(name, DrawModelHierarchy, 0, 800 + 20 * i, scaled_tree, 1.0f, 0, );
+    }
+
     /* what the answer is */
     MM_STEP("model: DrawModelHierarchy when the vertex buffer unlock fails the children are not drawn", DrawModelHierarchy, 0, 440, tree, 1.0f, 0,
             g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER; g_life.dd->vb_script[FV_UNLOCK].times = 1);
