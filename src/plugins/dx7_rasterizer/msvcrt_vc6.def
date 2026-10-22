@@ -17,3 +17,5 @@ EXPORTS
     ; compiler-generated block copies and fills
     memcpy
     memset
+    ; the ripple of TransformToCamera
+    sin

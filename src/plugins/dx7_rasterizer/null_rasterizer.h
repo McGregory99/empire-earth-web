@@ -104,7 +104,7 @@ public:
     void SetZBuffer(unsigned long, unsigned long) override;  // 64
     void SetZCompare(unsigned long, unsigned long) override;  // 65
     long ShowScene(unsigned long) override;  // 66
-    void TransformToCamera(GETerrainMesh &mesh, GEViewport &viewport, float, bool, bool) override { if (Note(EEWebCheckTerrainMesh(&mesh)) == EEWEB_LAYOUT_OK) Note(EEWebCheckViewport(&viewport)); }  // 67
+    void TransformToCamera(GETerrainMesh &, GEViewport &, float, bool, bool) override;  // 67 (dx7_terrain.cpp)
     long UpdateLight(unsigned long, GELight &, unsigned long) override;  // 68
 protected:
     long ActivateRasterizer() override;  // 70

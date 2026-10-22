@@ -54,3 +54,11 @@ EXPORTS
     ?Enter@TSCriticalSection@@QAEXXZ
     ?Leave@TSCriticalSection@@QAEXXZ
     ?Apply@GETransformation@@QBEXABVGE3DPoint@@AAV2@@Z
+    ?UMTan@@YAMM@Z
+    ?UMArcTan@@YAMM@Z
+    ?UMCos@@YAMM@Z
+    ?GetNumVisibleTileRows@GETerrainMesh@@QBEKXZ
+    ??0GEVector@@QAE@ABV0@@Z
+    ??4GEVector@@QAEAAV0@ABV0@@Z
+    ?Normalize@GEVector@@QAEXXZ
+    ?IsPointOnOrBelowPlane@GE3DPlane@@QBE_NABVGE3DPoint@@@Z
