@@ -854,3 +854,96 @@ long EEWebNullRasterizer::DrawTerrainHighlight(GETerrainMesh& meshObject, U2DRec
     }
     return UnlockVB(screen);
 }
+
+long EEWebNullRasterizer::DrawGridLines(GETerrainMesh& meshObject, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>>& linesObject,
+                                        GETexture* texture, float v, ulong screen, bool orthographic)
+{
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return EEWEB_LAYOUT_VIOLATION;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device || !record->vertexBuffer || mesh->visibleTileWidth > kColumns - 2 || mesh->visibleTileHeight > kColumns - 2) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    const StdVectorLayout* list = reinterpret_cast<const StdVectorLayout*>(&linesObject);
+    const char* first = static_cast<const char*>(list->first);
+    ulong count = first ? static_cast<ulong>((static_cast<const char*>(list->last) - first) >> 4) : 0;
+    ulong vertices = count * 2;
+    const float vCoordinate = Add(v, 1.0f);
+    if (EEWebVisibleTileRows(mesh) == 0) {
+        return 0;
+    }
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    float matrix[16];
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 1, matrix);
+    transformation.m[5] = 0.0f;
+    transformation.m[6] = 1.0f;
+    transformation.m[9] = 1.0f;
+    transformation.m[10] = 0.0f;
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 2, matrix);
+    ConvertToD3DMatrix(orthographic ? state->viewport.orthographicProjection : state->viewport.perspectiveProjection, matrix);
+    device->vtbl->SetTransform(device, 3, matrix);
+    SetTexture(texture, screen);
+    float material[17] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    device->vtbl->SetMaterial(device, material);
+    SetShadingColorSource(0, screen);
+    const ulong x0 = mesh->visibleBottomLeftX, y0 = mesh->visibleBottomLeftY;
+    const ulong xLimit = x0 + mesh->visibleTileWidth + 1, yLimit = y0 + mesh->visibleTileHeight + 1;
+    if (vertices > 0x98a) {
+        vertices = 0x98a;
+        count = 0x4c5;
+    }
+    void* ring = 0;
+    LockVB(vertices, screen, ring);
+    if (!ring) {
+        UnlockVB(screen);
+        return 1;
+    }
+    float* to = reinterpret_cast<float*>(static_cast<char*>(ring) + record->vertexCursor * 0x24);
+    ulong written = 0;
+    for (ulong i = 0; i < count; i++) {
+        const long* line = reinterpret_cast<const long*>(first + i * 16);
+        const ulong x[2] = {static_cast<ulong>(line[0]), static_cast<ulong>(line[2])};
+        const ulong y[2] = {static_cast<ulong>(line[1]), static_cast<ulong>(line[3])};
+        bool drawable = true;
+        for (int end = 0; end < 2 && drawable; end++) {
+            drawable = x[end] >= x0 && x[end] < xLimit && y[end] >= y0 && y[end] < yLimit && y[end] < mesh->pointRowCount && mesh->pointRows[y[end]].points &&
+                       x[end] - mesh->pointRows[y[end]].firstIndex < mesh->pointRows[y[end]].count && mesh->pointVisibility[(x[end] - x0) * kColumns + (y[end] - y0)];
+        }
+        if (!drawable) {
+            continue;
+        }
+        for (int end = 0; end < 2; end++, to += 9) {
+            const GETMPointRowLayout& row = mesh->pointRows[y[end]];
+            float height = row.points[x[end] - row.firstIndex].z;
+            if (!(height >= 0.0f)) {
+                height = 0.0f;
+            }
+            float point[3] = {static_cast<float>(x[end]), static_cast<float>(y[end]), height};
+            float transformed[3];
+            EEWebTransformationApplyPoint(&state->viewport.cameraInverse, point, transformed);
+            to[0] = transformed[0];
+            to[1] = transformed[1];
+            to[2] = transformed[2];
+            to[3] = to[4] = to[5] = 0.0f;
+            *reinterpret_cast<ulong*>(to + 6) = 0xffff0000UL;
+            to[7] = 0.0f;
+            to[8] = end == 0 ? v : vCoordinate;
+        }
+        written++;
+    }
+    long status;
+    if (written > 0) {
+        status = UnlockAndDraw(screen, 2, written * 2, 0, 0);
+    } else {
+        status = UnlockVB(screen);
+    }
+    record->vertexCursor += vertices - written * 2;
+    return status;
+}

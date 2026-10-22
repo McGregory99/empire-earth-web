@@ -60,7 +60,7 @@ public:
     long Draw(GETerrainMesh &, unsigned long, bool) override;  // 14 (dx7_terrain.cpp)
     long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override;  // 13 (dx7_draw3d.cpp)
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override;  // 22 (dx7_draw3d.cpp)
-    long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23
+    long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override;  // 23 (dx7_terrain.cpp)
     long DrawSky(GEModel *, unsigned long, float, bool) override;  // 24 (dx7_model.cpp)
     long DrawTerrainGrid(GETerrainMesh &, unsigned long, bool) override;  // 25 (dx7_terrain.cpp)
     long DrawTerrainHighlight(GETerrainMesh &, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override;  // 26 (dx7_terrain.cpp)
