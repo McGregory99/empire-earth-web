@@ -411,6 +411,95 @@ static void td_water_draws(void)
     TD_WATER("terrain draw: DrawWater when DrawPrimitiveVB fails", 0, 210, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
 }
 
+/* ---- DrawTerrainGrid(GETerrainMesh &, screen, orthographic), slot 25 ---- */
+
+/* A mesh with a window of the grid (columns x0 .. x0 + width, rows y0 .. y0 + height), a visibility pattern and render vertices of known
+ * positions.  `zero_every` > 0 clears every n-th visibility byte. */
+static void td_grid_mesh(unsigned x0, unsigned y0, unsigned width, unsigned height, unsigned zero_every, int visible_rows)
+{
+    static const unsigned kNone[4] = {0, 0, 0, 0};
+    td_terrain(0, kNone, kNone, visible_rows);
+    GETerrainMeshLayout *mesh = g_tdm.mesh;
+    mesh->visibleTileWidth = width;
+    mesh->visibleTileHeight = height;
+    mesh->visibleBottomLeftX = x0;
+    mesh->visibleBottomLeftY = y0;
+    uint32_t state = 77;
+    for (int i = 0; i < 101 * 101; i++) {
+        mesh->pointVisibility[i] = zero_every && i % zero_every == 0 ? 0 : (i % 7 == 3 ? 0xff : 1);
+        mesh->renderVertices[i].position.x = td_value(&state, -90.0f, 90.0f);
+        mesh->renderVertices[i].position.y = td_value(&state, 1.0f, 200.0f);
+        mesh->renderVertices[i].position.z = td_value(&state, -40.0f, 40.0f);
+        mesh->renderVertices[i].color.r = 0.5f;
+        mesh->renderVertices[i].clipFlags = 0;
+    }
+}
+
+static void td_dump_hash(int screen, unsigned long cursor)
+{
+    unsigned long after = life_record(screen)->vertexCursor;
+    life_extra(" after=%lu drawn=%u", after, (unsigned)life_record(screen)->sceneDrawn);
+    if (after >= cursor && after - cursor <= 0x98a) {
+        uint32_t hash = 2166136261u;
+        const uint32_t *words = (const uint32_t *)(g_d2.vb[screen] + cursor * 0x24);
+        for (unsigned long w = 0; w < (after - cursor) * 9; w++) {
+            hash = (hash ^ words[w]) * 16777619u;
+        }
+        life_extra(" ring=%08x", (unsigned)hash);
+        if (after > cursor) {
+            char text[1024] = "";
+            arr_words(text, sizeof text, g_d2.vb[screen] + cursor * 0x24, (after - cursor < 4 ? after - cursor : 4) * 0x24);
+            life_extra(" first=%s", text);
+        }
+    } else {
+        life_extra(" restart");
+    }
+}
+
+#define TD_GRID(name, slot_name, screen, cursor, ortho, ...)                                                                                \
+    do {                                                                                                                                    \
+        d2_prepare(screen, cursor);                                                                                                         \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            life_record(screen)->sceneDrawn = 0;                                                                                            \
+            ret = ((TerrainDrawFn)LIFE_SLOT(slot_name))(g_life.obj, g_tdm.mesh, (unsigned long)(screen), (ortho));                         \
+            td_dump_hash(screen, cursor);                                                                                                   \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_grid_draws(void)
+{
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_viewport(1, -30.0f, 5.0f, 12.0f, 500.0f);
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid of a window with some points not visible", DrawTerrainGrid, 0, 0, 0);
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid orthographic", DrawTerrainGrid, 0, 100, 1);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid of a window whose points are all visible", DrawTerrainGrid, 0, 200, 0);
+    td_grid_mesh(10, 20, 2, 2, 3, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid on screen 1", DrawTerrainGrid, 1, 7, 0);
+    td_grid_mesh(5, 5, 0, 0, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid of a window of one point draws one cell", DrawTerrainGrid, 0, 300, 0);
+    td_grid_mesh(5, 5, 1, 1, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid of a window of 2 x 2 points", DrawTerrainGrid, 0, 310, 0);
+    td_grid_mesh(98, 97, 2, 2, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid at the end of the grid", DrawTerrainGrid, 0, 320, 0);
+    td_grid_mesh(3, 2, 4, 3, 5, 0);
+    TD_GRID("terrain draw: DrawTerrainGrid without visible rows does nothing", DrawTerrainGrid, 0, 330, 0);
+    td_grid_mesh(0, 0, 3, 3, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid with room for nine cells", DrawTerrainGrid, 0, 0x98a - 36, 0);
+    td_grid_mesh(0, 0, 3, 3, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid with the ring running out half way", DrawTerrainGrid, 0, 0x98a - 18, 0);
+    td_grid_mesh(3, 2, 2, 2, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid while DrawPrimitiveVB is busy twice", DrawTerrainGrid, 0, 340, 0, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_grid_mesh(3, 2, 2, 2, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid when DrawPrimitiveVB fails", DrawTerrainGrid, 0, 360, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+    td_grid_mesh(3, 2, 2, 2, 0, 1);
+    TD_GRID("terrain draw: DrawTerrainGrid when the vertex buffer unlock fails once", DrawTerrainGrid, 0, 380, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+            g_life.dd->vb_script[FV_UNLOCK].times = 1);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -427,5 +516,6 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     memset(&g_tdm, 0, sizeof g_tdm);
     td_terrain_draws();
     td_water_draws();
+    td_grid_draws();
     life_end();
 }
