@@ -454,6 +454,12 @@ static void td_dump_hash(int screen, unsigned long cursor)
     } else {
         life_extra(" restart");
     }
+    uint32_t all = 2166136261u;
+    const uint32_t *ring = (const uint32_t *)g_d2.vb[screen];
+    for (unsigned w = 0; w < 0x98a * 9; w++) {
+        all = (all ^ ring[w]) * 16777619u;
+    }
+    life_extra(" whole=%08x", (unsigned)all);
 }
 
 #define TD_GRID(name, slot_name, screen, cursor, ortho, ...)                                                                                \
@@ -500,6 +506,120 @@ static void td_grid_draws(void)
             g_life.dd->vb_script[FV_UNLOCK].times = 1);
 }
 
+/* ---- DrawTerrainHighlight(GETerrainMesh &, rectangle, screen, orthographic, colour, alpha), slot 26 ---- */
+
+typedef long(THISCALL *TerrainHighlightFn)(void *self, void *mesh, const int32_t *rectangle, unsigned long screen, unsigned char orthographic, const float *color,
+                                           float alpha);
+
+static GETMTileRowLayout g_tile_rows[105];
+
+/* Tile rows 0 .. count - 1: row r holds the columns [first(r), first(r) + 100). */
+static void td_tile_rows(unsigned count)
+{
+    memset(g_tile_rows, 0, sizeof g_tile_rows);
+    for (unsigned r = 0; r < 105; r++) {
+        g_tile_rows[r].firstIndex = r % 3;
+        g_tile_rows[r].count = 100 - (r % 3);
+    }
+    g_tdm.mesh->tileRows = g_tile_rows;
+    g_tdm.mesh->tileRowCount = count;
+}
+
+#define TD_HIGHLIGHT(name, screen, cursor, rect, ortho, color, alpha, ...)                                                                  \
+    do {                                                                                                                                    \
+        d2_prepare(screen, cursor);                                                                                                         \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            ret = ((TerrainHighlightFn)LIFE_SLOT(DrawTerrainHighlight))(g_life.obj, g_tdm.mesh, (rect), (unsigned long)(screen), (ortho), (color), (alpha)); \
+            td_dump_hash(screen, cursor);                                                                                                   \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_highlight_draws(void)
+{
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_viewport(1, -30.0f, 5.0f, 12.0f, 500.0f);
+    static const float kRed[3] = {1.0f, 0.25f, 0.0f};
+    static const float kWild[3] = {2.0f, -0.5f, 0.3333f};
+    static const int32_t kInside[4] = {6, 3, 7, 2};       /* rows 2 .. 6, columns 3 .. 7 */
+    static const int32_t kSingle[4] = {4, 5, 5, 4};
+    static const int32_t kWide[4] = {8, 0, 12, 3};        /* partly outside the window */
+    static const int32_t kReversed[4] = {2, 7, 3, 6};     /* the loops do not run, the count is still the product of the sides */
+    static const int32_t kOutside[4] = {60, 50, 70, 55};
+    static const int32_t kBeyondRows[4] = {104, 90, 99, 98};
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of a rectangle inside the window", 0, 0, kInside, 0, kRed, 0.5f);
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight orthographic", 0, 100, kInside, 1, kRed, 0.5f);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of one tile", 0, 200, kSingle, 0, kRed, 1.0f);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of a rectangle that reaches beyond the window", 0, 300, kWide, 0, kRed, 0.25f);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of a rectangle whose sides are the wrong way round", 0, 400, kReversed, 0, kRed, 0.25f);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of a rectangle outside the window", 0, 410, kOutside, 0, kRed, 0.25f);
+    td_grid_mesh(0, 0, 6, 5, 0, 1);
+    td_tile_rows(6);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of rows beyond the tile rows", 0, 420, kInside, 0, kRed, 0.25f);
+    td_grid_mesh(0, 0, 99, 99, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of a rectangle taller than the tile rows", 0, 430, kBeyondRows, 0, kRed, 0.25f);
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight with colours out of range", 0, 500, kInside, 0, kWild, 1.75f);
+    td_grid_mesh(3, 2, 4, 3, 5, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight with an alpha of zero", 0, 520, kInside, 0, kRed, 0.0f);
+    td_grid_mesh(10, 20, 3, 3, 3, 1);
+    td_tile_rows(100);
+    {
+        static const int32_t kScreenOne[4] = {23, 10, 14, 20};
+        TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight on screen 1", 1, 7, kScreenOne, 0, kRed, 0.5f);
+    }
+    td_grid_mesh(3, 2, 4, 3, 5, 0);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight without visible rows does nothing", 0, 540, kInside, 0, kRed, 0.5f);
+
+    /* more than 407 tiles are drawn in batches that fill the ring: 407 tiles are 2442 vertices */
+    static const int32_t k407[4] = {10, 3, 39, 0};
+    static const int32_t k408[4] = {11, 3, 36, 0};
+    td_grid_mesh(0, 0, 99, 99, 0, 1);
+    td_tile_rows(105);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of exactly 407 tiles", 0, 0, k407, 0, kRed, 0.5f);
+    td_grid_mesh(0, 0, 99, 99, 0, 1);
+    td_tile_rows(105);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of 408 tiles", 0, 0, k408, 0, kRed, 0.5f);
+    td_grid_mesh(0, 0, 99, 99, 0, 1);
+    td_tile_rows(105);
+    {
+        static const int32_t kBig[4] = {99, 0, 99, 0};
+        TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of 10000 tiles in batches", 0, 0, kBig, 0, kRed, 0.5f);
+    }
+    td_grid_mesh(0, 0, 99, 99, 0, 1);
+    td_tile_rows(105);
+    {
+        static const int32_t kHalf[4] = {5, 0, 99, 0};
+        TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight of 600 tiles with the ring part used", 0, 1000, kHalf, 0, kRed, 0.5f);
+    }
+    td_grid_mesh(3, 2, 4, 3, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight while DrawPrimitiveVB is busy twice", 0, 600, kInside, 0, kRed, 0.5f, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_grid_mesh(3, 2, 4, 3, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight when DrawPrimitiveVB fails", 0, 650, kInside, 0, kRed, 0.5f, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+    td_grid_mesh(3, 2, 4, 3, 0, 1);
+    td_tile_rows(100);
+    TD_HIGHLIGHT("terrain draw: DrawTerrainHighlight when the vertex buffer unlock fails", 0, 700, kInside, 0, kRed, 0.5f, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
+                 g_life.dd->vb_script[FV_UNLOCK].times = 1);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -517,5 +637,6 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_terrain_draws();
     td_water_draws();
     td_grid_draws();
+    td_highlight_draws();
     life_end();
 }
