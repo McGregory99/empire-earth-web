@@ -150,23 +150,29 @@ press_and_check() {
   local before after
   # ee-key.exe lists the windows of its desktop and the foreground one before it presses: a run that loses its keys says where they went.
   # It runs in the background with a limit: a Wine process that hung after its last line once held the whole run for ten minutes.
-  local kpid waited=0 krc
+  local kpid waited=0 krc timed_out=0
+  # The helper runs in a session of its own (setsid), so $kpid is also its process-group id: the timeout kills exactly the helper
+  # and the Wine processes it started, never a process that merely has its path in the command line.
   # shellcheck disable=SC2086
-  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 &
+  WINEPREFIX="$GR_PREFIX" WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" python3 -I -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' "$GR_WINE_ROOT/bin/wine" "$KEY_EXE" ${SCN_KEY_WINDOW:+--window-class "$SCN_KEY_WINDOW"} $SCN_KEYS >>"$OUT/ee-key.out" 2>&1 &
   kpid=$!
   while kill -0 "$kpid" 2>/dev/null; do
     if [ "$waited" -ge "$KEY_TIMEOUT" ]; then
-      pkill -KILL -P "$kpid" 2>/dev/null; kill -KILL "$kpid" 2>/dev/null
-      pkill -KILL -f "$KEY_EXE" 2>/dev/null
+      kill -KILL -- "-$kpid" 2>/dev/null; kill -KILL "$kpid" 2>/dev/null
       wait "$kpid" 2>/dev/null
-      gr_log "the key helper did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out)"
-      return 3
+      timed_out=1
+      # The helper may have pressed the key before it hung: the pause is a toggle, so whether the press took is decided by the
+      # tick lines below, never assumed.
+      gr_log "the key helper did not finish in ${KEY_TIMEOUT}s: killed (see $OUT/ee-key.out); deciding from the tick lines whether the press took"
+      break
     fi
     sleep 1
     waited=$((waited + 1))
   done
-  wait "$kpid"; krc=$?
-  [ "$krc" -eq 0 ] || { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
+  if [ "$timed_out" = 0 ]; then
+    wait "$kpid"; krc=$?
+    [ "$krc" -eq 0 ] || { gr_log "FAIL: the key helper failed (see $OUT/ee-key.out)"; return 2; }
+  fi
   sleep "$SETTLE_SECONDS"
   before="$(tick_lines)"
   sleep "$PAUSE_WINDOW"
