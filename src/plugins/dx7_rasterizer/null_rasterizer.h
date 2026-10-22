@@ -150,6 +150,14 @@ private:
     long Set3DMode(unsigned long screen);
     void ConvertToD3DMatrix(const GETransformationLayout &transformation, float *matrix);
 
+    // The vertex copies the model draw uses (dx7_model.cpp; protected members of DX7Rasterizer, exported under the original's names for the
+    // harness): the `vertexLength` vertices of `material` from the model's arrays into the ring at `destination` (36-byte vertices); the
+    // smoothing variants blend the current and the next frame by the model's fraction.
+    void CopyStdVertices(const GEModelLayout *model, const GEMaterialLayout *material, void *destination);
+    void CopyStdColorVertices(const GEModelLayout *model, const GEMaterialLayout *material, void *destination);
+    void CopyAndSmoothStdVertices(const GEModelLayout *model, const GEMaterialLayout *material, void *destination);
+    void CopyAndSmoothStdColorVertices(const GEModelLayout *model, const GEMaterialLayout *material, void *destination);
+
     // The ring vertex buffer's helpers the draws use (dx7_vertex_ring.cpp): lock `count` vertices of the screen's buffer, hand back the
     // buffer's start (the caller adds cursor * 0x24); the DLL exports them under the original's names for the harness.
     long LockVB(unsigned long count, unsigned long screen, void *&vertices);

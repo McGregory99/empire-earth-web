@@ -10,3 +10,7 @@
 10 ?ConvertToD3DMatrix@DX7Rasterizer@@IAEXABVGETransformation@@AAU_D3DMATRIX@@@Z
 11 ?LockVB@DX7Rasterizer@@IAEJKKAAPAUD3DVERTEX_STD_COLOR@@@Z
 12 ?UnlockVB@DX7Rasterizer@@IAEJK@Z
+13 ?CopyStdVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z
+14 ?CopyStdColorVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z
+15 ?CopyAndSmoothStdVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z
+16 ?CopyAndSmoothStdColorVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z

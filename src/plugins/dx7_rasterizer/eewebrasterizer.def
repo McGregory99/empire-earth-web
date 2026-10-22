@@ -21,3 +21,8 @@ EXPORTS
 ; The ring vertex buffer's lock and unlock helpers (protected members there), for the harness.
     ?LockVB@DX7Rasterizer@@IAEJKKAAPAUD3DVERTEX_STD_COLOR@@@Z=?LockVB@EEWebNullRasterizer@@AAEJKKAAPAX@Z                                       @11
     ?UnlockVB@DX7Rasterizer@@IAEJK@Z=?UnlockVB@EEWebNullRasterizer@@AAEJK@Z                                                                     @12
+; The model draw's vertex copies (protected members there), for the harness.
+    ?CopyStdVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z=?CopyStdVertices@EEWebNullRasterizer@@AAEXPBUGEModelLayout@@PBUGEMaterialLayout@@PAX@Z   @13
+    ?CopyStdColorVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z=?CopyStdColorVertices@EEWebNullRasterizer@@AAEXPBUGEModelLayout@@PBUGEMaterialLayout@@PAX@Z   @14
+    ?CopyAndSmoothStdVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z=?CopyAndSmoothStdVertices@EEWebNullRasterizer@@AAEXPBUGEModelLayout@@PBUGEMaterialLayout@@PAX@Z   @15
+    ?CopyAndSmoothStdColorVertices@DX7Rasterizer@@IAEXPAVGEModel@@PAVGEMaterial@@PAUD3DVERTEX_STD_COLOR@@@Z=?CopyAndSmoothStdColorVertices@EEWebNullRasterizer@@AAEXPBUGEModelLayout@@PBUGEMaterialLayout@@PAX@Z   @16
