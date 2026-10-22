@@ -140,6 +140,7 @@ static struct {
     int count;
     GETextureLayout *textures[2][3];
     void *stack;
+    long(THISCALL *set_2d_mode)(void *self, unsigned long screen);
 } g_mm;
 
 static void *mm_lle(const char *name)
@@ -414,20 +415,21 @@ static void mm_draws(void)
     MM_STEP("model: DrawModelHierarchy of a parent out of view still draws its children", DrawModelHierarchy, 0, 420, off_screen, 1.0f, 0, );
 
     /* the scale of a child is its own times its parent's, and decides whether it is seen and whether it needs clipping */
-    const float kParentScales[4] = {0.01f, 1.0f, 6.0f, 40.0f};
-    for (int i = 0; i < 4; i++) {
+    const float kParentScales[6] = {0.01f, 1.0f, 6.0f, 40.0f, 1.0f, 40.0f};
+    const float kChildScales[6] = {1.0f, 1.0f, 1.0f, 1.0f, 40.0f, 0.01f};
+    for (int i = 0; i < 6; i++) {
         MmSpec scaled_parent = parent;
         scaled_parent.x = 12.0f;
         scaled_parent.scale = kParentScales[i];
         scaled_parent.seed = 800 + 10 * (unsigned)i;
         MmSpec scaled_child = child_a;
         scaled_child.x = 0.0f;
-        scaled_child.scale = 1.0f;
+        scaled_child.scale = kChildScales[i];
         scaled_child.seed = 810 + 10 * (unsigned)i;
         GEModelLayout *scaled_tree = mm_model(&scaled_parent);
         mm_children(scaled_tree, mm_model(&scaled_child), NULL);
         char name[160];
-        snprintf(name, sizeof name, "model: DrawModelHierarchy of a hierarchy whose parent has a scale of %g", kParentScales[i]);
+        snprintf(name, sizeof name, "model: DrawModelHierarchy of a hierarchy whose parent has a scale of %g and child one of %g", kParentScales[i], kChildScales[i]);
         MM_STEP(name, DrawModelHierarchy, 0, 800 + 20 * i, scaled_tree, 1.0f, 0, );
     }
 
@@ -488,6 +490,8 @@ static void mm_draws(void)
 
     /* Draw(GEModel *) sets the 3D projection and holds the critical section; DrawSky draws and answers 0 */
     MM_STEP("model: Draw(GEModel) sets the projection and draws", Draw_7, 0, 600, a, 1.0f, 0, );
+    MM_STEP("model: Draw(GEModel) on a screen in 2D mode sets the 3D projection first", Draw_7, 0, 610, a, 1.0f, 0, g_mm.set_2d_mode(g_life.obj, 0));
+    MM_STEP("model: DrawSky on a screen in 2D mode sets the 3D projection first", DrawSky, 0, 620, a, 1.0f, 0, g_mm.set_2d_mode(g_life.obj, 0));
     MM_STEP("model: Draw(GEModel) of a hierarchy orthographic", Draw_7, 0, 620, tree, 1.0f, 1, );
     MM_STEP("model: Draw(GEModel) on screen 1", Draw_7, 1, 40, b, 1.0f, 0, );
     MM_STEP("model: Draw(GEModel) answers the status of the vertex buffer unlock", Draw_7, 0, 660, tree, 1.0f, 0,
@@ -520,6 +524,10 @@ static void check_model(const struct Expect *e, HMODULE h, const ScreenApi *api,
     g_d2.vb[1] = ((FakeVB *)g_life.dd->vbs[1])->memory;
     memset(&g_tex, 0, sizeof g_tex);
     memset(&g_mm, 0, sizeof g_mm);
+    {
+        void *set_2d = proc_address(h, "?Set2DMode@DX7Rasterizer@@IAEJK@Z");
+        memcpy(&g_mm.set_2d_mode, &set_2d, sizeof set_2d);
+    }
     mm_draws();
     life_end();
 }
