@@ -145,6 +145,11 @@ test-unit: $(BUILD)/ddraw.dll $(BUILD)/broken/ddraw.dll $(BUILD)/fakeplugin.dll 
 	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-partial.txt' \
 	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-partial.txt' \
 	    "$(WINE)" harness.exe data-partial 2>/dev/null
+	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
+	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=3 \
+	    DDT_TRACE='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-samepixels.txt' \
+	    DDT_DATA='Z:$(subst /,\,$(abspath $(TESTBED)))\trace-data-samepixels.txt' \
+	    "$(WINE)" harness.exe data-samepixels 2>/dev/null
 	rm -f $(TESTBED)/arm.flag $(TESTBED)/trace-data-arm-off.txt*
 	cd $(TESTBED) && WINEDLLOVERRIDES="ddraw=n;mscoree,mshtml=" \
 	    DDT_NEXT=mockddraw.dll DDT_MODULES=fakeplugin.dll DDT_FLUSH=1 DDT_MAX_PRESENTS=2 \

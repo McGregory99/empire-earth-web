@@ -1008,6 +1008,29 @@ static void cycle_surf_partial(HMODULE plugin, HWND hwnd) {
     check_ref(nth_line("T1 surf#3.BltFast(*", 0), "blob=", 1, "BltFast from a, after the partial Unlock");
 }
 
+/* The same pixels under another origin are the same record: the origin says why a record was taken, not what it holds. */
+static void cycle_surf_samepixels(HMODULE plugin, HWND hwnd) {
+    const char *trace = getenv("DDT_TRACE");
+    char path[700];
+    ScenarioS r;
+    ScenarioSFn fn = (ScenarioSFn)GetProcAddress(plugin, "scenario_o");
+    memset(&r, 0, sizeof r);
+    check(fn != NULL, "fake plugin exports scenario_o");
+    if (!fn)
+        return;
+    check(fn(hwnd, &r) == 0, "scenario O ran to the end");
+    load_trace_again();
+    sprintf(path, "%s.data", trace ? trace : "");
+    check(load_data(path), "the data file has the documented header and well-formed records");
+    check(g_nrecs == 2, "2 records: a at Unlock, c as a Blt source (a, written again with its own pixels, then a Blt source, holds the Unlock's pixels: no third)");
+    if (g_nrecs < 2)
+        return;
+    check_ref(nth_line("T1 surf#2.Unlock(*", 0), "blob=", 0, "Unlock of a");
+    check(strstr(nth_line("T1 surf#3.Blt(*", 0), "blob=") == NULL, "Blt from a clean a stores nothing");
+    check_ref(nth_line("T1 surf#2.Blt(*", 0), "blob=", 1, "Blt from c");
+    check_ref(nth_line("T1 surf#3.Blt(*", 1), "blob=", 0, "second Blt from a: the Unlock's record again");
+}
+
 /* Textures created and filled before the capture is armed: the arming stores each one once ("# snapshot surf#N blob=..."). */
 static void run_scenario_n(HMODULE plugin, HWND hwnd) {
     ScenarioS r;
@@ -1221,6 +1244,8 @@ int main(int argc, char **argv) {
             cycle_arm_snapshot_off(plugin, hwnd);
         else if (!strcmp(argv[1], "data-partial"))
             cycle_surf_partial(plugin, hwnd);
+        else if (!strcmp(argv[1], "data-samepixels"))
+            cycle_surf_samepixels(plugin, hwnd);
         else
             cycle_data(plugin, hwnd);
     } else if (hwnd && plugin && argc > 1 && !strcmp(argv[1], "mock")) {

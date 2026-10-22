@@ -566,6 +566,37 @@ __declspec(dllexport) int WINAPI scenario_p(HWND hwnd, ScenarioS *r) {
     return 0;
 }
 
+/* Scenario O: the same pixels reach the data file under different origins.  a is filled and unlocked (origin 1); a Blt copies it
+ * into c, a Blt copies c back into a (a is written again, with the pixels it already had), and a is read as a Blt source:
+ * the pixels of a are the ones the Unlock stored. */
+__declspec(dllexport) int WINAPI scenario_o(HWND hwnd, ScenarioS *r) {
+    LPDIRECTDRAW7 dd = NULL;
+    LPDIRECTDRAWSURFACE7 primary = NULL, a, c;
+    DDSURFACEDESC2 sd;
+#define R(call) (r->hr[r->n++] = (call))
+
+    if (FAILED(DirectDrawCreateEx(NULL, (void **)&dd, &IID_IDirectDraw7, NULL)))
+        return 1;
+    IDirectDraw7_SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    sd.dwFlags = DDSD_CAPS;
+    sd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    IDirectDraw7_CreateSurface(dd, &sd, &primary, NULL); /* surf#1 */
+    a = make_surface(dd, 8, 8, 0);                       /* surf#2 */
+    c = make_surface(dd, 8, 8, 0);                       /* surf#3 */
+    memset(&sd, 0, sizeof sd);
+    sd.dwSize = sizeof sd;
+    R(IDirectDrawSurface7_Lock(a, NULL, &sd, DDLOCK_WAIT, NULL));
+    fill_texture((unsigned char *)sd.lpSurface, (unsigned)sd.lPitch);
+    R(IDirectDrawSurface7_Unlock(a, NULL));                           /* origin 1: stored */
+    R(IDirectDrawSurface7_Blt(c, NULL, a, NULL, DDBLT_WAIT, NULL));   /* a is clean: nothing; c is now written */
+    R(IDirectDrawSurface7_Blt(a, NULL, c, NULL, DDBLT_WAIT, NULL));   /* c is read as a source (origin 3); a is written */
+    R(IDirectDrawSurface7_Blt(c, NULL, a, NULL, DDBLT_WAIT, NULL));   /* a is read as a source (origin 3): same pixels as the Unlock */
+#undef R
+    return 0;
+}
+
 __declspec(dllexport) int WINAPI scenario_r(HWND hwnd, ScenarioR *r) {
     LPDIRECTDRAW7 dd = NULL;
     LPDIRECTDRAWSURFACE7 primary = NULL, back = NULL;
