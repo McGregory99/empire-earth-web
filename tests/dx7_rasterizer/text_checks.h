@@ -153,6 +153,32 @@ static void tx_draws(void)
     g_life.dd->text_dc = g_tx.dc;
 }
 
+/* Our build only: what cannot be drawn is refused without a GDI call (the original dereferences it, or hands a bitmap font to the engine). */
+static void tx_ours_only(void)
+{
+    tx_reset();
+    tx_text("Refused", 7, 7, 4.0f, 6.0f, 0.9f, 0.2f, 0, 0);
+    static const GERectangleLayout kRect = {30.0f, 10.2f, 70.9f, 4.7f};
+    long null_surface = ((TextDraw)LIFE_SLOT(Draw_4))(g_life.obj, &g_tx.text, NULL);
+    long null_text = ((TextDraw)LIFE_SLOT(Draw_4))(g_life.obj, NULL, g_tx.surface[0]);
+    long null_rect_surface = ((TextRectDraw)LIFE_SLOT(Draw_3))(g_life.obj, &g_tx.text, &kRect, NULL);
+    uint8_t *chars = g_tx.text.text.chars;
+    g_tx.text.text.chars = NULL;
+    long no_chars = ((TextDraw)LIFE_SLOT(Draw_4))(g_life.obj, &g_tx.text, g_tx.surface[0]);
+    g_tx.text.text.chars = chars;
+    g_tx.font.fontBitmap = (void *)0x1000;
+    long bitmap_font = ((TextRectDraw)LIFE_SLOT(Draw_3))(g_life.obj, &g_tx.text, &kRect, g_tx.surface[0]);
+    g_tx.font.fontBitmap = NULL;
+    int untouched = 1;
+    for (int i = 0; i < TX_WIDTH * TX_HEIGHT; i++) {
+        untouched &= g_tx.pixels[i] == 0x00808080u;
+    }
+    CHECK(null_surface == EEWEB_NOT_SUPPORTED && null_rect_surface == EEWEB_NOT_SUPPORTED && null_text == EEWEB_LAYOUT_VIOLATION &&
+              no_chars == EEWEB_LAYOUT_VIOLATION && bitmap_font == EEWEB_NOT_SUPPORTED && untouched && g_tx.font.refCount == 5 && GetBkMode(g_tx.dc) == TRANSPARENT,
+          "%s: text: a missing surface or text, text without characters (layout canary) and a rectangle on a bitmap font are refused without a draw (%lx %lx %lx %lx %lx, font count %u)",
+          g_life.e->label, null_surface, null_rect_surface, null_text, no_chars, bitmap_font, (unsigned)g_tx.font.refCount);
+}
+
 static void check_text(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -187,6 +213,9 @@ static void check_text(const struct Expect *e, HMODULE h, const ScreenApi *api, 
     tx_make_surface(0);
     tx_make_surface(1);
     tx_draws();
+    if (e->ours) {
+        tx_ours_only();
+    }
     g_life.dd->text_dc = NULL;
     SelectObject(g_tx.dc, g_tx.original_bitmap);
     DeleteObject(g_tx.bitmap);

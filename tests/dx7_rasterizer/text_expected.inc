@@ -1,3 +1,4 @@
+/* The pixel hashes are what this machine's Wine draws with the system fixed font: record them again (EEWEB_LIFE_RECORD=1 on the original) when the Wine runtime changes. */
 {"text: Draw(GEText) locks the text DC and draws opaque text",
  "s1.GetDC; | ret=0 ne=80004005 | bkmode=1 textcolor=123456 bkcolor=654321 font=kept refs=5 pixels=35d8cfd6"},
 {"text: Draw(GEText) on a locked surface with transparent text",

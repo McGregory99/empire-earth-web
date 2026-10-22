@@ -14,7 +14,7 @@
 // state's camera inverse (0xf0), normal 0, colour 0xffff0000, u 0 and v from `start`, which grows by the length of the segment after
 // the first vertex and is wrapped after the second: above -1 and above 1 it loses its integer part (floor by the rounded value), at
 // -1 or below (or not a number) it becomes ceil(v) - v.  A line of more than 0x4c6 points is cut to the ring (0x98a vertices);
-// one point draws nothing (0 vertices).  tests/dx7_rasterizer/line3d_checks.h compares both builds on 19 recorded steps.  Differs
+// one point draws nothing (0 vertices).  tests/dx7_rasterizer/line3d_checks.h compares both builds on 27 recorded steps.  Differs
 // deliberately: a vector with no point (the original reads past it), a null vector and a screen without record, device, vertex
 // buffer or state are refused (EEWEB_NOT_SUPPORTED); a lock without a pointer answers 1.
 //
