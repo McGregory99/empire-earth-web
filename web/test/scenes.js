@@ -299,4 +299,48 @@ SCENES.push(
   },
 );
 
+// ---- wireframe, point fill, flat shading -----------------------------------------------------------------------------
+/** A vertex at D3D screen coordinates (pixel centres on integers) at depth 0.5. */
+const sv = (sx, sy, extra = {}) => ({ pos: [(2 * sx) / SIZE - 1, 1 - (2 * sy) / SIZE, 0.5], ...extra });
+const FRONT = [sv(8, 8), sv(40, 8), sv(8, 40)]; // right, then down-left: clockwise on screen = a front face in D3D
+const BACK = [sv(48, 56), sv(48, 24), sv(16, 56)]; // counter-clockwise
+const LIT = [255, 255, 255];
+const DARK = [0, 0, 0];
+
+SCENES.push(
+  {
+    name: 'FILLMODE WIREFRAME draws the edges only and culls back faces like a solid draw',
+    commands: () => [...plain([[RS.FILLMODE, 2], [RS.CULLMODE, 3]]), ...draw([...FRONT, ...BACK], [0, 1, 2, 3, 4, 5])],
+    probes: [[24, 8, LIT, 'top edge of the front triangle'], [8, 24, LIT, 'left edge'], [24, 24, LIT, 'hypotenuse x + y = 48 passes through (24, 24)'],
+      [12, 12, DARK, 'the inside of the triangle is not filled'], [30, 30, DARK, 'outside'], [48, 40, DARK, 'the counter-clockwise triangle is culled (CULL_CCW): its edge x = 48 is not drawn']],
+  },
+  {
+    name: 'FILLMODE WIREFRAME without culling draws the back face edges too',
+    commands: () => [...plain([[RS.FILLMODE, 2], [RS.CULLMODE, 1]]), ...draw([...FRONT, ...BACK], [0, 1, 2, 3, 4, 5])],
+    probes: [[24, 8, LIT, 'front triangle edge'], [48, 40, LIT, 'right edge x = 48 of the back triangle'], [32, 40, DARK, 'inside the back triangle']],
+  },
+  {
+    name: 'FILLMODE POINT draws the vertices only',
+    commands: () => [...plain([[RS.FILLMODE, 1]]), ...draw(FRONT, [0, 1, 2])],
+    probes: [[8, 8, LIT, 'first vertex'], [40, 8, LIT, 'second vertex'], [8, 40, LIT, 'third vertex'], [24, 8, DARK, 'the edges are not drawn'], [12, 12, DARK, 'nor the inside']],
+  },
+  {
+    name: 'SHADEMODE FLAT colours a triangle with its first vertex',
+    commands: () => {
+      const col = [0xffff0000, 0xff00ff00, 0xff0000ff];
+      const tri = (dx) => [sv(8 + dx, 8, { diffuse: col[0] }), sv(28 + dx, 8, { diffuse: col[1] }), sv(8 + dx, 28, { diffuse: col[2] })];
+      return [...plain([[RS.SHADEMODE, 1]]), ...draw(tri(0), [0, 1, 2]), ...draw(tri(32), [1, 2, 0])];
+    },
+    probes: [[12, 12, [255, 0, 0], 'indices 0, 1, 2: the first vertex is red, the whole triangle is red'],
+      [44, 12, [0, 255, 0], 'indices 1, 2, 0: the first vertex is green']],
+  },
+  {
+    name: 'SHADEMODE GOURAUD interpolates (the default)',
+    commands: () => [...plain(), ...draw([sv(8, 8, { diffuse: 0xffff0000 }), sv(28, 8, { diffuse: 0xff00ff00 }), sv(8, 28, { diffuse: 0xff0000ff })], [0, 1, 2])],
+    probes: [[10, 10, [204, 26, 26], 'barycentric weights red 0.8, green 0.1, blue 0.1 at (10, 10) of the corners (8, 8), (28, 8), (8, 28)'],
+      [18, 10, [102, 128, 26], 'weights red 0.4, green 0.5, blue 0.1 at (18, 10)']],
+    tol: 4,
+  },
+);
+
 export { lerp, mix, TSS };
