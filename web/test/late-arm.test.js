@@ -94,3 +94,69 @@ test('a state the capture sets itself wins over the seeded one', () => {
   const { sequence } = loadTrace(t, null, { allowMissingData: true });
   assert.equal(rsValue(sequence, 25), 8);
 });
+
+// ---- advisories: CRLF traces, and a keyed blit without a known key ---------------------------------------------------------------------
+
+const crlf = (t) => t.replace(/\n/g, '\r\n');
+
+test('a trace with CRLF line ends loads like the LF one: the "# armed" header is still seen (seeded device states) and the data header too', () => {
+  const lf = loadTrace(stateTrace(true), null, { allowMissingData: true });
+  const cr = loadTrace(crlf(stateTrace(true)), null, { allowMissingData: true });
+  assert.equal(rsValue(cr.sequence, 25), 5, 'ALPHAFUNC GREATER seeded');
+  assert.deepEqual(all(cr.sequence).map((c) => c.op), all(lf.sequence).map((c) => c.op));
+  const f = lateTrace();
+  const full = loadTrace(crlf(f.trace), new Uint8Array(f.data));
+  assert.equal(full.stats.gdiOverlays, 2);
+  assert.equal(full.stats.skippedKeyedBlits, 2);
+  assert.throws(() => loadTrace(crlf(f.trace), null), /data file/, 'the "# data:" header is found, so a missing data file is reported');
+});
+
+test('a keyed blit from a surface with no known key is an error unless the capture was armed late and the surface predates it', () => {
+  const f = lateTrace({ frames: 1 });
+  const notLate = f.trace.replace('# armed\n', '');
+  assert.throws(() => loadTrace(notLate, new Uint8Array(f.data)), /colou?r key/i, 'a capture that saw the whole run has no excuse for an unknown key');
+  const created = f.trace.replace('# armed', '# armed\nT1 dd7#1.CreateSurface(lpDDSurfaceDesc={dwSize=124, dwFlags=0x7, dwHeight=4, dwWidth=4, ddpfPixelFormat={dwSize=32, dwFlags=0x40, dwRGBBitCount=32, dwRBitMask=0xff0000, dwGBitMask=0xff00, dwBBitMask=0xff, dwRGBAlphaBitMask=0x0}, ddsCaps={dwCaps=0x840, dwCaps2=0x0, dwCaps3=0x0, dwCaps4=0x0}}, lplpDDSurface->surf#7, pUnkOuter=NULL) = DD_OK');
+  assert.throws(() => loadTrace(created, new Uint8Array(f.data)), /colou?r key/i, 'created inside the window without a key: the key cannot have been set earlier');
+  assert.equal(loadTrace(f.trace, new Uint8Array(f.data)).stats.skippedKeyedBlits, 1, 'late armed, surface from before the window: skipped and counted');
+});
+
+test('BltFast with the source colour key flag from a surface with an unknown key is skipped too, not drawn as an opaque square', () => {
+  const f = lateTrace({ frames: 1 });
+  const text = f.trace.replace('T1 surf#5.Flip', 'T1 surf#9.BltFast(dwX=20, dwY=20, lpDDSrcSurface=surf#7, lpSrcRect={0,0,4,4}, dwTrans=0x11) = DD_OK\nT1 surf#5.Flip');
+  const { sequence, stats } = loadTrace(text, new Uint8Array(f.data));
+  assert.equal(all(sequence).filter((c) => c.op === 'blit2D' && c.dstRect.x === 20).length, 0);
+  assert.equal(stats.skippedKeyedBlits, 2);
+});
+
+// A late-armed trace whose only keyed blit is a 4x4 cursor sprite: `nBackground` texels of blue (the background), the rest white.
+function cursorTrace(nBackground) {
+  const d = new DataWriter();
+  const px = Buffer.alloc(64);
+  for (let i = 0; i < 16; i++) px.set(i < 16 - nBackground ? [0xff, 0xff, 0xff, 0] : [0xff, 0x00, 0x00, 0], i * 4); // B, G, R, X
+  const cursorRef = d.surface(7, 4, 4, FMTX8888, [0, 0, 4, 4], px, 3);
+  const screen = d.surface(9, W, H, FMTX8888, [0, 0, W, H], Buffer.alloc(W * H * 4), 2);
+  const L = ['# ddraw_trace v1', '# data: x', '# armed', `# snapshot surf#7 blob=${cursorRef}`,
+    'T1 surf#9.GetDC(lphDC=P) = DD_OK', `T1 surf#9.ReleaseDC(hDC=P) = DD_OK blob=${screen}`,
+    'T1 surf#9.Blt(lpDestRect={8,8,12,12}, lpDDSrcSurface=surf#7, lpSrcRect={0,0,4,4}, dwFlags=0x8008000, lpDDBltFx=NULL) = DD_OK',
+    'T1 surf#5.Flip(lpDDSurfaceTargetOverride=NULL, dwFlags=0x28) = DD_OK'];
+  return { trace: L.join('\n') + '\n', data: new Uint8Array(d.buffer()) };
+}
+
+test('inferColorKeys: the colour that fills more than half of the sprite becomes its key (blue = 0x0000ff); off by default', () => {
+  const f = cursorTrace(12);
+  const off = loadTrace(f.trace, f.data);
+  assert.equal(off.stats.skippedKeyedBlits, 1);
+  assert.equal(all(off.sequence).filter((c) => c.op === 'blit2D').length, 0);
+  const on = loadTrace(f.trace, f.data, { inferColorKeys: true });
+  const blit = all(on.sequence).find((c) => c.op === 'blit2D' && c.srcId === 7);
+  assert.deepEqual(blit.colorKey, { low: 0xff, high: 0xff });
+  assert.equal(on.stats.inferredKeys, 1);
+  assert.equal(on.stats.skippedKeyedBlits, 0);
+});
+
+test('inferColorKeys needs a strict majority: a sprite without a dominant colour is still skipped', () => {
+  const f = cursorTrace(8); // 8 blue, 8 white
+  const { stats } = loadTrace(f.trace, f.data, { inferColorKeys: true });
+  assert.equal(stats.skippedKeyedBlits, 1);
+  assert.equal(stats.inferredKeys ?? 0, 0);
+});
