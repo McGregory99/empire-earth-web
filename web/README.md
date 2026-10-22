@@ -61,6 +61,7 @@ Not replayed: `dev7.Load`/`PreLoad` (the capture does not store their results), 
 | `src/frame-model.js` | The frame model: command constructors, validation, constants (FVF 0x152, 36-byte vertices) |
 | `src/formats.js` | Pixel converters for the six formats of the golden to RGBA8, colour keys (pure) |
 | `src/d3d-tables.js` | D3D7 enum to GL translation and the support policy per render / texture-stage state (pure) |
+| `src/lighting.js`, `src/fill-modes.js` | Light formulas (attenuation, spot cone) as JavaScript oracle; index rewrites for flat shading, wireframe / point fill and the culling they need (pure) |
 | `src/state.js` | Device state tracker: validates state commands, resolves a draw config (pure) |
 | `src/shaders.js`, `src/renderer.js` | GLSL fixed-function emulation and the WebGL2 command executor |
 | `src/trace-parse.js`, `data-file.js`, `trace-loader.js` | ddraw_trace text parser, data-file reader, trace to frame-model loader |
@@ -121,7 +122,7 @@ texture argument modifiers (COMPLEMENT, ALPHAREPLICATE), ADDSMOOTH / bump / dot3
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are
 generated from level 0 (the trace carries none); a `TEXTURE` argument with no texture bound is opaque
 white; lighting transforms normals by the world-view matrix without an inverse transpose (exact for uniform
-scale); `MIPMAPLODBIAS` is ignored by default (the reference game under Wine / macOS GL does not apply it; `new Renderer(canvas, { applyLodBias: true })` applies it); the canvas has no destination alpha; a keyed `blit2D` also skips source texels of alpha 0; dithering is
+scale); wireframe and point fill use GL's line and point rasterisation (1 pixel, GL's rules for which pixels a line covers, not D3D's); `SPECULAR` as a texture argument is the specular colour that is also added after texturing; `MIPMAPLODBIAS` is ignored by default (the reference game under Wine / macOS GL does not apply it; `new Renderer(canvas, { applyLodBias: true })` applies it); the canvas has no destination alpha; a keyed `blit2D` also skips source texels of alpha 0; dithering is
 ignored.
 
 ## Late-armed captures
