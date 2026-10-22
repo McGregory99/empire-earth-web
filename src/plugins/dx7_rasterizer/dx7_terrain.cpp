@@ -646,3 +646,51 @@ long EEWebNullRasterizer::Draw(GETerrainMesh& meshObject, ulong screen, bool ort
     UnlockAndDraw(screen, 4, 12, 0, 0);
     return 0;
 }
+
+long EEWebNullRasterizer::DrawWater(GETerrainMesh& meshObject, ulong screen, bool orthographic)
+{
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return EEWEB_LAYOUT_VIOLATION;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device || !record->vertexBuffer) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    if (EEWebVisibleTileRows(mesh) == 0) {
+        return 0;
+    }
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    float matrix[16];
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 1, matrix);
+    transformation.m[5] = 0.0f;
+    transformation.m[6] = 1.0f;
+    transformation.m[9] = 1.0f;
+    transformation.m[10] = 0.0f;
+    ConvertToD3DMatrix(transformation, matrix);
+    long result = device->vtbl->SetTransform(device, 2, matrix);
+    ConvertToD3DMatrix(orthographic ? state->viewport.orthographicProjection : state->viewport.perspectiveProjection, matrix);
+    device->vtbl->SetTransform(device, 3, matrix);
+    GETMMaterialLayout* materials = static_cast<GETMMaterialLayout*>(mesh->waterMaterials.first);
+    ulong count = materials ? static_cast<ulong>((static_cast<char*>(mesh->waterMaterials.last) - reinterpret_cast<char*>(materials)) / static_cast<long>(sizeof(GETMMaterialLayout))) : 0;
+    typedef std::vector<GETerrainMesh::GETMPolygon*, std::allocator<GETerrainMesh::GETMPolygon*>> PolygonList;
+    for (ulong index = 0; index < count; index++) {
+        GETMMaterialLayout* material = materials + index;
+        if (!material->polygons.last || !material->overlayPolygons.last) {
+            continue;
+        }
+        state->scenePolyCount += static_cast<const ulong*>(material->polygons.last)[-1];
+        state->scenePolyCount += static_cast<const ulong*>(material->overlayPolygons.last)[-1];
+        SetTexture(reinterpret_cast<GETexture*>(material->texture), screen);
+        device->vtbl->SetRenderState(device, 0x88, 0);
+        DrawTerrainMaterial(reinterpret_cast<GEViewport*>(state), *reinterpret_cast<PolygonList*>(&material->polygons), screen);
+        device->vtbl->SetRenderState(device, 0x88, 1);
+        result = DrawTerrainMaterial(reinterpret_cast<GEViewport*>(state), *reinterpret_cast<PolygonList*>(&material->overlayPolygons), screen);
+    }
+    record->sceneDrawn = 1;
+    return result;
+}

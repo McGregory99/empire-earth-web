@@ -64,7 +64,7 @@ public:
     long DrawSky(GEModel *, unsigned long, float, bool) override;  // 24 (dx7_model.cpp)
     long DrawTerrainGrid(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 25
     long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
-    long DrawWater(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 27
+    long DrawWater(GETerrainMesh &, unsigned long, bool) override;  // 27 (dx7_terrain.cpp)
     long EndScene(unsigned long) override;  // 28
     long GetAvailableVideoMemory(unsigned long, unsigned long &) override;  // 29
     long GetTotalVideoMemory(unsigned long, unsigned long &) override;  // 30
