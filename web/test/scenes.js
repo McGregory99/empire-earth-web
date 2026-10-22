@@ -317,7 +317,7 @@ SCENES.push(
   {
     name: 'FILLMODE WIREFRAME without culling draws the back face edges too',
     commands: () => [...plain([[RS.FILLMODE, 2], [RS.CULLMODE, 1]]), ...draw([...FRONT, ...BACK], [0, 1, 2, 3, 4, 5])],
-    probes: [[24, 8, LIT, 'front triangle edge'], [48, 40, LIT, 'right edge x = 48 of the back triangle'], [32, 40, DARK, 'inside the back triangle']],
+    probes: [[24, 8, LIT, 'front triangle edge'], [48, 40, LIT, 'right edge x = 48 of the back triangle'], [40, 50, DARK, 'inside the back triangle (x + y = 90 is below its hypotenuse x + y = 72)']],
   },
   {
     name: 'FILLMODE POINT draws the vertices only',

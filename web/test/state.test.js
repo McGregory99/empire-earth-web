@@ -23,8 +23,8 @@ test('D3D7 defaults', () => {
 
 test('unsupported render state throws at apply time and is not stored', () => {
   const s = new DeviceState();
-  assert.throws(() => s.apply(cmd.setRenderState(RS.FILLMODE, 2)), UnsupportedError);
-  assert.equal(s.renderState(RS.FILLMODE), 3);
+  assert.throws(() => s.apply(cmd.setRenderState(RS.ZBIAS, 1)), UnsupportedError);
+  assert.equal(s.renderState(RS.ZBIAS), undefined);
 });
 
 test('golden-trace style state: alpha blend SRCALPHA/INVSRCALPHA, alpha test GREATER 0, no depth', () => {

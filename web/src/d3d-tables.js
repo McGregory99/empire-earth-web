@@ -147,8 +147,8 @@ const RS_SPEC = {
   [RS.ANTIALIAS]: ONLY(0, 'ANTIALIAS other than NONE is not supported'),
   [RS.TEXTUREPERSPECTIVE]: IGNORED, // always perspective-correct
   [RS.ZENABLE]: APPLIED((v) => v <= 1 || unsupported('ZENABLE = USEW (w-buffer) is not supported')),
-  [RS.FILLMODE]: ONLY(3, 'FILLMODE other than SOLID (wireframe / point) is not supported'),
-  [RS.SHADEMODE]: ONLY(2, 'SHADEMODE = FLAT is not supported (WebGL2 has no D3D provoking vertex)'),
+  [RS.FILLMODE]: range('FILLMODE', 1, 3),   // POINT 1, WIREFRAME 2, SOLID 3
+  [RS.SHADEMODE]: range('SHADEMODE', 1, 3),  // FLAT 1, GOURAUD 2, PHONG 3 (shaded like Gouraud in D3D7)
   [RS.ZWRITEENABLE]: bool('ZWRITEENABLE'),
   [RS.ALPHATESTENABLE]: bool('ALPHATESTENABLE'),
   [RS.LASTPIXEL]: IGNORED,

@@ -169,7 +169,7 @@ try {
   const loud = await page.evaluate(() => {
     const { renderer } = window.__ee;
     try {
-      renderer.execute({ op: 'setRenderState', id: 8, value: 2 }); // FILLMODE = WIREFRAME
+      renderer.execute({ op: 'setRenderState', id: 47, value: 1 }); // ZBIAS
       return 'no error';
     } catch (e) { return `${e.name}: ${e.message}`; }
   });

@@ -123,6 +123,9 @@ export class DeviceState {
     return {
       depth: { enable: r(RS.ZENABLE) === 1, write: r(RS.ZWRITEENABLE) === 1, func: compareFunc(r(RS.ZFUNC)) },
       cull,
+      cullSide: ['none', 'none', 'cw', 'ccw'][r(RS.CULLMODE)],
+      fill: ['solid', 'point', 'wireframe', 'solid'][r(RS.FILLMODE)],
+      flat: r(RS.SHADEMODE) === 1,
       blend: { enable: r(RS.ALPHABLENDENABLE) === 1 && !(src === GL.ONE && dst === GL.ZERO), src, dst },
       alphaTest: { enable: r(RS.ALPHATESTENABLE) === 1, func: r(RS.ALPHAFUNC), ref: (r(RS.ALPHAREF) & 0xff) / 255 },
       fog: {

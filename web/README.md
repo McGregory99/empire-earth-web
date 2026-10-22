@@ -103,7 +103,7 @@ GDI text and the cursor); with the GDI overlay the mean difference to the refere
 ## Supported (everything the golden startup-menu summary uses)
 
 Vertex formats XYZ + NORMAL/DIFFUSE/SPECULAR + 0..2 texture sets (the game's 0x152 and e.g. 0x252 with a second set); indexed triangle and line lists; Z buffer (enable, write, func, clear value, viewport depth
-range); cull modes; alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
+range); cull modes; `FILLMODE` wireframe (the edges of the triangles that survive D3D's back-face culling, decided on the CPU from the projected vertices, shared edges once) and point (the vertices, 1 pixel); `SHADEMODE` flat (the colour of the first vertex of each triangle or line: the indices are rotated so that it is GL's provoking vertex, and PHONG shades like Gouraud as in D3D7); alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
 fog: vertex fog (`FOGVERTEXMODE`, view-space depth, or the distance from the eye with `RANGEFOGENABLE`) and table / pixel
 fog (`FOGTABLEMODE`, wins over vertex fog like in D3D7, evaluated per pixel on the depth-buffer value, so `FOGSTART`/`FOGEND`
 are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 lights (directional, point with range and `1 / (a0 + a1 d + a2 d^2)` attenuation, spot with the theta / phi cone and falloff; `src/lighting.js` has the formulas as JavaScript), global ambient, material
@@ -115,7 +115,7 @@ min, mag and mip filters, wrap / mirror / clamp, mip LOD bias; texture colour ke
 
 ## Explicitly unsupported (throws `UnsupportedError` when the command is applied or at the draw)
 
-Wireframe / point fill, flat shading, stencil, w-buffer, ZBIAS,
+Stencil, w-buffer, ZBIAS,
 user clip planes, vertex blending, texture transforms, texcoord index above 1 or with coordinate generation flags,
 texture argument modifiers (COMPLEMENT, ALPHAREPLICATE), ADDSMOOTH / bump / dot3 ops, BORDER addressing, DXT2 / DXT4 (premultiplied alpha), any
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are

@@ -73,8 +73,8 @@ test('classifyRenderState: states of the golden summary are accepted', () => {
 });
 
 test('classifyRenderState: unsupported states and values fail loudly', () => {
-  assert.throws(() => classifyRenderState(RS.FILLMODE, 2), /wireframe|fill/i);
-  assert.throws(() => classifyRenderState(RS.SHADEMODE, 1), /flat/i);
+  assert.throws(() => classifyRenderState(RS.FILLMODE, 4), /FILLMODE/);
+  assert.throws(() => classifyRenderState(RS.SHADEMODE, 0), /SHADEMODE/);
   assert.throws(() => classifyRenderState(RS.SPECULARENABLE, 2), /SPECULARENABLE/);
   assert.throws(() => classifyRenderState(RS.FOGTABLEMODE, 4), /FOGTABLEMODE/);
   assert.throws(() => classifyRenderState(RS.STENCILENABLE, 1), /stencil/i);

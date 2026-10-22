@@ -45,8 +45,10 @@ uniform int uFogMode;            // D3DFOG: 0 none, 1 exp, 2 exp2, 3 linear
 uniform bool uFogTable, uFogRange;   // table (pixel) fog is evaluated in the fragment shader; range fog measures the distance from the eye
 uniform float uFogStart, uFogEnd, uFogDensity;
 
-out vec4 vColor;
-out vec4 vSpec;
+out vec4 vColorSmooth;
+flat out vec4 vColorFlat;   // the provoking vertex: flat shading reads these
+out vec4 vSpecSmooth;
+flat out vec4 vSpecFlat;
 out vec2 vUV0;
 out vec2 vUV1;
 out float vFog;
@@ -103,12 +105,15 @@ void main() {
       }
     }
     specular = clamp(spc.rgb * accS, 0.0, 1.0);
-    vColor = vec4(clamp(emi.rgb + amb.rgb * accA + diff.rgb * accD, 0.0, 1.0), clamp(diff.a, 0.0, 1.0));
+    vColorSmooth = vec4(clamp(emi.rgb + amb.rgb * accA + diff.rgb * accD, 0.0, 1.0), clamp(diff.a, 0.0, 1.0));
   } else {
-    vColor = vcol;
+    vColorSmooth = vcol;
   }
+  vColorFlat = vColorSmooth;
   if (!uLighting) specular = vspec.rgb;     // unlit: the vertex specular colour as it is
-  vSpec = vec4(uSpecular ? specular : vec3(0.0), 0.0);
+  vSpecSmooth = vec4(uSpecular ? specular : vec3(0.0), 0.0);
+  vSpecFlat = vSpecSmooth;
+  gl_PointSize = 1.0;   // FILLMODE POINT
   vUV0 = aUV;
   vUV1 = aUV1;
 
@@ -119,8 +124,12 @@ void main() {
 export const MAIN_FS = `#version 300 es
 precision highp float;
 precision highp int;
-in vec4 vColor;
-in vec4 vSpec;
+in vec4 vColorSmooth;
+flat in vec4 vColorFlat;
+in vec4 vSpecSmooth;
+flat in vec4 vSpecFlat;
+uniform bool uFlat;
+vec4 vColor, vSpec;   // the interpolated or the provoking vertex values, set first in main
 in vec2 vUV0;
 in vec2 vUV1;
 in float vFog;
@@ -191,6 +200,8 @@ vec4 sampleStage(int i) {
 }
 
 void main() {
+  vColor = uFlat ? vColorFlat : vColorSmooth;
+  vSpec = uFlat ? vSpecFlat : vSpecSmooth;
   vec4 cur = vColor;               // CURRENT at stage 0 is the diffuse colour
   for (int i = 0; i < 2; i++) {
     if (i >= uNumStages) break;

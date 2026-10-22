@@ -4,7 +4,8 @@
 import { MAIN_VS, MAIN_FS, BLIT_VS, BLIT_FS } from './shaders.js';
 import { DeviceState } from './state.js';
 import { convertToRGBA8, bytesPerPixel, isCompressed, textureByteSize } from './formats.js';
-import { primitiveMode, unpackColor, UnsupportedError } from './d3d-tables.js';
+import { primitiveMode, unpackColor, UnsupportedError, GL } from './d3d-tables.js';
+import { flatIndices, wireframeIndices, pointIndices, cullIndices, projectToNdc } from './fill-modes.js';
 import { FVF, CLEAR, validateCommand, vertexLayout } from './frame-model.js';
 
 // The vertex buffer holds every vertex in one canonical layout, whatever format it was uploaded in:
@@ -258,7 +259,25 @@ export class Renderer {
     if (c.indices.length === 0) return;
     const cfg = this.state.drawConfig(); // throws UnsupportedError before any GL state changes
     if ((c.startVertex + c.vertexCount) * CANON > this.vbData.length) throw new Error('draw: vertex range outside the vertex buffer');
-    const mode = primitiveMode(c.primitive);
+    let mode = primitiveMode(c.primitive);
+    let indices = c.indices;
+    if (cfg.fill !== 'solid') {
+      // GL has no polygon mode: draw the edges / vertices of the triangles that survive D3D's culling
+      if (c.primitive === 'triangleList') {
+        const f = new Float32Array(this.vbData.buffer, this.vbData.byteOffset, this.vbData.byteLength / 4);
+        const memo = new Map();
+        const ndcOf = (i) => {
+          if (!memo.has(i)) { const o = ((c.startVertex + i) * CANON) / 4; memo.set(i, projectToNdc([f[o], f[o + 1], f[o + 2]], this.state.transform(1), this.state.transform(2), this.state.transform(3))); }
+          return memo.get(i);
+        };
+        indices = cullIndices(indices, ndcOf, cfg.cullSide);
+      }
+      indices = cfg.fill === 'wireframe' && c.primitive === 'triangleList' ? wireframeIndices(indices) : cfg.fill === 'point' ? pointIndices(indices) : indices;
+      mode = cfg.fill === 'point' ? GL.POINTS : GL.LINES;
+      if (indices.length === 0) return;
+    } else if (cfg.flat) {
+      indices = flatIndices(c.primitive, indices);
+    }
     this._flushVertices();
 
     const prog = this.main;
@@ -273,7 +292,7 @@ export class Renderer {
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, CANON, base + 32);
     gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 2, gl.FLOAT, false, CANON, base + 40);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, c.indices, gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STREAM_DRAW);
 
     // fixed-function state -> GL state
     const vp = this._viewport();
@@ -294,6 +313,7 @@ export class Renderer {
     const L = cfg.lighting;
     gl.uniform1i(u('uLighting'), L.enable);
     gl.uniform1i(u('uNormalize'), cfg.normalizeNormals);
+    gl.uniform1i(u('uFlat'), cfg.flat);
     gl.uniform4fv(u('uGlobalAmbient'), L.ambient);
     gl.uniform4fv(u('uMatDiffuse'), L.material.diffuse);
     gl.uniform4fv(u('uMatAmbient'), L.material.ambient);
@@ -361,7 +381,7 @@ export class Renderer {
     });
     gl.activeTexture(gl.TEXTURE0);
 
-    gl.drawElements(mode, c.indices.length, gl.UNSIGNED_SHORT, 0);
+    gl.drawElements(mode, indices.length, gl.UNSIGNED_SHORT, 0);
     gl.bindSampler(0, null);
     gl.bindSampler(1, null);
   }
