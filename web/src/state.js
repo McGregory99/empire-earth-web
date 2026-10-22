@@ -21,11 +21,12 @@ const RS_DEFAULTS = {
 };
 
 function stageDefaults(stage) {
-  return stage === 0
-    ? { [TSS.COLOROP]: TOP.MODULATE, [TSS.COLORARG1]: TARG.TEXTURE, [TSS.COLORARG2]: TARG.CURRENT,
-        [TSS.ALPHAOP]: TOP.SELECTARG1, [TSS.ALPHAARG1]: TARG.TEXTURE, [TSS.ALPHAARG2]: TARG.CURRENT,
-        [TSS.ADDRESS]: 1, [TSS.MAGFILTER]: 1, [TSS.MINFILTER]: 1, [TSS.MIPFILTER]: 1, [TSS.MIPMAPLODBIAS]: 0 }
-    : { [TSS.COLOROP]: TOP.DISABLE, [TSS.ALPHAOP]: TOP.DISABLE };
+  return {
+    [TSS.COLOROP]: stage === 0 ? TOP.MODULATE : TOP.DISABLE, [TSS.COLORARG1]: TARG.TEXTURE, [TSS.COLORARG2]: TARG.CURRENT,
+    [TSS.ALPHAOP]: stage === 0 ? TOP.SELECTARG1 : TOP.DISABLE, [TSS.ALPHAARG1]: TARG.TEXTURE, [TSS.ALPHAARG2]: TARG.CURRENT,
+    [TSS.TEXCOORDINDEX]: stage, // D3D default: stage N reads texture coordinate set N
+    [TSS.ADDRESS]: 1, [TSS.MAGFILTER]: 1, [TSS.MINFILTER]: 1, [TSS.MIPFILTER]: 1, [TSS.MIPMAPLODBIAS]: 0,
+  };
 }
 
 const isIdentity = (m) => m.length === 16 && m.every((v, i) => v === IDENTITY[i]);
@@ -92,9 +93,16 @@ export class DeviceState {
     const r = (id) => this.renderState(id);
     const s0 = this.stages[0];
     const s1 = this.stages[1];
-    if (s1[TSS.COLOROP] !== TOP.DISABLE || s1[TSS.ALPHAOP] !== TOP.DISABLE) {
-      throw new UnsupportedError('texture stage 1 is enabled; only stage 0 is supported (the original disables stage 1)');
-    }
+    // the stage cascade ends at the first stage whose colour operation is DISABLE
+    const numStages = s0[TSS.COLOROP] === TOP.DISABLE ? 0 : s1[TSS.COLOROP] === TOP.DISABLE ? 1 : 2;
+    const stageCfg = (st) => ({
+      colorOp: st[TSS.COLOROP], colorArg1: st[TSS.COLORARG1], colorArg2: st[TSS.COLORARG2],
+      alphaOp: st[TSS.ALPHAOP], alphaArg1: st[TSS.ALPHAARG1], alphaArg2: st[TSS.ALPHAARG2],
+    });
+    const samplerOf = (st) => ({
+      mag: magFilter(st[TSS.MAGFILTER]), min: minFilter(st[TSS.MINFILTER], st[TSS.MIPFILTER]),
+      wrapS: addressMode(st[TSS.ADDRESSU] ?? st[TSS.ADDRESS]), wrapT: addressMode(st[TSS.ADDRESSV] ?? st[TSS.ADDRESS]),
+    });
     const [src, dst] = blendFactors(r(RS.SRCBLEND), r(RS.DESTBLEND));
     const lighting = r(RS.LIGHTING) === 1;
     const colorVertex = r(RS.COLORVERTEX) === 1;
@@ -111,8 +119,6 @@ export class DeviceState {
     const fogOn = r(RS.FOGENABLE) === 1;
     const fogTable = fogOn && r(RS.FOGTABLEMODE) !== 0;
     const fogMode = !fogOn ? 0 : fogTable ? r(RS.FOGTABLEMODE) : r(RS.FOGVERTEXMODE);
-    const wrapS = addressMode(s0[TSS.ADDRESSU] ?? s0[TSS.ADDRESS]);
-    const wrapT = addressMode(s0[TSS.ADDRESSV] ?? s0[TSS.ADDRESS]);
     const cull = cullMode(r(RS.CULLMODE));
     return {
       depth: { enable: r(RS.ZENABLE) === 1, write: r(RS.ZWRITEENABLE) === 1, func: compareFunc(r(RS.ZFUNC)) },
@@ -132,12 +138,15 @@ export class DeviceState {
         ambientFromVertex: colorVertex && r(RS.AMBIENTMATERIALSOURCE) === 1,
         emissiveFromVertex: colorVertex && r(RS.EMISSIVEMATERIALSOURCE) === 1,
       },
-      stage0: {
-        colorOp: s0[TSS.COLOROP], colorArg1: s0[TSS.COLORARG1], colorArg2: s0[TSS.COLORARG2],
-        alphaOp: s0[TSS.ALPHAOP], alphaArg1: s0[TSS.ALPHAARG1], alphaArg2: s0[TSS.ALPHAARG2],
-      },
-      sampler: { mag: magFilter(s0[TSS.MAGFILTER]), min: minFilter(s0[TSS.MINFILTER], s0[TSS.MIPFILTER]), wrapS, wrapT },
+      numStages,
+      stage0: stageCfg(s0),
+      stage1: stageCfg(s1),
+      texCoordIndex: [s0[TSS.TEXCOORDINDEX], s1[TSS.TEXCOORDINDEX]],
+      sampler: samplerOf(s0),
+      sampler1: samplerOf(s1),
       lodBias: this.applyLodBias ? f32FromBits(s0[TSS.MIPMAPLODBIAS]) : 0,
+      lodBias1: this.applyLodBias ? f32FromBits(s1[TSS.MIPMAPLODBIAS]) : 0,
+      texture1: this.textures[1],
       texture0: this.textures[0],
     };
   }

@@ -5,7 +5,7 @@
 // surface, one state shadow per Direct3D device) and emits `cmd.*` commands, each tagged with its trace `line`.
 // See web/README.md for what is parsed and what fails loudly.
 
-import { cmd } from './frame-model.js';
+import { cmd, vertexLayout } from './frame-model.js';
 import { formatFromPixelFormat } from './formats.js';
 import { TraceError, ObjRef, parseCall, parseBlob, dataFileFromHeader } from './trace-parse.js';
 import { DataFile, KIND } from './data-file.js';
@@ -17,7 +17,6 @@ const BLT_SUPPORTED = BLT.COLORFILL | BLT.ASYNC | BLT.KEYSRC | BLT.KEYSRCOVERRID
 const BLT_NAMES = { 0x1: 'ALPHADEST', 0x20: 'ALPHASRC', 0x800: 'DDFX', 0x1000: 'DDROPS', 0x2000: 'KEYDEST', 0x4000: 'KEYDESTOVERRIDE',
   0x20000: 'ROP', 0x40000: 'ROTATIONANGLE', 0x80000: 'ZBUFFER', 0x02000000: 'DEPTHFILL' };
 const FAILED = /^(DDERR_|D3DERR_|0x[89a-fA-F][0-9a-fA-F]{7}$)/;
-const VERTEX_FVF = 0x152;
 const STATE_CALLS = new Set(['SetRenderState', 'SetTextureStageState', 'SetTransform', 'SetViewport', 'SetMaterial', 'SetLight', 'LightEnable', 'SetTexture']);
 
 // The render states the game sets once, when it creates its device (tests/ddraw_trace/golden/startup-menu-n60.trace.gz, the TnL device,
@@ -404,15 +403,17 @@ class Loader {
     const vr = this.data.record(blob.vertices.offset, blob.vertices.length);
     if (vr.kind !== KIND.VERTICES) this.fail('vertices blob does not point at a vertex record');
     const [fvf, stride, , count] = vr.params;
-    if (fvf !== VERTEX_FVF || stride !== 36) this.fail(`unsupported vertex format FVF 0x${fvf.toString(16)} stride ${stride} (only 0x152, 36 bytes)`);
-    if (vr.payload.length !== count * 36) this.fail('vertex record length does not match its vertex count');
+    let lay;
+    try { lay = vertexLayout(fvf); } catch (e) { this.fail(e.message); }
+    if (stride !== lay.stride) this.fail(`vertex format FVF 0x${fvf.toString(16)} has stride ${stride}, expected ${lay.stride}`);
+    if (vr.payload.length !== count * lay.stride) this.fail('vertex record length does not match its vertex count');
     let slot = this.slots.get(blob.vertices.offset);
     if (slot === undefined) {
       slot = this.nextVertex;
       this.slots.set(blob.vertices.offset, slot);
       this.nextVertex += count;
       this.stats.uniqueVertexRecords++;
-      this.emit(cmd.uploadVertices(vr.payload, slot * 36));
+      this.emit(cmd.uploadVertices(vr.payload, slot * lay.stride, fvf));
     }
     let indices;
     if (indexed) {

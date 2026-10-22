@@ -5,7 +5,12 @@ import { MAIN_VS, MAIN_FS, BLIT_VS, BLIT_FS } from './shaders.js';
 import { DeviceState } from './state.js';
 import { convertToRGBA8, bytesPerPixel } from './formats.js';
 import { primitiveMode, unpackColor, UnsupportedError } from './d3d-tables.js';
-import { VERTEX_STRIDE, CLEAR, validateCommand } from './frame-model.js';
+import { FVF, CLEAR, validateCommand, vertexLayout } from './frame-model.js';
+
+// The vertex buffer holds every vertex in one canonical layout, whatever format it was uploaded in:
+// position (3 floats), normal (3), diffuse (BGRA bytes), specular (BGRA bytes), texture sets 0 and 1 (2 floats each).
+const CANON = 48;
+const CANON_WHITE = 0xffffffff;
 
 export class Renderer {
   /**
@@ -68,7 +73,7 @@ export class Renderer {
     for (const t of this.textures.values()) this._freeVariants(t);
     this.textures.clear();
     this.state = new DeviceState({ applyLodBias: this.applyLodBias });
-    this.vbData = new Uint8Array(VERTEX_STRIDE * 1024);
+    this.vbData = new Uint8Array(CANON * 1024);
     this.vbCapacityUploaded = 0;
     this.dirty = null;
     gl.disable(gl.SCISSOR_TEST);
@@ -191,17 +196,32 @@ export class Renderer {
 
   // ---- vertices ----------------------------------------------------------------------------------------------
   _uploadVertices(c) {
-    const end = c.offset + c.bytes.length;
+    const lay = vertexLayout(c.fvf ?? FVF);
+    const n = c.bytes.length / lay.stride;
+    const first = c.offset / lay.stride;
+    const end = (first + n) * CANON;
     if (end > this.vbData.length) {
-      let n = this.vbData.length;
-      while (n < end) n *= 2;
-      const grown = new Uint8Array(n);
+      let len = this.vbData.length;
+      while (len < end) len *= 2;
+      const grown = new Uint8Array(len);
       grown.set(this.vbData);
       this.vbData = grown;
       this.vbCapacityUploaded = 0; // force a full re-upload with the new size
     }
-    this.vbData.set(c.bytes, c.offset);
-    this.dirty = this.dirty ? [Math.min(this.dirty[0], c.offset), Math.max(this.dirty[1], end)] : [c.offset, end];
+    const src = new DataView(c.bytes.buffer, c.bytes.byteOffset, c.bytes.byteLength);
+    const dst = new DataView(this.vbData.buffer);
+    for (let i = 0; i < n; i++) {
+      const s = i * lay.stride, d = (first + i) * CANON;
+      for (let k = 0; k < 12; k += 4) dst.setUint32(d + k, src.getUint32(s + k, true), true);
+      for (let k = 0; k < 12; k += 4) dst.setUint32(d + 12 + k, lay.normal >= 0 ? src.getUint32(s + lay.normal + k, true) : 0, true);
+      dst.setUint32(d + 24, lay.diffuse >= 0 ? src.getUint32(s + lay.diffuse, true) : CANON_WHITE, true);
+      dst.setUint32(d + 28, lay.specular >= 0 ? src.getUint32(s + lay.specular, true) : 0, true);
+      for (let t = 0; t < 2; t++) {
+        for (let k = 0; k < 8; k += 4) dst.setUint32(d + 32 + t * 8 + k, lay.uv[t] !== undefined ? src.getUint32(s + lay.uv[t] + k, true) : 0, true);
+      }
+    }
+    const lo = first * CANON;
+    this.dirty = this.dirty ? [Math.min(this.dirty[0], lo), Math.max(this.dirty[1], end)] : [lo, end];
   }
 
   _flushVertices() {
@@ -228,7 +248,7 @@ export class Renderer {
     const gl = this.gl;
     if (c.indices.length === 0) return;
     const cfg = this.state.drawConfig(); // throws UnsupportedError before any GL state changes
-    if ((c.startVertex + c.vertexCount) * VERTEX_STRIDE > this.vbData.length) throw new Error('draw: vertex range outside the vertex buffer');
+    if ((c.startVertex + c.vertexCount) * CANON > this.vbData.length) throw new Error('draw: vertex range outside the vertex buffer');
     const mode = primitiveMode(c.primitive);
     this._flushVertices();
 
@@ -236,11 +256,13 @@ export class Renderer {
     gl.useProgram(prog.p);
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
-    const base = c.startVertex * VERTEX_STRIDE;
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, VERTEX_STRIDE, base);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, VERTEX_STRIDE, base + 12);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, VERTEX_STRIDE, base + 24);
-    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, VERTEX_STRIDE, base + 28);
+    const base = c.startVertex * CANON;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, CANON, base);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, CANON, base + 12);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, CANON, base + 24);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 4, gl.UNSIGNED_BYTE, true, CANON, base + 28);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 2, gl.FLOAT, false, CANON, base + 32);
+    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 2, gl.FLOAT, false, CANON, base + 40);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, c.indices, gl.STREAM_DRAW);
 
@@ -284,29 +306,36 @@ export class Renderer {
     gl.uniform1f(u('uFogDensity'), cfg.fog.density);
     gl.uniform4fv(u('uFogColor'), cfg.fog.color);
 
-    const s = cfg.stage0;
-    gl.uniform1i(u('uColorOp'), s.colorOp); gl.uniform1i(u('uColorArg1'), s.colorArg1); gl.uniform1i(u('uColorArg2'), s.colorArg2);
-    gl.uniform1i(u('uAlphaOp'), s.alphaOp); gl.uniform1i(u('uAlphaArg1'), s.alphaArg1); gl.uniform1i(u('uAlphaArg2'), s.alphaArg2);
+    const st = [cfg.stage0, cfg.stage1];
+    const iv = (name, f) => gl.uniform1iv(u(name), st.map(f));
+    gl.uniform1i(u('uNumStages'), cfg.numStages);
+    iv('uColorOp', (x) => x.colorOp); iv('uColorArg1', (x) => x.colorArg1); iv('uColorArg2', (x) => x.colorArg2);
+    iv('uAlphaOp', (x) => x.alphaOp); iv('uAlphaArg1', (x) => x.alphaArg1); iv('uAlphaArg2', (x) => x.alphaArg2);
+    gl.uniform1iv(u('uTexSet'), cfg.texCoordIndex);
+    gl.uniform1fv(u('uLodBias'), [cfg.lodBias, cfg.lodBias1]);
     gl.uniform4fv(u('uTFactor'), cfg.textureFactor);
     gl.uniform1i(u('uAlphaTest'), cfg.alphaTest.enable);
     gl.uniform1i(u('uAlphaFunc'), cfg.alphaTest.func);
     gl.uniform1f(u('uAlphaRef'), cfg.alphaTest.ref);
-    gl.uniform1f(u('uLodBias'), cfg.lodBias);
 
-    // A stage-0 TEXTURE argument with no texture bound evaluates to opaque white.
+    // A TEXTURE argument with no texture bound evaluates to opaque white (uHasTexN false).
+    [[cfg.texture0, cfg.sampler, 0], [cfg.texture1, cfg.sampler1, 1]].forEach(([id, sampler, unit]) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      if (id !== null && cfg.numStages > unit) {
+        const t = this._tex(id);
+        gl.bindTexture(gl.TEXTURE_2D, this._glTexture(id, cfg.colorKeyEnable ? t.key : null));
+        gl.bindSampler(unit, this._sampler(sampler));
+        gl.uniform1i(u(`uHasTex${unit}`), true);
+      } else {
+        gl.uniform1i(u(`uHasTex${unit}`), false);
+      }
+      gl.uniform1i(u(`uTex${unit}`), unit);
+    });
     gl.activeTexture(gl.TEXTURE0);
-    if (cfg.texture0 !== null) {
-      const t = this._tex(cfg.texture0);
-      gl.bindTexture(gl.TEXTURE_2D, this._glTexture(cfg.texture0, cfg.colorKeyEnable ? t.key : null));
-      gl.bindSampler(0, this._sampler(cfg.sampler));
-      gl.uniform1i(u('uHasTex'), true);
-    } else {
-      gl.uniform1i(u('uHasTex'), false);
-    }
-    gl.uniform1i(u('uTex'), 0);
 
     gl.drawElements(mode, c.indices.length, gl.UNSIGNED_SHORT, 0);
     gl.bindSampler(0, null);
+    gl.bindSampler(1, null);
   }
 
   _scissor(rect) {

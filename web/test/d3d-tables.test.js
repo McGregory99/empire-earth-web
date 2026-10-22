@@ -91,7 +91,7 @@ test('classifyTextureStageState', () => {
   assert.throws(() => classifyTextureStageState(0, TSS.COLORARG1, TARG.TEXTURE | 0x10), /complement/i);
   assert.throws(() => classifyTextureStageState(0, TSS.COLORARG1, 4), /specular/i);
   assert.throws(() => classifyTextureStageState(0, TSS.COLOROP, 11), /ADDSMOOTH|operation/i);
-  assert.throws(() => classifyTextureStageState(0, TSS.TEXCOORDINDEX, 1), /texcoord/i);
+  assert.throws(() => classifyTextureStageState(0, TSS.TEXCOORDINDEX, 2), /texcoord/i);
   assert.throws(() => classifyTextureStageState(0, TSS.TEXTURETRANSFORMFLAGS, 2), /transform/i);
   assert.throws(() => classifyTextureStageState(0, 999, 0), /unknown texture stage state/i);
 });

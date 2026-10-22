@@ -48,7 +48,7 @@ Z-buffer Clears) are skipped and counted.
   device the loader emits `resetDeviceState` and replays that device's shadow.
 
 Fails loudly (a `TraceError` naming the trace line): a trace that references a data file with none given; `blob=failed`/
-`unavailable`; draws or textures without data; `vertices=none`; any vertex format other than FVF 0x152/36 bytes; primitive types
+`unavailable`; draws or textures without data; `vertices=none`; any vertex format other than XYZ + optional NORMAL/DIFFUSE/SPECULAR + up to two 2-float texture sets (pre-transformed XYZRHW, point size, blend weights, 1/3/4-component coordinates); primitive types
 other than triangle and line lists; strided draws, `ProcessVertices`; non-32-bit display modes; `SetRenderTarget` on an offscreen
 surface; `Blt` flags other than wait, async, colour fill and source colour keys (DDFX, ROP, destination keys, alpha); screen-to-screen
 copies other than presents; colour keys other than `DDCKEY_SRCBLT`; non-directional lights; block-compressed or palettised
@@ -85,7 +85,7 @@ with `present`. Commands are plain objects built (and validated) by `cmd.*` in `
 | `setLight(i, light\|null)`, `lightEnable(i, on)` | directional lights, at most 4 enabled |
 | `bindTexture(stage, id\|null)` | texture or surface id |
 | `createTexture(id,w,h,format,bytes,{pitch,colorKey})`, `updateTexture(id,bytes,rect?)`, `setColorKey(id,key)`, `destroyTexture(id)` | formats: `RGB555 RGB565 XRGB8888 ARGB1555 ARGB4444 ARGB8888` (`formatFromPixelFormat` maps a DDPIXELFORMAT) |
-| `uploadVertices(bytes, offset)` | FVF 0x152 vertices into the vertex buffer |
+| `uploadVertices(bytes, offset, fvf = 0x152)` | vertices of format `fvf` (`vertexLayout(fvf)`, `packVertices(fvf, list)` in `src/frame-model.js`) into the vertex buffer at byte `offset`, a multiple of that format's stride; `draw.startVertex` counts vertices whatever their format, so formats must not share vertex numbers (the loader allocates one run of numbers per record). The renderer converts every record to one internal 48-byte layout |
 | `draw({primitive, startVertex, vertexCount, indices})` | `triangleList` / `lineList`, `Uint16Array` indices relative to startVertex |
 | `clear(flags, color, z, rect?)`, `fillRect(rect, color)` | D3DCLEAR TARGET 1 / ZBUFFER 2 |
 | `blit2D(srcId, srcRect, dstRect, colorKey)` | Blt, nearest, optional colour key |
@@ -103,22 +103,22 @@ GDI text and the cursor); with the GDI overlay the mean difference to the refere
 
 ## Supported (everything the golden startup-menu summary uses)
 
-Vertex format 0x152; indexed triangle and line lists; Z buffer (enable, write, func, clear value, viewport depth
+Vertex formats XYZ + NORMAL/DIFFUSE/SPECULAR + 0..2 texture sets (the game's 0x152 and e.g. 0x252 with a second set); indexed triangle and line lists; Z buffer (enable, write, func, clear value, viewport depth
 range); cull modes; alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
 fog: vertex fog (`FOGVERTEXMODE`, view-space depth, or the distance from the eye with `RANGEFOGENABLE`) and table / pixel
 fog (`FOGTABLEMODE`, wins over vertex fog like in D3D7, evaluated per pixel on the depth-buffer value, so `FOGSTART`/`FOGEND`
 are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 directional lights, global ambient, material
-colour sources (`COLORVERTEX`); stage 0 colour/alpha ops SELECTARG1/2, MODULATE(2X/4X), ADD, ADDSIGNED(2X),
-SUBTRACT, BLENDDIFFUSE/TEXTURE/FACTORALPHA with DIFFUSE / CURRENT / TEXTURE / TFACTOR arguments; point/linear
+colour sources (`COLORVERTEX`); stage 0 and stage 1 (multitexture) colour/alpha ops SELECTARG1/2, MODULATE(2X/4X), ADD, ADDSIGNED(2X),
+SUBTRACT, BLENDDIFFUSE/TEXTURE/FACTORALPHA with DIFFUSE / CURRENT / TEXTURE / TFACTOR arguments (stage 1's CURRENT is the stage 0 result; a disabled stage ends the cascade; `TEXCOORDINDEX` 0/1 picks the texture coordinate set, default = the stage number; each stage has its own texture, sampler state and LOD bias); point/linear
 min, mag and mip filters, wrap / mirror / clamp, mip LOD bias; texture colour keys; 2D blits and fills.
 
 ## Explicitly unsupported (throws `UnsupportedError` when the command is applied or at the draw)
 
 Wireframe / point fill, flat shading, specular, stencil, w-buffer, ZBIAS,
-user clip planes, vertex blending, texture transforms, texcoord index other than 0, texture stage 1 enabled,
+user clip planes, vertex blending, texture transforms, texcoord index above 1 or with coordinate generation flags,
 texture argument modifiers, ADDSMOOTH / bump / dot3 ops, BORDER addressing, point / spot lights, DXT formats, any
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are
-generated from level 0 (the trace carries none); a stage-0 `TEXTURE` argument with no texture bound is opaque
+generated from level 0 (the trace carries none); a `TEXTURE` argument with no texture bound is opaque
 white; lighting transforms normals by the world-view matrix without an inverse transpose (exact for uniform
 scale); `MIPMAPLODBIAS` is ignored by default (the reference game under Wine / macOS GL does not apply it; `new Renderer(canvas, { applyLodBias: true })` applies it); the canvas has no destination alpha; a keyed `blit2D` also skips source texels of alpha 0; dithering is
 ignored.

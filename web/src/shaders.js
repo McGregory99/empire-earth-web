@@ -21,6 +21,7 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aColor;   // bytes B,G,R,A in memory (D3DCOLOR), normalised
 layout(location = 3) in vec2 aUV;
+layout(location = 5) in vec2 aUV1;      // second texture coordinate set (0 when the vertex format has none)
 
 uniform mat4 uWorld, uView, uProj;
 uniform vec2 uHalfPixel;         // (+1/viewport width, -1/viewport height)
@@ -36,7 +37,8 @@ uniform bool uFogTable, uFogRange;   // table (pixel) fog is evaluated in the fr
 uniform float uFogStart, uFogEnd, uFogDensity;
 
 out vec4 vColor;
-out vec2 vUV;
+out vec2 vUV0;
+out vec2 vUV1;
 out float vFog;
 ${FOG_FN}
 
@@ -66,7 +68,8 @@ void main() {
   } else {
     vColor = vcol;
   }
-  vUV = aUV;
+  vUV0 = aUV;
+  vUV1 = aUV1;
 
   vFog = uFogTable ? 1.0 : fogFactor(uFogMode, uFogRange ? length(pv.xyz) : abs(pv.z), uFogStart, uFogEnd, uFogDensity);
 }
@@ -76,14 +79,18 @@ export const MAIN_FS = `#version 300 es
 precision highp float;
 precision highp int;
 in vec4 vColor;
-in vec2 vUV;
+in vec2 vUV0;
+in vec2 vUV1;
 in float vFog;
 
-uniform sampler2D uTex;
-uniform bool uHasTex;
-uniform float uLodBias;
+uniform sampler2D uTex0;
+uniform sampler2D uTex1;
+uniform bool uHasTex0, uHasTex1;
 uniform vec4 uTFactor;
-uniform int uColorOp, uColorArg1, uColorArg2, uAlphaOp, uAlphaArg1, uAlphaArg2;
+uniform int uNumStages;          // stages processed: 0 (stage 0 disabled), 1 or 2
+uniform int uColorOp[2], uColorArg1[2], uColorArg2[2], uAlphaOp[2], uAlphaArg1[2], uAlphaArg2[2];
+uniform int uTexSet[2];          // texture coordinate set each stage reads
+uniform float uLodBias[2];
 uniform bool uAlphaTest;
 uniform int uAlphaFunc;          // D3DCMP 1..8
 uniform float uAlphaRef;
@@ -92,13 +99,14 @@ uniform int uFogMode;
 uniform bool uFogTable;
 uniform float uFogStart, uFogEnd, uFogDensity;
 ${FOG_FN}
-
 out vec4 outColor;
 
-vec4 arg(int a, vec4 tex) {
+// D3DTA: 0 DIFFUSE, 1 CURRENT, 2 TEXTURE, 3 TFACTOR
+vec4 arg(int a, vec4 tex, vec4 cur) {
   if (a == 2) return tex;
   if (a == 3) return uTFactor;
-  return vColor;                 // DIFFUSE, and CURRENT (= diffuse at stage 0)
+  if (a == 1) return cur;
+  return vColor;
 }
 
 vec4 applyOp(int op, vec4 a1, vec4 a2, float b) {
@@ -132,16 +140,27 @@ bool alphaPass(int av, int rv) {
   return true;
 }
 
+// A stage-N TEXTURE argument with no texture bound evaluates to opaque white.
+vec4 sampleStage(int i) {
+  vec2 uv = uTexSet[i] == 1 ? vUV1 : vUV0;
+  if (i == 0) return uHasTex0 ? texture(uTex0, uv, uLodBias[0]) : vec4(1.0);
+  return uHasTex1 ? texture(uTex1, uv, uLodBias[1]) : vec4(1.0);
+}
+
 void main() {
-  vec4 tex = uHasTex ? texture(uTex, vUV, uLodBias) : vec4(1.0);
-  vec3 rgb = vColor.rgb;
-  float a = vColor.a;
-  if (uColorOp != 1) {
-    rgb = clamp(applyOp(uColorOp, arg(uColorArg1, tex), arg(uColorArg2, tex), blendScalar(uColorOp, tex)).rgb, 0.0, 1.0);
-    if (uAlphaOp != 1) {
-      a = clamp(applyOp(uAlphaOp, arg(uAlphaArg1, tex), arg(uAlphaArg2, tex), blendScalar(uAlphaOp, tex)).a, 0.0, 1.0);
+  vec4 cur = vColor;               // CURRENT at stage 0 is the diffuse colour
+  for (int i = 0; i < 2; i++) {
+    if (i >= uNumStages) break;
+    vec4 tex = sampleStage(i);
+    vec3 rgb = clamp(applyOp(uColorOp[i], arg(uColorArg1[i], tex, cur), arg(uColorArg2[i], tex, cur), blendScalar(uColorOp[i], tex)).rgb, 0.0, 1.0);
+    float a = cur.a;
+    if (uAlphaOp[i] != 1) {
+      a = clamp(applyOp(uAlphaOp[i], arg(uAlphaArg1[i], tex, cur), arg(uAlphaArg2[i], tex, cur), blendScalar(uAlphaOp[i], tex)).a, 0.0, 1.0);
     }
+    cur = vec4(rgb, a);
   }
+  vec3 rgb = cur.rgb;
+  float a = cur.a;
   if (uAlphaTest && !alphaPass(int(a * 255.0 + 0.5), int(uAlphaRef * 255.0 + 0.5))) discard;
   // table fog: per pixel on the depth-buffer value (viewport depth range applied)
   rgb = mix(uFogColor.rgb, rgb, uFogTable ? fogFactor(uFogMode, gl_FragCoord.z, uFogStart, uFogEnd, uFogDensity) : vFog);

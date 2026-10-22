@@ -16,6 +16,49 @@ export const FVF = 0x152;
 /** 3 floats position + 3 floats normal + D3DCOLOR diffuse (BGRA bytes) + 2 floats uv. */
 export const VERTEX_STRIDE = 36;
 
+const FVF_POSITION = 0x002, FVF_NORMAL = 0x010, FVF_DIFFUSE = 0x040, FVF_SPECULAR = 0x080, FVF_TEXCOUNT_MASK = 0xf00;
+const FVF_SUPPORTED = FVF_POSITION | FVF_NORMAL | FVF_DIFFUSE | FVF_SPECULAR | FVF_TEXCOUNT_MASK;
+
+/**
+ * Byte layout of a flexible vertex format (D3DFVF_*): XYZ position, then optional NORMAL, DIFFUSE and SPECULAR colours
+ * (D3DCOLOR, BGRA bytes) and up to two 2-float texture coordinate sets, in that fixed order. Offsets are -1 when absent.
+ * Pre-transformed (XYZRHW), point size, vertex blending and 1/3/4-component texture coordinates are not supported.
+ */
+export function vertexLayout(fvf) {
+  if (!Number.isInteger(fvf) || !(fvf & FVF_POSITION) || (fvf & ~FVF_SUPPORTED)) {
+    fail(`unsupported vertex format 0x${(fvf >>> 0).toString(16)} (supported: XYZ, NORMAL, DIFFUSE, SPECULAR and up to 2 sets of 2-float texture coordinates)`);
+  }
+  const sets = (fvf & FVF_TEXCOUNT_MASK) >> 8;
+  if (sets > 2) fail(`unsupported vertex format 0x${fvf.toString(16)}: ${sets} texture coordinate sets (at most 2)`);
+  let o = 12;
+  const take = (n) => { const at = o; o += n; return at; };
+  const normal = fvf & FVF_NORMAL ? take(12) : -1;
+  const diffuse = fvf & FVF_DIFFUSE ? take(4) : -1;
+  const specular = fvf & FVF_SPECULAR ? take(4) : -1;
+  const uv = [];
+  for (let i = 0; i < sets; i++) uv.push(take(8));
+  return { stride: o, normal, diffuse, specular, uv, sets };
+}
+
+/**
+ * Pack vertices of the given format. A vertex is { pos: [x, y, z], normal?, diffuse? (D3DCOLOR, default white),
+ * specular? (default 0), uv?, uv1? } (absent attributes of the format are written as 0).
+ */
+export function packVertices(fvf, list) {
+  const lay = vertexLayout(fvf);
+  const bytes = new Uint8Array(list.length * lay.stride);
+  const dv = new DataView(bytes.buffer);
+  list.forEach((v, i) => {
+    const base = i * lay.stride;
+    v.pos.forEach((x, k) => dv.setFloat32(base + k * 4, x, true));
+    if (lay.normal >= 0) (v.normal ?? [0, 0, -1]).forEach((x, k) => dv.setFloat32(base + lay.normal + k * 4, x, true));
+    if (lay.diffuse >= 0) dv.setUint32(base + lay.diffuse, (v.diffuse ?? 0xffffffff) >>> 0, true);
+    if (lay.specular >= 0) dv.setUint32(base + lay.specular, (v.specular ?? 0) >>> 0, true);
+    [v.uv, v.uv1].forEach((t, k) => { if (lay.uv[k] !== undefined) (t ?? [0, 0]).forEach((x, j) => dv.setFloat32(base + lay.uv[k] + j * 4, x, true)); });
+  });
+  return bytes;
+}
+
 /** D3DCLEAR flags. */
 export const CLEAR = Object.freeze({ TARGET: 1, ZBUFFER: 2, STENCIL: 4 });
 /** D3DTRANSFORMSTATETYPE values the renderer understands. */
@@ -92,8 +135,9 @@ const CHECKS = {
   },
   uploadVertices(c) {
     if (!isU8(c.bytes)) fail('uploadVertices: bytes must be a Uint8Array');
-    if (c.bytes.length % VERTEX_STRIDE) fail(`uploadVertices: length ${c.bytes.length} is not a multiple of ${VERTEX_STRIDE}`);
-    if (!Number.isInteger(c.offset) || c.offset < 0 || c.offset % VERTEX_STRIDE) fail('uploadVertices: offset must be a multiple of 36');
+    const stride = vertexLayout(c.fvf ?? FVF).stride;
+    if (c.bytes.length % stride) fail(`uploadVertices: length ${c.bytes.length} is not a multiple of ${stride}`);
+    if (!Number.isInteger(c.offset) || c.offset < 0 || c.offset % stride) fail(`uploadVertices: offset must be a multiple of ${stride}`);
   },
   draw(c) {
     if (!PRIMITIVES.includes(c.primitive)) fail(`draw: unsupported primitive "${c.primitive}"`);
@@ -164,8 +208,11 @@ export const cmd = {
   updateTexture: (id, bytes, rect = null) => make({ op: 'updateTexture', id, bytes, rect }),
   setColorKey: (id, key) => make({ op: 'setColorKey', id, key }),
   destroyTexture: (id) => make({ op: 'destroyTexture', id }),
-  /** Write FVF 0x152 vertices into the vertex buffer at byte `offset` (multiple of 36). */
-  uploadVertices: (bytes, offset = 0) => make({ op: 'uploadVertices', bytes, offset }),
+  /**
+   * Write vertices of format `fvf` (default 0x152) into the vertex buffer at byte `offset`, a multiple of that format's stride:
+   * vertex number offset / stride is what `draw.startVertex` counts, so one run of vertex numbers must not mix formats.
+   */
+  uploadVertices: (bytes, offset = 0, fvf = FVF) => make({ op: 'uploadVertices', bytes, offset, fvf }),
   /** DrawIndexedPrimitive: indices are relative to startVertex and must be < vertexCount. */
   draw: ({ primitive, startVertex, vertexCount, indices }) => make({ op: 'draw', primitive, startVertex, vertexCount, indices }),
   /** flags: CLEAR bits; color: D3DCOLOR; z: depth; rect: optional {x,y,w,h} (top-left origin). */

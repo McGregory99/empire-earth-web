@@ -72,12 +72,11 @@ test('transforms: world/view/projection stored; identity texture transform toler
   assert.throws(() => s.apply(cmd.setTransform(256, IDENTITY)), /world matrix 1|blend/i);
 });
 
-test('stage 1 must be disabled when drawing, stage 0 validates its operations', () => {
+test('stage 1 is processed when enabled; stage 0 still validates its operations', () => {
   const s = new DeviceState();
-  run(s, cmd.setTextureStageState(1, TSS.COLOROP, TOP.DISABLE), cmd.setTextureStageState(1, TSS.ALPHAOP, TOP.DISABLE));
-  assert.doesNotThrow(() => s.drawConfig());
+  assert.equal(s.drawConfig().numStages, 1);
   run(s, cmd.setTextureStageState(1, TSS.COLOROP, TOP.MODULATE));
-  assert.throws(() => s.drawConfig(), /stage 1/);
+  assert.equal(s.drawConfig().numStages, 2);
   assert.throws(() => s.apply(cmd.setTextureStageState(0, TSS.COLOROP, 11)), UnsupportedError);
 });
 

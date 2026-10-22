@@ -11,7 +11,7 @@ test('vertex layout: fixed order position, normal, diffuse, specular, texture se
   assert.deepEqual(vertexLayout(0x152), { stride: 36, normal: 12, diffuse: 24, specular: -1, uv: [28], sets: 1 });
   assert.deepEqual(vertexLayout(0x252), { stride: 44, normal: 12, diffuse: 24, specular: -1, uv: [28, 36], sets: 2 });
   assert.deepEqual(vertexLayout(0x1d2), { stride: 40, normal: 12, diffuse: 24, specular: 28, uv: [32], sets: 1 });
-  assert.deepEqual(vertexLayout(0x142), { stride: 28, normal: -1, diffuse: 12, specular: -1, uv: [16], sets: 1 });
+  assert.deepEqual(vertexLayout(0x142), { stride: 24, normal: -1, diffuse: 12, specular: -1, uv: [16], sets: 1 });
 });
 
 test('vertex layout rejects what the renderer does not understand', () => {

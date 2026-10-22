@@ -218,7 +218,10 @@ const TSS_SPEC = {
   [TSS.COLOROP]: (v) => { if (!SUPPORTED_OPS.has(v)) unsupported(`texture operation ${v} (ADDSMOOTH, bump, dot3, ...) is not supported`); },
   [TSS.ALPHAOP]: (v) => { if (!SUPPORTED_OPS.has(v)) unsupported(`texture operation ${v} (ADDSMOOTH, bump, dot3, ...) is not supported`); },
   [TSS.COLORARG1]: checkArg, [TSS.COLORARG2]: checkArg, [TSS.ALPHAARG1]: checkArg, [TSS.ALPHAARG2]: checkArg,
-  [TSS.TEXCOORDINDEX]: (v) => { if (v !== 0) unsupported('TEXCOORDINDEX other than 0 is not supported (the vertex format has one texcoord set)'); },
+  [TSS.TEXCOORDINDEX]: (v) => {
+    if (v >>> 16) unsupported('texture coordinate generation (TEXCOORDINDEX CAMERASPACE* flags) is not supported');
+    if (v > 1) unsupported(`TEXCOORDINDEX ${v}: only the texture coordinate sets 0 and 1 are supported`);
+  },
   [TSS.ADDRESS]: (v) => addressMode(v), [TSS.ADDRESSU]: (v) => addressMode(v), [TSS.ADDRESSV]: (v) => addressMode(v),
   [TSS.BORDERCOLOR]: () => {},
   [TSS.MAGFILTER]: (v) => magFilter(v),
