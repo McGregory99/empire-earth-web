@@ -1,7 +1,6 @@
 /* Test program for tools/game_run/scripts/ee-key.c: a focused window that appends the scancode of every
  * key-down it gets to key_victim.out (one hex byte per line; an extended key as e0xx), and ends after the key 0x01 (Esc)
- * or after 20 s.  key_victim.mouse gets one line per mouse event and per key-up/-down (with the tick count of the moment),
- *. */
+ * or after 20 s.  key_victim.mouse gets one line per mouse event and per key-up/-down (with the tick count of the moment). */
 #include <windows.h>
 #include <stdio.h>
 

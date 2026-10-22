@@ -78,8 +78,8 @@ wine "$T/ee-key.exe" --window-class EEKeyVictim e04b/900 01 >"$T/k7.out" 2>&1
 check_eq "an extended key held for 900 ms, then Esc: exit 0" "0" "$?"
 wait_for 100 test -e "$T/victim.rc"
 check_eq "the window got the extended left arrow (e04b), then Esc" "e04b 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' | sed 's/ $//')"
-down="$(mouse_log | awk '$1 == "keydown" && $2 == "4b,1" { print $3; exit }')"
-up="$(mouse_log | awk '$1 == "keyup" && $2 == "4b,1" { print $3; exit }')"
+down="$(mouse_log | awk '$1 == "keydown" && $2 == "75,1" { print $3; exit }')"
+up="$(mouse_log | awk '$1 == "keyup" && $2 == "75,1" { print $3; exit }')"
 check "the key stayed down at least 800 ms (down $down, up $up)" test -n "$down" -a -n "$up" -a "$((${up:-0} - ${down:-0}))" -ge 800
 check "the helper said what it pressed" grep -q "pressed e04b (held 900 ms)" "$T/k7.out"
 
@@ -97,7 +97,7 @@ check "click 0.5,0.25: pressed at that point of the client area ($(field down 1)
 check "... and released at the same point ($(field up 1))" within "$(field up 1)" "$((w / 2))" "$((h / 4))"
 check "drag 0.2,0.2 -> 0.8,0.6: pressed at the first corner ($(field down 2))" within "$(field down 2)" "$((w / 5))" "$((h / 5))"
 check "... released at the second ($(field up 2))" within "$(field up 2)" "$((w * 4 / 5))" "$((h * 3 / 5))"
-wine "$T/ee-key.exe" wheel:+1 >"$T/k9.out" 2>&1
+"$WINE_ROOT/bin/wine" "$T/ee-key.exe" wheel:+1 >"$T/k9.out" 2>&1
 check_eq "a mouse token without --window-class: exit 2" "2" "$?"
 check "... saying it needs a window" grep -q "needs --window-class" "$T/k9.out"
 wine "$T/ee-key.exe" --window-class EEKeyVictim click:2,0.5 >"$T/k10.out" 2>&1
