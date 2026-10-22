@@ -201,7 +201,7 @@ SCENES.push(
   },
   {
     name: 'LOCALVIEWER: the view vector points from the vertex to the eye',
-    commands: () => [...specStates([[RS.LOCALVIEWER, 1]]), ...specLight(), material(4), ...draw(quad(0.8, 0, 0.1))],
+    commands: () => [...specStates([[RS.LOCALVIEWER, 1]]), ...specLight(), material(4), ...draw(rectVerts(0.7, -0.02, 0.9, 0.02, 0.5))],
     probes: [[...at(0.8, 0), scaled(MAT_SPEC, 0.997), 'at x = 0.8, depth 0.5 the eye vector is (-0.85, 0, -0.53), almost the half angle of the light: N.H = 0.9998 (an infinite viewer would give 0.5625)']],
     tol: 3,
   },

@@ -365,7 +365,7 @@ class Loader {
   dev7_SetLight(c) {
     const d = c.args.data;
     if (d.dltType !== 3 && !/DIRECTIONAL/.test(String(d.dltType))) this.fail(`unsupported light type ${d.dltType} (only directional lights)`);
-    this.setState(c, `light:${c.args.idx}`, cmd.setLight(c.args.idx, { type: 'directional', diffuse: d.diffuse, ambient: d.ambient, direction: d.direction }));
+    this.setState(c, `light:${c.args.idx}`, cmd.setLight(c.args.idx, { type: 'directional', diffuse: d.diffuse, specular: d.specular, ambient: d.ambient, direction: d.direction }));
   }
   dev7_LightEnable(c) {
     const on = c.args.bEnable !== 0 && c.args.bEnable !== 'FALSE';

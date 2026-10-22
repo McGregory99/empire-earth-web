@@ -161,7 +161,7 @@ const RS_SPEC = {
   [RS.DITHERENABLE]: IGNORED, // output is 8 bits per channel, no dithering
   [RS.ALPHABLENDENABLE]: bool('ALPHABLENDENABLE'),
   [RS.FOGENABLE]: bool('FOGENABLE'),
-  [RS.SPECULARENABLE]: ONLY(0, 'specular highlights (SPECULARENABLE) are not supported'),
+  [RS.SPECULARENABLE]: bool('SPECULARENABLE'),
   [RS.FOGCOLOR]: APPLIED(() => true),
   [RS.FOGTABLEMODE]: range('FOGTABLEMODE', 0, 3),
   [RS.FOGSTART]: APPLIED(() => true),
@@ -180,13 +180,13 @@ const RS_SPEC = {
   [RS.AMBIENT]: APPLIED(() => true),
   [RS.FOGVERTEXMODE]: range('FOGVERTEXMODE', 0, 3),
   [RS.COLORVERTEX]: bool('COLORVERTEX'),
-  [RS.LOCALVIEWER]: IGNORED, // only matters for specular, which is unsupported
+  [RS.LOCALVIEWER]: bool('LOCALVIEWER'),
   [RS.NORMALIZENORMALS]: bool('NORMALIZENORMALS'),
   [RS.COLORKEYBLENDENABLE]: ONLY(0, 'COLORKEYBLENDENABLE is not supported'),
-  [RS.DIFFUSEMATERIALSOURCE]: range('DIFFUSEMATERIALSOURCE', 0, 1),
-  [RS.SPECULARMATERIALSOURCE]: IGNORED, // specular is unsupported, so the source never matters
-  [RS.AMBIENTMATERIALSOURCE]: range('AMBIENTMATERIALSOURCE', 0, 1),
-  [RS.EMISSIVEMATERIALSOURCE]: range('EMISSIVEMATERIALSOURCE', 0, 1),
+  [RS.DIFFUSEMATERIALSOURCE]: range('DIFFUSEMATERIALSOURCE', 0, 2), // D3DMCS_MATERIAL 0, COLOR1 (vertex diffuse) 1, COLOR2 (vertex specular) 2
+  [RS.SPECULARMATERIALSOURCE]: range('SPECULARMATERIALSOURCE', 0, 2),
+  [RS.AMBIENTMATERIALSOURCE]: range('AMBIENTMATERIALSOURCE', 0, 2),
+  [RS.EMISSIVEMATERIALSOURCE]: range('EMISSIVEMATERIALSOURCE', 0, 2),
   [RS.VERTEXBLEND]: ONLY(0, 'vertex blending is not supported'),
   [RS.CLIPPLANEENABLE]: ONLY(0, 'user clip planes are not supported'),
 };
@@ -210,8 +210,7 @@ export function classifyRenderState(id, value) {
 function checkArg(v) {
   if (v & 0x10) unsupported('texture argument modifier COMPLEMENT is not supported');
   if (v & 0x20) unsupported('texture argument modifier ALPHAREPLICATE is not supported');
-  if (v === TARG.SPECULAR) unsupported('texture argument SPECULAR is not supported (vertices carry no specular colour)');
-  if (v > TARG.TFACTOR) unsupported(`unknown texture argument ${v}`);
+  if (v > TARG.SPECULAR) unsupported(`unknown texture argument ${v}`);
 }
 
 const TSS_SPEC = {

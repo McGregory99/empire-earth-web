@@ -75,7 +75,7 @@ test('classifyRenderState: states of the golden summary are accepted', () => {
 test('classifyRenderState: unsupported states and values fail loudly', () => {
   assert.throws(() => classifyRenderState(RS.FILLMODE, 2), /wireframe|fill/i);
   assert.throws(() => classifyRenderState(RS.SHADEMODE, 1), /flat/i);
-  assert.throws(() => classifyRenderState(RS.SPECULARENABLE, 1), /specular/i);
+  assert.throws(() => classifyRenderState(RS.SPECULARENABLE, 2), /SPECULARENABLE/);
   assert.throws(() => classifyRenderState(RS.FOGTABLEMODE, 4), /FOGTABLEMODE/);
   assert.throws(() => classifyRenderState(RS.STENCILENABLE, 1), /stencil/i);
   assert.throws(() => classifyRenderState(RS.ZENABLE, 2), /w-buffer|usew/i);
@@ -89,7 +89,7 @@ test('classifyTextureStageState', () => {
     assert.doesNotThrow(() => classifyTextureStageState(0, id, v));
   }
   assert.throws(() => classifyTextureStageState(0, TSS.COLORARG1, TARG.TEXTURE | 0x10), /complement/i);
-  assert.throws(() => classifyTextureStageState(0, TSS.COLORARG1, 4), /specular/i);
+  assert.throws(() => classifyTextureStageState(0, TSS.COLORARG1, 5), /unknown texture argument/i);
   assert.throws(() => classifyTextureStageState(0, TSS.COLOROP, 11), /ADDSMOOTH|operation/i);
   assert.throws(() => classifyTextureStageState(0, TSS.TEXCOORDINDEX, 2), /texcoord/i);
   assert.throws(() => classifyTextureStageState(0, TSS.TEXTURETRANSFORMFLAGS, 2), /transform/i);

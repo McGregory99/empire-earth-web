@@ -103,6 +103,7 @@ const CHECKS = {
     if (c.light?.type !== 'directional') fail('setLight: only directional lights are supported');
     checkColor4(c.light.diffuse, 'light.diffuse');
     checkColor4(c.light.ambient, 'light.ambient');
+    if (c.light.specular !== undefined) checkColor4(c.light.specular, 'light.specular');
     if (c.light.direction?.length !== 3) fail('light.direction must have 3 components');
   },
   lightEnable(c) {

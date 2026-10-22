@@ -16,7 +16,7 @@ const RS_DEFAULTS = {
   [RS.SRCBLEND]: 2, [RS.DESTBLEND]: 1, [RS.CULLMODE]: 3, [RS.ZFUNC]: 4, [RS.ALPHAREF]: 0, [RS.ALPHAFUNC]: 8,
   [RS.ALPHABLENDENABLE]: 0, [RS.FOGENABLE]: 0, [RS.SPECULARENABLE]: 0, [RS.FOGCOLOR]: 0, [RS.FOGTABLEMODE]: 0, [RS.RANGEFOGENABLE]: 0,
   [RS.FOGSTART]: bits(0), [RS.FOGEND]: bits(1), [RS.FOGDENSITY]: bits(1), [RS.COLORKEYENABLE]: 0,
-  [RS.TEXTUREFACTOR]: 0xffffffff, [RS.LIGHTING]: 1, [RS.AMBIENT]: 0, [RS.FOGVERTEXMODE]: 0, [RS.COLORVERTEX]: 1,
+  [RS.TEXTUREFACTOR]: 0xffffffff, [RS.LIGHTING]: 1, [RS.AMBIENT]: 0, [RS.FOGVERTEXMODE]: 0, [RS.COLORVERTEX]: 1, [RS.LOCALVIEWER]: 1, [RS.SPECULARMATERIALSOURCE]: 2,
   [RS.NORMALIZENORMALS]: 0, [RS.DIFFUSEMATERIALSOURCE]: 1, [RS.AMBIENTMATERIALSOURCE]: 0, [RS.EMISSIVEMATERIALSOURCE]: 0,
 };
 
@@ -112,7 +112,7 @@ export class DeviceState {
       lights = [...this.lightsOn].sort((a, b) => a - b).map((i) => {
         const l = this.lights.get(i);
         if (!l) throw new UnsupportedError(`light ${i} is enabled but was never set`);
-        return l;
+        return { specular: [0, 0, 0, 0], ...l };
       });
     }
     // Table (pixel) fog wins over vertex fog when both are set; range based fog is a vertex fog feature in D3D7.
@@ -134,6 +134,10 @@ export class DeviceState {
       textureFactor: unpackColor(r(RS.TEXTUREFACTOR)),
       lighting: {
         enable: lighting, ambient: unpackColor(r(RS.AMBIENT)), material: this.material, lights,
+        specularEnable: r(RS.SPECULARENABLE) === 1, localViewer: r(RS.LOCALVIEWER) === 1,
+        // D3DMCS: 0 material, 1 vertex diffuse (COLOR1), 2 vertex specular (COLOR2); all 0 when COLORVERTEX is off
+        diffuseSource: colorVertex ? r(RS.DIFFUSEMATERIALSOURCE) : 0, ambientSource: colorVertex ? r(RS.AMBIENTMATERIALSOURCE) : 0,
+        specularSource: colorVertex ? r(RS.SPECULARMATERIALSOURCE) : 0, emissiveSource: colorVertex ? r(RS.EMISSIVEMATERIALSOURCE) : 0,
         diffuseFromVertex: colorVertex && r(RS.DIFFUSEMATERIALSOURCE) === 1,
         ambientFromVertex: colorVertex && r(RS.AMBIENTMATERIALSOURCE) === 1,
         emissiveFromVertex: colorVertex && r(RS.EMISSIVEMATERIALSOURCE) === 1,

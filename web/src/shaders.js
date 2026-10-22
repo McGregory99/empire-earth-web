@@ -21,6 +21,7 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec4 aColor;   // bytes B,G,R,A in memory (D3DCOLOR), normalised
 layout(location = 3) in vec2 aUV;
+layout(location = 4) in vec4 aSpec;      // bytes B,G,R,A of the vertex specular colour (0 when the format has none)
 layout(location = 5) in vec2 aUV1;      // second texture coordinate set (0 when the vertex format has none)
 
 uniform mat4 uWorld, uView, uProj;
@@ -28,19 +29,27 @@ uniform vec2 uHalfPixel;         // (+1/viewport width, -1/viewport height)
 uniform bool uLighting, uNormalize;
 uniform vec4 uGlobalAmbient;
 uniform vec4 uMatDiffuse, uMatAmbient, uMatEmissive;
-uniform bool uDiffuseFromVertex, uAmbientFromVertex, uEmissiveFromVertex;
+uniform int uDiffuseSrc, uAmbientSrc, uEmissiveSrc, uSpecularSrc;   // D3DMCS: 0 material, 1 vertex diffuse, 2 vertex specular
+uniform bool uSpecular, uLocalViewer;
+uniform vec4 uMatSpecular;
+uniform float uMatPower;
 uniform int uNumLights;
 uniform vec3 uLightDir[4];       // world space, direction the light travels
-uniform vec4 uLightDiffuse[4], uLightAmbient[4];
+uniform vec4 uLightDiffuse[4], uLightAmbient[4], uLightSpecular[4];
 uniform int uFogMode;            // D3DFOG: 0 none, 1 exp, 2 exp2, 3 linear
 uniform bool uFogTable, uFogRange;   // table (pixel) fog is evaluated in the fragment shader; range fog measures the distance from the eye
 uniform float uFogStart, uFogEnd, uFogDensity;
 
 out vec4 vColor;
+out vec4 vSpec;
 out vec2 vUV0;
 out vec2 vUV1;
 out float vFog;
 ${FOG_FN}
+
+vec4 pick(int src, vec4 material, vec4 color1, vec4 color2) {
+  return src == 1 ? color1 : (src == 2 ? color2 : material);
+}
 
 void main() {
   vec4 pv = uView * (uWorld * vec4(aPos, 1.0));
@@ -50,24 +59,37 @@ void main() {
   gl_Position = clip;
 
   vec4 vcol = aColor.bgra;
+  vec4 vspec = aSpec.bgra;
+  vec3 specular = vec3(0.0);
   if (uLighting) {
     vec3 n = mat3(uView * uWorld) * aNormal;
     if (uNormalize) n = normalize(n);
-    vec4 diff = uDiffuseFromVertex ? vcol : uMatDiffuse;
-    vec4 amb = uAmbientFromVertex ? vcol : uMatAmbient;
-    vec4 emi = uEmissiveFromVertex ? vcol : uMatEmissive;
+    vec4 diff = pick(uDiffuseSrc, uMatDiffuse, vcol, vspec);
+    vec4 amb = pick(uAmbientSrc, uMatAmbient, vcol, vspec);
+    vec4 emi = pick(uEmissiveSrc, uMatEmissive, vcol, vspec);
+    vec4 spc = pick(uSpecularSrc, uMatSpecular, vcol, vspec);
+    vec3 view = uLocalViewer ? normalize(-pv.xyz) : vec3(0.0, 0.0, -1.0);   // unit vector from the vertex to the eye
     vec3 accA = uGlobalAmbient.rgb;
     vec3 accD = vec3(0.0);
+    vec3 accS = vec3(0.0);
     for (int i = 0; i < 4; i++) {
       if (i >= uNumLights) break;
       vec3 l = normalize(mat3(uView) * uLightDir[i]);
       accA += uLightAmbient[i].rgb;
-      accD += max(dot(n, -l), 0.0) * uLightDiffuse[i].rgb;
+      float nl = dot(n, -l);
+      accD += max(nl, 0.0) * uLightDiffuse[i].rgb;
+      if (nl > 0.0) {
+        float nh = dot(n, normalize(-l + view));   // half vector between the light and the eye
+        if (nh > 0.0) accS += pow(nh, uMatPower) * uLightSpecular[i].rgb;
+      }
     }
+    specular = clamp(spc.rgb * accS, 0.0, 1.0);
     vColor = vec4(clamp(emi.rgb + amb.rgb * accA + diff.rgb * accD, 0.0, 1.0), clamp(diff.a, 0.0, 1.0));
   } else {
     vColor = vcol;
   }
+  if (!uLighting) specular = vspec.rgb;     // unlit: the vertex specular colour as it is
+  vSpec = vec4(uSpecular ? specular : vec3(0.0), 0.0);
   vUV0 = aUV;
   vUV1 = aUV1;
 
@@ -79,6 +101,7 @@ export const MAIN_FS = `#version 300 es
 precision highp float;
 precision highp int;
 in vec4 vColor;
+in vec4 vSpec;
 in vec2 vUV0;
 in vec2 vUV1;
 in float vFog;
@@ -106,6 +129,7 @@ vec4 arg(int a, vec4 tex, vec4 cur) {
   if (a == 2) return tex;
   if (a == 3) return uTFactor;
   if (a == 1) return cur;
+  if (a == 4) return vSpec;
   return vColor;
 }
 
@@ -159,7 +183,7 @@ void main() {
     }
     cur = vec4(rgb, a);
   }
-  vec3 rgb = cur.rgb;
+  vec3 rgb = clamp(cur.rgb + vSpec.rgb, 0.0, 1.0);   // SPECULARENABLE: the specular colour is added after texturing
   float a = cur.a;
   if (uAlphaTest && !alphaPass(int(a * 255.0 + 0.5), int(uAlphaRef * 255.0 + 0.5))) discard;
   // table fog: per pixel on the depth-buffer value (viewport depth range applied)
