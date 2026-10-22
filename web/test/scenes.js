@@ -343,4 +343,38 @@ SCENES.push(
   },
 );
 
+// ---- stencil ---------------------------------------------------------------------------------------------------------
+// D3DRENDERSTATE_STENCIL*: FAIL 53, ZFAIL 54, PASS 55, FUNC 56, REF 57, MASK 58, WRITEMASK 59. D3DSTENCILOP: KEEP 1, REPLACE 3, DECRSAT 5. D3DCMP: EQUAL 3, ALWAYS 8.
+const stencil = (id, v) => cmd.setRenderState(id, v);
+const stencilClear = (value) => cmd.clear(1 | 4, ARGB(255, 0, 0, 0), 1, null, value);
+const solid = (verts, argb) => verts.map((v) => ({ ...v, diffuse: argb }));
+const FULL = rectVerts(-1, -1, 1, 1, 0.5);
+const LEFT_BOX = rectVerts(-0.9, -0.5, -0.1, 0.5, 0.5);
+
+SCENES.push(
+  {
+    name: 'stencil: REPLACE writes the reference where a draw covers, EQUAL then restricts a later draw to it',
+    commands: () => [...plain(), stencilClear(0), stencil(52, 1), stencil(56, 8), stencil(57, 1), stencil(55, 3),
+      ...draw(solid(LEFT_BOX, ARGB(255, 255, 0, 0))),
+      stencil(56, 3), stencil(55, 1), ...draw(solid(FULL, ARGB(255, 0, 255, 0)))],
+    probes: [[16, 32, [0, 255, 0], 'inside the first box the stencil is 1: the EQUAL 1 draw covers the red'], [48, 32, [0, 0, 0], 'elsewhere the stencil is 0: nothing is drawn'],
+      [4, 4, [0, 0, 0], 'outside the box']],
+  },
+  {
+    name: 'stencil: clear value, saturating decrement, compare mask',
+    commands: () => [...plain(), stencilClear(5), stencil(52, 1), stencil(56, 8), stencil(55, 5),
+      ...draw(solid(LEFT_BOX, ARGB(255, 90, 90, 90))), ...draw(solid(LEFT_BOX, ARGB(255, 90, 90, 90))), // 5 -> 4 -> 3 inside the box
+      stencil(55, 1), stencil(56, 3), stencil(57, 3), ...draw(solid(FULL, ARGB(255, 0, 255, 0))),        // EQUAL 3: the box only
+      stencil(57, 4), stencil(58, 0xfe), ...draw(solid(FULL, ARGB(255, 0, 0, 255)))],                   // (4 & 0xfe) == (stencil & 0xfe): 5 yes, 3 no
+    probes: [[16, 32, [0, 255, 0], 'the box was decremented twice from the cleared 5 to 3: EQUAL 3 draws; (4 & 0xfe) != (3 & 0xfe) keeps blue away'],
+      [4, 4, [0, 0, 255], 'outside the box the stencil is still 5: EQUAL 3 fails, (4 & 0xfe) == (5 & 0xfe) draws blue'],
+      [48, 56, [0, 0, 255], 'same on the right']],
+  },
+  {
+    name: 'stencil disabled: the stencil states do not affect drawing',
+    commands: () => [...plain(), stencilClear(0), stencil(52, 0), stencil(56, 1), ...draw(solid(LEFT_BOX, ARGB(255, 200, 100, 50)))],
+    probes: [[16, 32, [200, 100, 50], 'STENCILFUNC NEVER with STENCILENABLE 0 draws normally']],
+  },
+);
+
 export { lerp, mix, TSS };
