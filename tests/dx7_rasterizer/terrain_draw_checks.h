@@ -274,7 +274,7 @@ static void td_dump(int screen, unsigned long cursor)
 {
     unsigned long after = life_record(screen)->vertexCursor;
     char text[4096] = "";
-    life_extra(" after=%lu", after);
+    life_extra(" after=%lu drawn=%u", after, (unsigned)life_record(screen)->sceneDrawn);
     if (after >= cursor && after - cursor <= 24) {
         arr_words(text, sizeof text, g_d2.vb[screen] + cursor * 0x24, (after - cursor) * 0x24);
     } else if (after < cursor && after <= 24) {
@@ -289,6 +289,7 @@ static void td_dump(int screen, unsigned long cursor)
         d2_prepare(screen, cursor);                                                                                                         \
         LS(name, LIFE_DIFF, {                                                                                                               \
             __VA_ARGS__;                                                                                                                    \
+            life_record(screen)->sceneDrawn = 0;                                                                                            \
             ret = ((TerrainDrawFn)LIFE_SLOT(Draw_2))(g_life.obj, g_tdm.mesh, (unsigned long)(screen), (ortho));                             \
             td_dump(screen, cursor);                                                                                                        \
         });                                                                                                                                 \
@@ -351,6 +352,65 @@ static void td_terrain_draws(void)
             g_life.dd->vb_script[FV_UNLOCK].times = 1);
 }
 
+/* ---- DrawWater(GETerrainMesh &, screen, orthographic), slot 27 ---- */
+
+/* A mesh whose water materials (the vector at 0x30) are the first `count` of the test's materials, each with its own texture. */
+static void td_water(unsigned count, const unsigned *inside, const unsigned *overlap, int visible_rows, int null_vector)
+{
+    td_terrain(0, inside, overlap, visible_rows);
+    GETerrainMeshLayout *mesh = g_tdm.mesh;
+    for (unsigned m = 0; m < 4; m++) {
+        td_fill_list(&g_tdm.materials[m].polygons, g_tdm.inside[m], m * 3, m < count ? inside[m] : 0);
+        td_fill_list(&g_tdm.materials[m].overlayPolygons, g_tdm.overlap[m], m * 2 + 1, m < count ? overlap[m] : 0);
+        g_tdm.materials[m].texture = g_tdm.textures[m];
+    }
+    memset(&mesh->materials, 0, sizeof mesh->materials);
+    mesh->waterMaterials.first = null_vector ? NULL : g_tdm.materials;
+    mesh->waterMaterials.last = null_vector ? NULL : g_tdm.materials + count;
+    mesh->waterMaterials.end = mesh->waterMaterials.last;
+}
+
+#define TD_WATER(name, screen, cursor, ortho, ...)                                                                                          \
+    do {                                                                                                                                    \
+        d2_prepare(screen, cursor);                                                                                                         \
+        LS(name, LIFE_DIFF, {                                                                                                               \
+            __VA_ARGS__;                                                                                                                    \
+            life_record(screen)->sceneDrawn = 0;                                                                                            \
+            ret = ((TerrainDrawFn)LIFE_SLOT(DrawWater))(g_life.obj, g_tdm.mesh, (unsigned long)(screen), (ortho));                          \
+            td_dump(screen, cursor);                                                                                                        \
+        });                                                                                                                                 \
+    } while (0)
+
+static void td_water_draws(void)
+{
+    static const unsigned kInside[4] = {2, 3, 0, 1};
+    static const unsigned kOverlap[4] = {1, 0, 2, 3};
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
+    td_viewport(1, -30.0f, 5.0f, 12.0f, 500.0f);
+    td_water(3, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater of three materials", 0, 0, 0);
+    td_water(3, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater of three materials orthographic", 0, 40, 1);
+    td_water(4, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater of four materials, one without a texture", 0, 80, 0);
+    td_water(1, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater of one material", 0, 120, 0);
+    td_water(2, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater of two materials on screen 1", 1, 7, 0);
+    td_water(0, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater with an empty list of materials", 0, 140, 0);
+    td_water(0, kInside, kOverlap, 1, 1);
+    TD_WATER("terrain draw: DrawWater with no list of materials", 0, 150, 0);
+    td_water(3, kInside, kOverlap, 0, 0);
+    TD_WATER("terrain draw: DrawWater without visible rows does nothing", 0, 160, 0);
+    td_water(3, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater with room for the first material only", 0, 0x98a - 9, 0);
+    td_water(3, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater while DrawPrimitiveVB is busy twice", 0, 170, 0, d2_script(FD_DRAW_PRIMITIVE, D2_BUSY, 2));
+    td_water(3, kInside, kOverlap, 1, 0);
+    TD_WATER("terrain draw: DrawWater when DrawPrimitiveVB fails", 0, 210, 0, d2_script(FD_DRAW_PRIMITIVE, D2_OTHER, 1));
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -366,5 +426,6 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_material();
     memset(&g_tdm, 0, sizeof g_tdm);
     td_terrain_draws();
+    td_water_draws();
     life_end();
 }
