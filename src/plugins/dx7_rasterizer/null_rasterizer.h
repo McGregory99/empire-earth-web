@@ -52,7 +52,7 @@ public:
     long Deactivate() override;  // 12
     long Draw(GEBitmap *, unsigned long) override;  // 21 (dx7_draw2d.cpp)
     long Draw(GELine *, unsigned long, unsigned long) override;  // 20 (dx7_draw2d.cpp)
-    long Draw(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 19
+    long Draw(GEModel *, unsigned long, float, bool) override;  // 19 (dx7_model.cpp)
     long Draw(GEPoint *, unsigned long, unsigned long) override;  // 18 (dx7_draw2d.cpp)
     long Draw(GERhombus *, unsigned long) override;  // 17 (dx7_draw2d.cpp)
     long Draw(GEText *, GESurface *) override;  // 16 (dx7_text.cpp)
@@ -61,7 +61,7 @@ public:
     long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override;  // 13 (dx7_draw3d.cpp)
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override;  // 22 (dx7_draw3d.cpp)
     long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23
-    long DrawSky(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 24
+    long DrawSky(GEModel *, unsigned long, float, bool) override;  // 24 (dx7_model.cpp)
     long DrawTerrainGrid(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 25
     long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
     long DrawWater(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 27
@@ -112,7 +112,7 @@ protected:
     long CreateTextureHandle(GETexture *) override { return 0; }  // 72: the original returns 0 and does nothing (the engine calls it when a texture gets a surface)
     long DemoteTexture(GETexture *) override { return 0; }  // 73: same code
     void DestroyTextureHandle(GETexture *) override {}  // 74
-    long DrawModelHierarchy(GEModel *model, unsigned long, float, bool) override { return Verdict(EEWebCheckModel(model), EEWEB_NOT_SUPPORTED); }  // 75
+    long DrawModelHierarchy(GEModel *, unsigned long, float, bool) override;  // 75 (dx7_model.cpp)
     long PromoteTexture(GETexture *) override { return 0; }  // 76: same code
     void SetRenderTarget(GESurface *, unsigned long) override;  // 77
 public:

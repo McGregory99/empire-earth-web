@@ -62,3 +62,8 @@ EXPORTS
     ??4GEVector@@QAEAAV0@ABV0@@Z
     ?Normalize@GEVector@@QAEXXZ
     ?IsPointOnOrBelowPlane@GE3DPlane@@QBE_NABVGE3DPoint@@@Z
+    ??4GETransformation@@QAEAAV0@ABV0@@Z
+    ?GetPixelSize@GERasterizer@@QAEMPAVGEModel@@PAVGEViewport@@AAVGETransformation@@M_N@Z
+    ?IsOrthographicModelVisible@GERasterizer@@IAEXPAVGEModel@@PAVGEViewport@@AAVGETransformation@@AA_N3@Z
+    ?IsPerspectiveModelVisible@GERasterizer@@IAEXPAVGEModel@@MPAVGEViewport@@AAVGETransformation@@AA_N3@Z
+    ?sTransformStack@GERasterizer@@1V?$vector@UTransformStack@GERasterizer@@V?$allocator@UTransformStack@GERasterizer@@@std@@@std@@A DATA
