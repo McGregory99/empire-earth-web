@@ -411,6 +411,20 @@ static void arr_vertices(void)
     arr_vertices_copy();
 }
 
+/* Our build only: a count whose byte size does not fit in 32 bits is refused with null (the original asks operator new for the wrapped
+ * size and writes past the small block it gets). */
+static void arr_ours_only(void)
+{
+    ArrCreate1 polygons = (ArrCreate1)slot(g_life.vtable, EEWEB_SLOT_GERasterizer_CreatePolygonArray);
+    ArrCreate2 vertices = (ArrCreate2)slot(g_life.vtable, EEWEB_SLOT_GERasterizer_CreateVertexArray);
+    void *wrapped_polygons = polygons(g_life.obj, 0x2aaaaaabUL);
+    void *wrapped_standard = vertices(g_life.obj, 0, 0x08000001UL);
+    void *wrapped_colour = vertices(g_life.obj, 1, 0x071c71c8UL);
+    CHECK(wrapped_polygons == NULL && wrapped_standard == NULL && wrapped_colour == NULL,
+          "%s: arrays: a count whose byte size wraps is refused with null (polygons %p, standard %p, colour %p)", g_life.e->label, wrapped_polygons,
+          wrapped_standard, wrapped_colour);
+}
+
 static void check_arrays(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -420,5 +434,8 @@ static void check_arrays(const struct Expect *e, HMODULE h, const ScreenApi *api
     memset(&g_arr, 0, sizeof g_arr);
     arr_polygons();
     arr_vertices();
+    if (e->ours) {
+        arr_ours_only();
+    }
     life_end();
 }
