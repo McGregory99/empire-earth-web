@@ -127,6 +127,8 @@ case "${1:-}" in
     # "key-hangs": the helper never returns (a Wine process stuck after its last line); "key-hangs-once": only the first call
     if [ -e "$FAKE_WORLD/key-hangs-once" ]; then rm -f "$FAKE_WORLD/key-hangs-once"; sleep 300; exit 0; fi
     [ -e "$FAKE_WORLD/key-hangs" ] && { sleep 300; exit 0; }
+    # "key-hangs-paused": the press took (the game paused) and the helper then hung -- a retry would un-pause the game
+    if [ -e "$FAKE_WORLD/key-hangs-paused" ]; then : >"$FAKE_WORLD/paused"; sleep 300; exit 0; fi
     # the fake game stops ticking when it gets its pause key; "not-paused": never; "needs-two-presses": the first one is lost
     [ -e "$FAKE_WORLD/not-paused" ] || { [ -e "$FAKE_WORLD/needs-two-presses" ] && [ "$(wc -l <"$FAKE_WORLD/key.log")" -lt 2 ]; } ||
       : >"$FAKE_WORLD/paused"

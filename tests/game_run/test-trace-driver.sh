@@ -351,6 +351,36 @@ check "... the proxy was never armed" bash -c "! ls '$W/out'/trace.*.txt >/dev/n
 check "... and the game directory is restored" same_game
 rm -f "$W/key-hangs"
 
+# the helper pressed the key (the game paused) and then hung: the pause state is decided by the tick stall, not by assuming the
+# press failed -- a second press would toggle the pause off again
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/key-hangs-paused"
+run_keys >"$W/run10i.out" 2>&1
+check_eq "a key helper that pressed the key and then hung: exit 0" "0" "$?"
+check "... the log says it was killed" grep -q "key helper did not finish in 3s" "$W/run10i.out"
+check_eq "... the key was pressed once, not again (a retry would un-pause)" "1" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... the simulation was seen to stop" grep -q "the simulation stopped" "$W/run10i.out"
+check_not "... no second press was announced" grep -q "pressing again" "$W/run10i.out"
+check "... the proxy was armed (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
+check "... and the game directory is restored" same_game
+rm -f "$W/key-hangs-paused"
+
+# the timeout kill touches the key helper's own process tree only: a bystander whose command line merely names the helper's
+# path (an editor, a grep, another agent's tool) survives
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/key-hangs-once"
+( exec -a "bystander $W/scn-bin/ee-key.exe" sleep 300 ) 2>/dev/null &
+named=$!
+run_keys >"$W/run10j.out" 2>&1
+check_eq "a timed-out key helper with a bystander naming its path: exit 0" "0" "$?"
+check "... the bystander is still alive" kill -0 "$named"
+kill "$named" 2>/dev/null
+rm -f "$W/key-hangs-once"
+
 # the key is pressed only once the loop is demonstrably live: LIVE_TICKS new tick lines after the first one
 fresh
 rm -f "$W/key.log" "$W/paused"
