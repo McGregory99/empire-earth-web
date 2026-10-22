@@ -38,7 +38,7 @@ public:
     // The vtable, in the declaration order of the generated header (the comment is the slot): overload
     // sets are declared in reverse slot order, which is how MSVC lays them out.
     long ActivateScreen(unsigned long, GETextureManager *, GEWindow *, unsigned long, bool, unsigned long) override;  // 0
-    long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 1
+    long ActivateRenderingSurface(unsigned long, GETextureManager *, GEWindow *, unsigned long, unsigned long) override;  // 1 (dx7_scene.cpp)
     long AddLight(GELight &light, unsigned long, unsigned long &) override;  // 2
     long AddValidScreen(GEScreen *) override;  // 3
     long BeginScene(GESurface *, unsigned long) override;  // 4

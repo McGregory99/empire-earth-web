@@ -87,6 +87,62 @@ long SceneStatus(long error)
 
 // ---- activation ---------------------------------------------------------------------------------------------
 
+// ActivateRenderingSurface(screen, textureManager, window, width, height) (slot 1, 0x10009238): the screen is activated on an
+// off-screen video-memory surface (description type 1, 3D renderable, the size asked for, the pixel format and depth of the first
+// video mode that has as many bits per pixel as the current one), which is its primary surface, its secondary surface and, through
+// SetRenderTarget, its render target.  When the surface cannot be made, or ActivateTheScreen fails (the surface is given back
+// first), the first 16-bit mode is used instead; the answer is then that of the second attempt.  tests/dx7_rasterizer/target_checks.h
+// compares both builds.  Differs from the original, deliberately: a screen that has no 16-bit mode, or no mode with the current mode's
+// depth, is refused (the original asks the engine to verify, and goes on with a mode index that does not exist); the surfaces and the
+// device of a screen that is active already are not given back (the original leaks them too).
+long EEWebNullRasterizer::ActivateRenderingSurface(ulong screen, GETextureManager* textureManager, GEWindow* window, ulong width, ulong height)
+{
+    GERScreenStateLayout* state = State(screen);
+    if (!state || !state->screen) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    GEScreen* owner = reinterpret_cast<GEScreen*>(state->screen);
+    const ulong currentDepth = reinterpret_cast<const EEWebVideoMode&>(owner->GetCurrentMode()).bitsPerPixel;
+    const ulong modes = owner->GetModeCount();
+    GESurface* surface = 0;
+    long result = 0;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        const ulong depth = attempt == 0 ? currentDepth : 0x10;
+        ulong index = 0;
+        while (index < modes && reinterpret_cast<const EEWebVideoMode&>(owner->GetMode(index)).bitsPerPixel != depth) {
+            index++;
+        }
+        if (index >= modes) {
+            return EEWEB_NOT_SUPPORTED;
+        }
+        const EEWebVideoMode mode = reinterpret_cast<const EEWebVideoMode&>(owner->GetMode(index));
+        GESurfaceDescriptionLayout description = MakeDescription(1, mode.pixelFormat, width, height, 0, mode.bitsPerPixel);
+        result = owner->CreateSurface(reinterpret_cast<GESurfaceDescription&>(description), &surface);
+        if (result == 0) {
+            result = ActivateTheScreen(screen, surface, surface, textureManager, window);
+            if (result == 0) {
+                break;
+            }
+            Dereference(surface);
+        }
+        if (attempt == 1) {
+            return result;
+        }
+    }
+    GEScreenLayout* screenFields = reinterpret_cast<GEScreenLayout*>(owner);
+    screenFields->textureManager = reinterpret_cast<GETextureManagerLayout*>(textureManager);
+    reinterpret_cast<GETextureManagerLayout*>(textureManager)->screen = screenFields;
+    state->primarySurface = reinterpret_cast<GESurfaceLayout*>(surface);
+    state->currentTexture = 0;
+    state->renderTarget = 0;
+    state->secondarySurface = reinterpret_cast<GESurfaceLayout*>(surface);
+    state->window = reinterpret_cast<GEWindowLayout*>(window);
+    state->activated = 1;
+    SetRenderTarget(surface, screen);
+    reinterpret_cast<GESurfaceLayout*>(surface)->refCount++;
+    return result;
+}
+
 long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* textureManager, GEWindow* window, ulong backBuffers, bool zBuffer,
                                          ulong zFormat)
 {
