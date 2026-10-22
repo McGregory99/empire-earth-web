@@ -694,3 +694,63 @@ long EEWebNullRasterizer::DrawWater(GETerrainMesh& meshObject, ulong screen, boo
     record->sceneDrawn = 1;
     return result;
 }
+
+long EEWebNullRasterizer::DrawTerrainGrid(GETerrainMesh& meshObject, ulong screen, bool orthographic)
+{
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return EEWEB_LAYOUT_VIOLATION;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device || !record->vertexBuffer || mesh->visibleTileWidth > kColumns - 2 || mesh->visibleTileHeight > kColumns - 2) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    long result = 0;
+    if (EEWebVisibleTileRows(mesh) == 0) {
+        return result;
+    }
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    float matrix[16];
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 1, matrix);
+    transformation.m[5] = 0.0f;
+    transformation.m[6] = 1.0f;
+    transformation.m[9] = 1.0f;
+    transformation.m[10] = 0.0f;
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 2, matrix);
+    ConvertToD3DMatrix(orthographic ? state->viewport.orthographicProjection : state->viewport.perspectiveProjection, matrix);
+    device->vtbl->SetTransform(device, 3, matrix);
+    const ulong x0 = mesh->visibleBottomLeftX, y0 = mesh->visibleBottomLeftY;
+    const ulong xEnd = x0 + mesh->visibleTileWidth + 1, yEnd = y0 + mesh->visibleTileHeight + 1;
+    for (ulong y = y0; y < yEnd; y++) {
+        for (ulong x = x0; x < xEnd; x++) {
+            ulong index = (x - x0) * kColumns + (y - y0);
+            if (!mesh->pointVisibility[index] || !mesh->pointVisibility[index + kColumns] || !mesh->pointVisibility[index + 1]) {
+                continue;
+            }
+            void* ring = 0;
+            LockVB(4, screen, ring);
+            if (!ring) {
+                UnlockVB(screen);
+                return 1;
+            }
+            const GETMRenderVertexLayout* corner = &mesh->renderVertices[index];
+            const GE3DPointLayout* points[4] = {&corner->position, &mesh->renderVertices[index + 1].position, &corner->position, &mesh->renderVertices[index + kColumns].position};
+            float* to = reinterpret_cast<float*>(static_cast<char*>(ring) + record->vertexCursor * 0x24);
+            for (int i = 0; i < 4; i++, to += 9) {
+                to[0] = points[i]->x;
+                to[1] = points[i]->y;
+                to[2] = points[i]->z;
+                to[3] = to[4] = to[5] = 0.0f;
+                *reinterpret_cast<ulong*>(to + 6) = 0xffff0000UL;
+                to[7] = to[8] = 0.0f;
+            }
+            result = UnlockAndDraw(screen, 2, 4, 0, 0);
+        }
+    }
+    return result;
+}

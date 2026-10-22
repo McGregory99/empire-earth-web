@@ -62,7 +62,7 @@ public:
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override;  // 22 (dx7_draw3d.cpp)
     long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23
     long DrawSky(GEModel *, unsigned long, float, bool) override;  // 24 (dx7_model.cpp)
-    long DrawTerrainGrid(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 25
+    long DrawTerrainGrid(GETerrainMesh &, unsigned long, bool) override;  // 25 (dx7_terrain.cpp)
     long DrawTerrainHighlight(GETerrainMesh &mesh, U2DRectangle<long> const &, unsigned long, bool, GEColor const &, float) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 26
     long DrawWater(GETerrainMesh &, unsigned long, bool) override;  // 27 (dx7_terrain.cpp)
     long EndScene(unsigned long) override;  // 28
