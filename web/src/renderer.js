@@ -299,7 +299,20 @@ export class Renderer {
     gl.uniform1f(u('uMatPower'), L.material.power);
     gl.uniform1i(u('uNumLights'), L.lights.length);
     const dirs = new Float32Array(12), dif = new Float32Array(16), amb = new Float32Array(16), spc = new Float32Array(16);
-    L.lights.forEach((l, i) => { dirs.set(l.direction, i * 3); dif.set(l.diffuse, i * 4); amb.set(l.ambient, i * 4); spc.set(l.specular, i * 4); });
+    const types = new Int32Array(4), pos = new Float32Array(12), att = new Float32Array(12), range = new Float32Array(4), cone = new Float32Array(12);
+    L.lights.forEach((l, i) => {
+      dirs.set(l.direction ?? [0, 0, 1], i * 3); dif.set(l.diffuse, i * 4); amb.set(l.ambient, i * 4); spc.set(l.specular, i * 4);
+      types[i] = { directional: 0, point: 1, spot: 2 }[l.type];
+      if (l.type !== 'directional') {
+        pos.set(l.position, i * 3); att.set(l.attenuation, i * 3); range[i] = l.range;
+        if (l.type === 'spot') cone.set([Math.cos(l.phi / 2), Math.cos(l.theta / 2), l.falloff], i * 3);
+      }
+    });
+    gl.uniform1iv(u('uLightType'), types);
+    gl.uniform3fv(u('uLightPos'), pos);
+    gl.uniform3fv(u('uLightAtt'), att);
+    gl.uniform1fv(u('uLightRange'), range);
+    gl.uniform3fv(u('uLightSpot'), cone);
     gl.uniform3fv(u('uLightDir'), dirs);
     gl.uniform4fv(u('uLightDiffuse'), dif);
     gl.uniform4fv(u('uLightAmbient'), amb);

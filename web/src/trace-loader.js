@@ -27,6 +27,9 @@ const STATE_CALLS = new Set(['SetRenderState', 'SetTextureStageState', 'SetTrans
 const DEVICE_INIT_STATE = [[29, 0], [138, 0], [143, 1], [142, 0], [146, 0], [148, 0], [2, 0], [8, 3], [9, 2], [26, 1],
   [41, 1], [25, 5]];
 
+// D3DLIGHTTYPE, by the name or the number the trace prints
+const LIGHT_TYPE_NAMES = { POINT: 'point', 1: 'point', SPOT: 'spot', 2: 'spot', DIRECTIONAL: 'directional', 3: 'directional' };
+
 const rectOf = (a) => ({ x: a[0], y: a[1], w: a[2] - a[0], h: a[3] - a[1] });
 const keyOf = (a) => (Array.isArray(a) && a.length === 2 ? { low: a[0], high: a[1] } : null);
 const sameKey = (a, b) => (a === b) || (a && b && a.low === b.low && a.high === b.high);
@@ -364,8 +367,11 @@ class Loader {
   }
   dev7_SetLight(c) {
     const d = c.args.data;
-    if (d.dltType !== 3 && !/DIRECTIONAL/.test(String(d.dltType))) this.fail(`unsupported light type ${d.dltType} (only directional lights)`);
-    this.setState(c, `light:${c.args.idx}`, cmd.setLight(c.args.idx, { type: 'directional', diffuse: d.diffuse, specular: d.specular, ambient: d.ambient, direction: d.direction }));
+    const type = LIGHT_TYPE_NAMES[d.dltType];
+    if (!type) this.fail(`unsupported light type ${d.dltType} (POINT, SPOT, DIRECTIONAL)`);
+    const light = { type, diffuse: d.diffuse, specular: d.specular, ambient: d.ambient, direction: d.direction };
+    if (type !== 'directional') Object.assign(light, { position: d.position, range: d.range, attenuation: d.atten, falloff: d.falloff, theta: d.theta, phi: d.phi });
+    this.setState(c, `light:${c.args.idx}`, cmd.setLight(c.args.idx, light));
   }
   dev7_LightEnable(c) {
     const on = c.args.bEnable !== 0 && c.args.bEnable !== 'FALSE';

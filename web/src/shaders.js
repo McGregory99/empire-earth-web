@@ -35,6 +35,11 @@ uniform vec4 uMatSpecular;
 uniform float uMatPower;
 uniform int uNumLights;
 uniform vec3 uLightDir[4];       // world space, direction the light travels
+uniform int uLightType[4];       // 0 directional, 1 point, 2 spot
+uniform vec3 uLightPos[4];       // world space
+uniform vec3 uLightAtt[4];       // a0, a1, a2
+uniform float uLightRange[4];
+uniform vec3 uLightSpot[4];      // cos(phi / 2), cos(theta / 2), falloff
 uniform vec4 uLightDiffuse[4], uLightAmbient[4], uLightSpecular[4];
 uniform int uFogMode;            // D3DFOG: 0 none, 1 exp, 2 exp2, 3 linear
 uniform bool uFogTable, uFogRange;   // table (pixel) fog is evaluated in the fragment shader; range fog measures the distance from the eye
@@ -74,13 +79,27 @@ void main() {
     vec3 accS = vec3(0.0);
     for (int i = 0; i < 4; i++) {
       if (i >= uNumLights) break;
-      vec3 l = normalize(mat3(uView) * uLightDir[i]);
-      accA += uLightAmbient[i].rgb;
-      float nl = dot(n, -l);
-      accD += max(nl, 0.0) * uLightDiffuse[i].rgb;
+      vec3 toLight = -normalize(mat3(uView) * uLightDir[i]);   // directional: opposite to the direction the light travels
+      float k = 1.0;                                         // attenuation * spot cone
+      if (uLightType[i] != 0) {
+        vec3 d = (uView * vec4(uLightPos[i], 1.0)).xyz - pv.xyz;
+        float dist = length(d);
+        if (dist > uLightRange[i]) continue;
+        toLight = d / dist;
+        float den = uLightAtt[i].x + uLightAtt[i].y * dist + uLightAtt[i].z * dist * dist;
+        k = den > 0.0 ? 1.0 / den : 0.0;
+        if (uLightType[i] == 2) {
+          float rho = dot(-toLight, normalize(mat3(uView) * uLightDir[i]));
+          if (rho <= uLightSpot[i].x) k = 0.0;
+          else if (rho <= uLightSpot[i].y) k *= pow((rho - uLightSpot[i].x) / (uLightSpot[i].y - uLightSpot[i].x), uLightSpot[i].z);
+        }
+      }
+      accA += k * uLightAmbient[i].rgb;
+      float nl = dot(n, toLight);
+      accD += k * max(nl, 0.0) * uLightDiffuse[i].rgb;
       if (nl > 0.0) {
-        float nh = dot(n, normalize(-l + view));   // half vector between the light and the eye
-        if (nh > 0.0) accS += pow(nh, uMatPower) * uLightSpecular[i].rgb;
+        float nh = dot(n, normalize(toLight + view));   // half vector between the light and the eye
+        if (nh > 0.0) accS += k * pow(nh, uMatPower) * uLightSpecular[i].rgb;
       }
     }
     specular = clamp(spc.rgb * accS, 0.0, 1.0);

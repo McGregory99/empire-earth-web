@@ -22,7 +22,7 @@ it without game data, pick `test/fixtures/synthetic.trace` and `test/fixtures/sy
 gunzips. Every command carries the `line` of the trace line it came from, and renderer errors name it.
 
 Parsed: `SetDisplayMode` (32-bit only), `CreateSurface`, `GetAttachedSurface`, `CreateDevice`, `SetRenderTarget`,
-`SetRenderState`, `SetTextureStageState`, `SetTransform`, `SetViewport`, `SetMaterial`, `SetLight` (directional), `LightEnable`,
+`SetRenderState`, `SetTextureStageState`, `SetTransform`, `SetViewport`, `SetMaterial`, `SetLight` (directional, point, spot), `LightEnable`,
 `SetTexture`, `Clear`, the four `Draw*Primitive*` calls, `surf.Unlock`, `ReleaseDC`, `Blt`, `BltFast`, `SetColorKey`, `Flip`.
 Everything else is counted in `stats.ignoredCalls` and skipped. Calls that failed (`DDERR_*`/`D3DERR_*`, e.g. the golden's 59
 Z-buffer Clears) are skipped and counted.
@@ -51,7 +51,7 @@ Fails loudly (a `TraceError` naming the trace line): a trace that references a d
 `unavailable`; draws or textures without data; `vertices=none`; any vertex format other than XYZ + optional NORMAL/DIFFUSE/SPECULAR + up to two 2-float texture sets (pre-transformed XYZRHW, point size, blend weights, 1/3/4-component coordinates); primitive types
 other than triangle and line lists; strided draws, `ProcessVertices`; non-32-bit display modes; `SetRenderTarget` on an offscreen
 surface; `Blt` flags other than wait, async, colour fill and source colour keys (DDFX, ROP, destination keys, alpha); screen-to-screen
-copies other than presents; colour keys other than `DDCKEY_SRCBLT`; non-directional lights; block-compressed or palettised
+copies other than presents; colour keys other than `DDCKEY_SRCBLT`; light types other than POINT, SPOT and DIRECTIONAL; block-compressed or palettised
 surfaces. Unsupported render or texture-stage state is rejected by the renderer when the command is applied.
 Not replayed: `dev7.Load`/`PreLoad` (the capture does not store their results), palettes, mip data (the renderer generates mips).
 
@@ -82,7 +82,7 @@ with `present`. Commands are plain objects built (and validated) by `cmd.*` in `
 | `setTransform(type, matrix16)` | WORLD 1, VIEW 2, PROJECTION 3; D3D row-major row-vector layout |
 | `setViewport({x,y,width,height,minZ,maxZ})` | top-left origin |
 | `setMaterial({diffuse,ambient,specular,emissive,power})` | RGBA float arrays |
-| `setLight(i, light\|null)`, `lightEnable(i, on)` | directional lights (`specular` optional, default black), at most 4 enabled |
+| `setLight(i, light\|null)`, `lightEnable(i, on)` | `{type: 'directional'\|'point'\|'spot', diffuse, ambient, specular?, direction, position, range, attenuation: [a0,a1,a2], falloff, theta, phi}` in world space, at most 4 enabled |
 | `bindTexture(stage, id\|null)` | texture or surface id |
 | `createTexture(id,w,h,format,bytes,{pitch,colorKey})`, `updateTexture(id,bytes,rect?)`, `setColorKey(id,key)`, `destroyTexture(id)` | formats: `RGB555 RGB565 XRGB8888 ARGB1555 ARGB4444 ARGB8888` (`formatFromPixelFormat` maps a DDPIXELFORMAT) |
 | `uploadVertices(bytes, offset, fvf = 0x152)` | vertices of format `fvf` (`vertexLayout(fvf)`, `packVertices(fvf, list)` in `src/frame-model.js`) into the vertex buffer at byte `offset`, a multiple of that format's stride; `draw.startVertex` counts vertices whatever their format, so formats must not share vertex numbers (the loader allocates one run of numbers per record). The renderer converts every record to one internal 48-byte layout |
@@ -107,7 +107,7 @@ Vertex formats XYZ + NORMAL/DIFFUSE/SPECULAR + 0..2 texture sets (the game's 0x1
 range); cull modes; alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
 fog: vertex fog (`FOGVERTEXMODE`, view-space depth, or the distance from the eye with `RANGEFOGENABLE`) and table / pixel
 fog (`FOGTABLEMODE`, wins over vertex fog like in D3D7, evaluated per pixel on the depth-buffer value, so `FOGSTART`/`FOGEND`
-are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 directional lights, global ambient, material
+are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 lights (directional, point with range and `1 / (a0 + a1 d + a2 d^2)` attenuation, spot with the theta / phi cone and falloff; `src/lighting.js` has the formulas as JavaScript), global ambient, material
 colour sources (`COLORVERTEX`, `*MATERIALSOURCE` 0 material / 1 vertex diffuse / 2 vertex specular); specular
 (`SPECULARENABLE`: material specular and power x light specular x (N.H)^power per vertex, `LOCALVIEWER` on or off, or the vertex specular colour of the
 FVF when lighting is off; added after texturing, before fog; with it off the specular colour is zero, also as the `SPECULAR` texture argument); stage 0 and stage 1 (multitexture) colour/alpha ops SELECTARG1/2, MODULATE(2X/4X), ADD, ADDSIGNED(2X),
@@ -118,7 +118,7 @@ min, mag and mip filters, wrap / mirror / clamp, mip LOD bias; texture colour ke
 
 Wireframe / point fill, flat shading, stencil, w-buffer, ZBIAS,
 user clip planes, vertex blending, texture transforms, texcoord index above 1 or with coordinate generation flags,
-texture argument modifiers (COMPLEMENT, ALPHAREPLICATE), ADDSMOOTH / bump / dot3 ops, BORDER addressing, point / spot lights, DXT formats, any
+texture argument modifiers (COMPLEMENT, ALPHAREPLICATE), ADDSMOOTH / bump / dot3 ops, BORDER addressing, DXT formats, any
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are
 generated from level 0 (the trace carries none); a `TEXTURE` argument with no texture bound is opaque
 white; lighting transforms normals by the world-view matrix without an inverse transpose (exact for uniform

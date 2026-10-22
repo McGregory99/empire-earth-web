@@ -63,6 +63,7 @@ export function packVertices(fvf, list) {
 export const CLEAR = Object.freeze({ TARGET: 1, ZBUFFER: 2, STENCIL: 4 });
 /** D3DTRANSFORMSTATETYPE values the renderer understands. */
 export const TRANSFORM = Object.freeze({ WORLD: 1, VIEW: 2, PROJECTION: 3 });
+export const LIGHT_TYPES = Object.freeze(['directional', 'point', 'spot']);
 export const PRIMITIVES = Object.freeze(['triangleList', 'lineList']);
 
 const fail = (m) => { throw new FrameModelError(m); };
@@ -100,11 +101,18 @@ const CHECKS = {
   setLight(c) {
     if (!Number.isInteger(c.index) || c.index < 0) fail('setLight: index');
     if (c.light === null) return;
-    if (c.light?.type !== 'directional') fail('setLight: only directional lights are supported');
-    checkColor4(c.light.diffuse, 'light.diffuse');
-    checkColor4(c.light.ambient, 'light.ambient');
-    if (c.light.specular !== undefined) checkColor4(c.light.specular, 'light.specular');
-    if (c.light.direction?.length !== 3) fail('light.direction must have 3 components');
+    const l = c.light;
+    if (!LIGHT_TYPES.includes(l?.type)) fail(`setLight: unsupported light type "${l?.type}" (directional, point, spot)`);
+    checkColor4(l.diffuse, 'light.diffuse');
+    checkColor4(l.ambient, 'light.ambient');
+    if (l.specular !== undefined) checkColor4(l.specular, 'light.specular');
+    if (l.type !== 'point' && l.direction?.length !== 3) fail('light.direction must have 3 components');
+    if (l.type !== 'directional') {
+      if (l.position?.length !== 3) fail('light.position must have 3 components');
+      if (!(l.range >= 0)) fail('light.range must be a non-negative number');
+      if (l.attenuation?.length !== 3 || !l.attenuation.every(Number.isFinite)) fail('light.attenuation must have 3 numbers');
+    }
+    if (l.type === 'spot' && !['falloff', 'theta', 'phi'].every((k) => Number.isFinite(l[k]))) fail('spot light needs numeric falloff, theta and phi');
   },
   lightEnable(c) {
     if (!Number.isInteger(c.index) || c.index < 0) fail('lightEnable: index');
@@ -197,7 +205,10 @@ export const cmd = {
   setViewport: (viewport) => make({ op: 'setViewport', viewport }),
   /** diffuse/ambient/specular/emissive as [r,g,b,a] floats, power as a float. */
   setMaterial: (material) => make({ op: 'setMaterial', material }),
-  /** Directional light {type, diffuse, ambient, direction}; null removes it. */
+  /**
+   * Light {type: 'directional' | 'point' | 'spot', diffuse, ambient, specular?, direction (directional, spot), position, range, attenuation: [a0, a1, a2]
+   * (point, spot), falloff, theta, phi (spot)} in world space; null removes it.
+   */
   setLight: (index, light) => make({ op: 'setLight', index, light }),
   lightEnable: (index, enabled) => make({ op: 'lightEnable', index, enabled: !!enabled }),
   /** Bind (or unbind with null) a texture / surface id to stage 0 or 1. */
