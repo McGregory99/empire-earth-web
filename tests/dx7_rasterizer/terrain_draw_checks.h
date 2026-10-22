@@ -127,6 +127,7 @@ static void td_material(void)
                 g_td.vertices[c].color.b = ((float)k + 0.5f) / 256.0f;
             }
             d2_prepare(0, 0);
+            log_clear(g_life.dd);
             ((TerrainMaterialFn)slot(g_life.vtable, EEWEB_SLOT_DX7RasterizerAbi_DrawTerrainMaterial))(g_life.obj, &life_state(0)->viewport, td_list(0, 1), 0);
             const uint32_t *ring = (const uint32_t *)g_d2.vb[0];
             for (int v = 0; v < 3; v++) {
@@ -390,6 +391,7 @@ static void td_terrain_draws(void)
             td_viewport_angles(0, x, y, z, rear, td_value(&seed, 0.0f, 6.28f), td_value(&seed, -1.2f, 1.2f), td_value(&seed, -0.8f, 0.8f));
             td_terrain(1, kInside, kOverlap, 0);
             d2_prepare(0, 0);
+            log_clear(g_life.dd);
             ((TerrainDrawFn)LIFE_SLOT(Draw_2))(g_life.obj, g_tdm.mesh, 0, (unsigned char)(k & 1));
             const uint32_t *ring = (const uint32_t *)g_d2.vb[0];
             for (unsigned w = 0; w < 12 * 9; w++) {
@@ -773,6 +775,10 @@ static void td_lines_draws(void)
     TD_LINES("terrain draw: DrawGridLines of lines that are all outside moves the cursor all the same", 0, 520, td_lines(kEdges, 3), texture0, 0.5f, 0);
     td_lines_mesh(3, 2, 4, 3, 0);
     TD_LINES("terrain draw: DrawGridLines without visible rows does nothing", 0, 540, td_lines(kInside, 8), texture0, 0.5f, 0, g_tdm.mesh->visibleRows.last = g_tdm.mesh->visibleRows.first);
+    /* heights that are not numbers (or negative) become zero: the point (11, 2) has array index 9 in its row, where (5 * row + index) % 17 == 2 */
+    static const int32_t kNotANumber[] = {11, 2, 12, 2, 11, 2, 11, 3, 13, 4, 14, 4};
+    td_lines_mesh(0, 0, 20, 20, 0);
+    TD_LINES("terrain draw: DrawGridLines through points whose height is not a number or negative", 0, 560, td_lines(kNotANumber, 3), texture0, 0.5f, 0);
     /* a lot of lines: the ring holds 1221 of them */
     static int32_t many[1400 * 4];
     for (int i = 0; i < 1400; i++) {
