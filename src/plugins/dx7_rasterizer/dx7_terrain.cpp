@@ -754,3 +754,103 @@ long EEWebNullRasterizer::DrawTerrainGrid(GETerrainMesh& meshObject, ulong scree
     }
     return result;
 }
+
+long EEWebNullRasterizer::DrawTerrainHighlight(GETerrainMesh& meshObject, U2DRectangle<long> const& rectangleObject, ulong screen, bool orthographic, GEColor const& color,
+                                               float alpha)
+{
+    static const float k255 = 255.0f;
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return EEWEB_LAYOUT_VIOLATION;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device || !record->vertexBuffer || mesh->visibleTileWidth > kColumns - 2 || mesh->visibleTileHeight > kColumns - 2) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    const long* rectangle = reinterpret_cast<const long*>(&rectangleObject);
+    long across = rectangle[2] - rectangle[1];
+    long down = rectangle[0] - rectangle[3];
+    long remaining = (down < 0 ? -down + 1 : down + 1) * (across < 0 ? -across + 1 : across + 1);
+    if (EEWebVisibleTileRows(mesh) == 0) {
+        return 0;
+    }
+    const GEColorLayout* rgb = reinterpret_cast<const GEColorLayout*>(&color);
+    ulong a = static_cast<ulong>(dx7math::RoundToNearest(Scaled(alpha, k255)));
+    ulong r = static_cast<ulong>(dx7math::RoundToNearest(Scaled(rgb->r, k255)));
+    ulong g = static_cast<ulong>(dx7math::RoundToNearest(Scaled(rgb->g, k255)));
+    ulong b = static_cast<ulong>(dx7math::RoundToNearest(Scaled(rgb->b, k255)));
+    const ulong packed = ((((a << 8) | r) << 8 | g) << 8) | b;
+    SetTexture(0, screen);
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    float matrix[16];
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 1, matrix);
+    transformation.m[5] = 0.0f;
+    transformation.m[6] = 1.0f;
+    transformation.m[9] = 1.0f;
+    transformation.m[10] = 0.0f;
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 2, matrix);
+    ConvertToD3DMatrix(orthographic ? state->viewport.orthographicProjection : state->viewport.perspectiveProjection, matrix);
+    device->vtbl->SetTransform(device, 3, matrix);
+    const ulong x0 = mesh->visibleBottomLeftX, y0 = mesh->visibleBottomLeftY;
+    const ulong xLimit = x0 + mesh->visibleTileWidth + 1, yLimit = y0 + mesh->visibleTileHeight + 1;
+    const ulong kBatch = 0x197, kBatchVertices = 0x98a;
+    void* ring = 0;
+    LockVB(remaining > static_cast<long>(kBatch) ? kBatchVertices : static_cast<ulong>(remaining) * 6, screen, ring);
+    if (!ring) {
+        UnlockVB(screen);
+        return 1;
+    }
+    float* to = reinterpret_cast<float*>(static_cast<char*>(ring) + record->vertexCursor * 0x24);
+    ulong tiles = 0;
+    const GETMTileRowLayout* tileRows = mesh->tileRows;
+    for (ulong row = static_cast<ulong>(rectangle[3]); row <= static_cast<ulong>(rectangle[0]) && row != 0xffffffffUL; row++) {
+        for (ulong column = static_cast<ulong>(rectangle[1]); column <= static_cast<ulong>(rectangle[2]) && column != 0xffffffffUL; column++) {
+            remaining--;
+            if (row >= mesh->tileRowCount || !tileRows || column - tileRows[row].firstIndex >= tileRows[row].count || column < x0 || column > xLimit || row < y0 || row > yLimit) {
+                continue;
+            }
+            ulong index = (column - x0) * kColumns + (row - y0);
+            if (index + 102 >= kColumns * kColumns) {
+                continue;
+            }
+            if (!mesh->pointVisibility[index] || !mesh->pointVisibility[index + kColumns] || !mesh->pointVisibility[index + 1] || !mesh->pointVisibility[index + kColumns + 1]) {
+                continue;
+            }
+            const GE3DPointLayout* corners[6] = {&mesh->renderVertices[index].position,
+                                                 &mesh->renderVertices[index + 1].position,
+                                                 &mesh->renderVertices[index + kColumns].position,
+                                                 &mesh->renderVertices[index + 1].position,
+                                                 &mesh->renderVertices[index + kColumns + 1].position,
+                                                 &mesh->renderVertices[index + kColumns].position};
+            for (int i = 0; i < 6; i++, to += 9) {
+                to[0] = corners[i]->x;
+                to[1] = corners[i]->y;
+                to[2] = corners[i]->z;
+                to[3] = to[4] = to[5] = 0.0f;
+                *reinterpret_cast<ulong*>(to + 6) = packed;
+                to[7] = to[8] = 0.0f;
+            }
+            tiles++;
+            if (tiles == kBatch && remaining > 0) {
+                UnlockAndDraw(screen, 4, kBatchVertices, 0, 0);
+                tiles = 0;
+                ring = 0;
+                LockVB(remaining > static_cast<long>(kBatch) ? kBatchVertices : static_cast<ulong>(remaining) * 6, screen, ring);
+                if (!ring) {
+                    UnlockVB(screen);
+                    return 1;
+                }
+                to = reinterpret_cast<float*>(static_cast<char*>(ring) + record->vertexCursor * 0x24);
+            }
+        }
+    }
+    if (tiles > 0) {
+        return UnlockAndDraw(screen, 4, tiles * 6, 0, 0);
+    }
+    return UnlockVB(screen);
+}
