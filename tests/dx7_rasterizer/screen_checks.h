@@ -1191,7 +1191,8 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "poly_checks.h"      /* Draw(GEPolygonArray, GEVertexArray, ...) (P2.6.7c) */
 #include "line3d_checks.h"    /* Draw3DLine (P2.6.7d) */
 #include "text_checks.h"      /* Draw(GEText, ...) (P2.6.7e) */
-#include "terrain_checks.h"   /* TransformToCamera (P2.6.7f) */
+#include "terrain_checks.h"   /* TransformToCamera (P2.6.7g) */
+#include "model_checks.h"     /* the model draws (P2.6.7h) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1225,6 +1226,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_line3d(e, h, &api, get_rasterizer());
         check_text(e, h, &api, get_rasterizer());
         check_terrain(e, h, &api, get_rasterizer());
+        check_model(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
