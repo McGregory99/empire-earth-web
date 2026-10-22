@@ -303,7 +303,7 @@ static void d2_ours_only(void)
 }
 
 /* A draw whose device answers "still drawing" for ever gives up after a bound (the original waits for ever): the 30000 busy answers
- * scripted here are more than the 10000 attempts our build makes, and the draw ends, with the cursor moved on and the error recorded. */
+ * scripted here are more than the 10000 attempts our build makes, and the draw ends with the cursor moved on. */
 static void d2_ours_busy_bound(void)
 {
     GEBitmapLayout *bitmap = d2_bitmap(d2_texture(0, 1.0f, 0.0f, 0.0f), d2_texture(1, 1.0f, 0.0f, 0.0f), 1.0f);

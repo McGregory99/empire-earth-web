@@ -37,6 +37,8 @@ typedef unsigned long ulong;
 namespace {
 
 const long kBusy = static_cast<long>(0x8876021cUL); // DDERR_WASSTILLDRAWING
+// Our build gives up after this many attempts (the original waits for ever; a hung driver would hang the game).
+const unsigned long kMaxBusyRetries = 10000;
 const ulong kRingVertices = 0x98a;
 const ulong kVertexSize = 0x24;
 const unsigned short kQuadIndices[6] = {0, 1, 2, 2, 1, 3};
@@ -94,6 +96,7 @@ long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong ver
     long unlocked = UnlockVB(screen);
     DX7ScreenRecordLayout* record = Record(screen);
     long error;
+    unsigned long attempts = 0;
     do {
         IDirect3DDevice7* device = Device(screen);
         IDirect3DVertexBuffer7* buffer = static_cast<IDirect3DVertexBuffer7*>(record->vertexBuffer);
@@ -105,7 +108,7 @@ long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong ver
         if (error == kBusy) {
             Sleep(0);
         }
-    } while (error == kBusy);
+    } while (error == kBusy && ++attempts < kMaxBusyRetries);
     record->vertexCursor += vertices;
     return unlocked;
 }
