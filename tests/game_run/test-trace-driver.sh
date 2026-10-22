@@ -381,6 +381,73 @@ check "... the bystander is still alive" kill -0 "$named"
 kill "$named" 2>/dev/null
 rm -f "$W/key-hangs-once"
 
+# SCN_SETUP_ARGS: input pressed AFTER the pause was proven and BEFORE the proxy is armed (a camera move, a zoom, a selection): the
+# paused game still presents, so the capture window shows the new view.  The pause must still hold afterwards.
+cat >"$W/scn-setup.env" <<SCN
+$(cat "$W/scn-keys.env")
+SCN_SETUP_ARGS="e04b/2500 wheel:+4"
+SCN
+{ cat "$W/config-keys.sh"; echo 'SETUP_SETTLE=1'; } >"$W/config-setup.sh"
+run_setup() { bash "$DRIVER" --test-config "$W/config-setup.sh" --scenario "$W/scn-setup.env" "$W/proxy.dll" "$@"; }
+fresh
+rm -f "$W/key.log" "$W/paused" "$W/setup-fails" "$W/setup-hangs"
+: >"$W/ticking"
+run_setup >"$W/run10p.out" 2>&1
+check_eq "a scenario with setup input exits 0" "0" "$?"
+check_eq "... the key helper ran twice: the pause key, then the setup input" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... the second call has the window class and the setup actions" grep -q "ee-key.exe --window-class SSSI Empire Earth e04b/2500 wheel:+4" "$W/key.log"
+check "... the log says the setup input was sent" grep -q "setup input" "$W/run10p.out"
+check "... and that the simulation was still stopped after it" grep -q "the simulation is still stopped after the setup input" "$W/run10p.out"
+check "... the proxy was armed after it (its trace exists)" grep -q "T1 fake" "$W/out"/trace.*.txt
+t_pause="$(sed -n 's/.* at \([0-9]*\)$/\1/p' "$W/key.log" | sed -n 1p)"; t_setup="$(sed -n 's/.* at \([0-9]*\)$/\1/p' "$W/key.log" | sed -n 2p)"
+check "... the setup input came after the pause (pause $t_pause, setup $t_setup)" test "$t_setup" -ge "$t_pause"
+check "... and the game directory is restored" same_game
+
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/setup-fails"
+run_setup >"$W/run10q.out" 2>&1
+check "a failing setup input fails the run (non-zero: $?)" test $? -ne 0
+check "... saying so" grep -q "FAIL: the setup input failed" "$W/run10q.out"
+check "... the proxy was never armed" bash -c "! ls '$W/out'/trace.*.txt >/dev/null 2>&1"
+check "... and the game directory is restored" same_game
+rm -f "$W/setup-fails"
+
+fresh
+rm -f "$W/key.log" "$W/paused"
+: >"$W/ticking"
+: >"$W/setup-hangs"
+run_setup >"$W/run10r.out" 2>&1
+check "a setup input that hangs is killed and fails the run (non-zero: $?)" test $? -ne 0
+check "... saying so" grep -q "FAIL: the setup input did not finish in 3s" "$W/run10r.out"
+check_eq "... the setup input was not repeated (it is not a toggle, but a half-done drag must not be repeated blindly)" "2" "$(wc -l <"$W/key.log" | tr -d ' ')"
+check "... and the game directory is restored" same_game
+rm -f "$W/setup-hangs"
+
+# the scenario files of the repository: same save as the first one, a name of their own, setup actions the helper accepts
+SCN_FILES="$HERE/../ddraw_trace/scenarios"
+base_sha="$(. "$SCN_FILES/skirmish-paused.env"; echo "$SCN_SAVE_SHA256")"
+names=""
+for f in "$SCN_FILES"/*.env; do
+  b="$(basename "$f" .env)"
+  got="$( . "$f"; echo "$SCN_NAME|$SCN_SAVE_SHA256|$SCN_KEYS|$SCN_KEY_WINDOW|${SCN_SETUP_ARGS:-}" )"
+  check_eq "$b: SCN_NAME is the file name" "$b" "${got%%|*}"
+  check "$b: the save is the first scenario's (sha256 $base_sha)" test "$(echo "$got" | cut -d'|' -f2)" = "$base_sha"
+  check "$b: it pauses first (F3) in the game's window" test "$(echo "$got" | cut -d'|' -f3,4)" = "3d|SSSI Empire Earth"
+  setup="$(echo "$got" | cut -d'|' -f5)"
+  ok=1
+  for a in $setup; do
+    echo "$a" | grep -Eq '^(e0[0-7][0-9a-f]|[0-7][0-9a-f])(/[0-9]+)?$|^wheel:[+-][0-9]+$|^click:[01](\.[0-9]+)?,[01](\.[0-9]+)?$|^drag:([01](\.[0-9]+)?,){3}[01](\.[0-9]+)?$' || ok=0
+  done
+  check "$b: its setup actions are valid ee-key actions ($setup)" test "$ok" = 1
+  names="$names $(echo "$got" | cut -d'|' -f1)"
+done
+check_eq "scenario names are unique" "$(echo $names | tr ' ' '\n' | sort | wc -l | tr -d ' ')" "$(echo $names | tr ' ' '\n' | sort -u | wc -l | tr -d ' ')"
+for want in skirmish-scrolled skirmish-zoomed skirmish-selected skirmish-shroud; do
+  check "the scenario $want exists" test -f "$SCN_FILES/$want.env"
+done
+
 # the key is pressed only once the loop is demonstrably live: LIVE_TICKS new tick lines after the first one
 fresh
 rm -f "$W/key.log" "$W/paused"

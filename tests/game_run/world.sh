@@ -124,6 +124,12 @@ fi
 case "${1:-}" in
   *ee-key.exe)
     echo "key-helper $* at $(date +%s)" >>"$FAKE_WORLD/key.log"
+    # the setup input of a scenario (it has a wheel action): "setup-fails" exits 1, "setup-hangs" never returns; it never touches the pause
+    case "$*" in *wheel:*)
+      [ -e "$FAKE_WORLD/setup-fails" ] && exit 1
+      [ -e "$FAKE_WORLD/setup-hangs" ] && { sleep 300; exit 0; }
+      exit 0 ;;
+    esac
     # "key-hangs": the helper never returns (a Wine process stuck after its last line); "key-hangs-once": only the first call
     if [ -e "$FAKE_WORLD/key-hangs-once" ]; then rm -f "$FAKE_WORLD/key-hangs-once"; sleep 300; exit 0; fi
     [ -e "$FAKE_WORLD/key-hangs" ] && { sleep 300; exit 0; }
