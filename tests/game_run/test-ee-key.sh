@@ -58,4 +58,52 @@ check "the output says how: focus confirmed, or messages posted" grep -Eq "^ee-k
 "$WINE_ROOT/bin/wine" "$T/ee-key.exe" --window-class NoSuchClassAnywhere 3d >"$T/k6.out" 2>&1
 check_eq "a window class that does not exist: exit 6" "6" "$?"
 check "... with a clear message" grep -q "no visible window of class 'NoSuchClassAnywhere'" "$T/k6.out"
+# Extended keys (arrows: the scancode with the 0xe0 prefix), a hold time (`<key>/<ms>`), the mouse wheel and a click / drag inside
+# the game's window (fractions of its client area, so they do not depend on the resolution): what a camera move, a zoom and a unit
+# selection need.  The mouse tokens are relative to a window, so they need --window-class.
+start_victim() {
+  rm -f "$T/key_victim.ready" "$T/key_victim.out" "$T/key_victim.mouse" "$T/victim.rc"
+  ( cd "$T" && wine key_victim.exe >/dev/null 2>&1; echo $? >"$T/victim.rc" ) &
+  wait_for 300 test -e "$T/key_victim.ready"
+}
+mouse_log() { tr -d '\r' <"$T/key_victim.mouse"; }
+# field <event> <n>: the position of the n-th event of that kind ("x,y")
+field() { mouse_log | awk -v e="$1" -v n="$2" '$1 == e && ++c == n { print $2 }'; }
+within() { # within <x,y> <want x> <want y>: both coordinates within 4 pixels
+  local x="${1%,*}" y="${1#*,}"
+  [ -n "$1" ] && [ "$x" -ge "$(($2 - 4))" ] && [ "$x" -le "$(($2 + 4))" ] && [ "$y" -ge "$(($3 - 4))" ] && [ "$y" -le "$(($3 + 4))" ]
+}
+start_victim
+wine "$T/ee-key.exe" --window-class EEKeyVictim e04b/900 01 >"$T/k7.out" 2>&1
+check_eq "an extended key held for 900 ms, then Esc: exit 0" "0" "$?"
+wait_for 100 test -e "$T/victim.rc"
+check_eq "the window got the extended left arrow (e04b), then Esc" "e04b 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' | sed 's/ $//')"
+down="$(mouse_log | awk '$1 == "keydown" && $2 == "4b,1" { print $3; exit }')"
+up="$(mouse_log | awk '$1 == "keyup" && $2 == "4b,1" { print $3; exit }')"
+check "the key stayed down at least 800 ms (down $down, up $up)" test -n "$down" -a -n "$up" -a "$((${up:-0} - ${down:-0}))" -ge 800
+check "the helper said what it pressed" grep -q "pressed e04b (held 900 ms)" "$T/k7.out"
+
+start_victim
+wine "$T/ee-key.exe" --window-class EEKeyVictim wheel:+3 click:0.5,0.25 drag:0.2,0.2,0.8,0.6 01 >"$T/k8.out" 2>&1
+check_eq "wheel, click and drag in the window: exit 0" "0" "$?"
+wait_for 100 test -e "$T/victim.rc"
+check "the wheel notches reached the window (+3 = delta 360)" test "$(mouse_log | awk '$1 == "wheel" { print $2; exit }')" = "360,0"
+read -r w h <<EOF
+$(tr -d '\r' <"$T/k8.out" | sed -n 's/^ee-key: client area \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | head -1)
+EOF
+check "the helper reported the client area of the window (${w:-?}x${h:-?})" test -n "${w:-}" -a -n "${h:-}"
+w="${w:-0}"; h="${h:-0}"
+check "click 0.5,0.25: pressed at that point of the client area ($(field down 1))" within "$(field down 1)" "$((w / 2))" "$((h / 4))"
+check "... and released at the same point ($(field up 1))" within "$(field up 1)" "$((w / 2))" "$((h / 4))"
+check "drag 0.2,0.2 -> 0.8,0.6: pressed at the first corner ($(field down 2))" within "$(field down 2)" "$((w / 5))" "$((h / 5))"
+check "... released at the second ($(field up 2))" within "$(field up 2)" "$((w * 4 / 5))" "$((h * 3 / 5))"
+wine "$T/ee-key.exe" wheel:+1 >"$T/k9.out" 2>&1
+check_eq "a mouse token without --window-class: exit 2" "2" "$?"
+check "... saying it needs a window" grep -q "needs --window-class" "$T/k9.out"
+wine "$T/ee-key.exe" --window-class EEKeyVictim click:2,0.5 >"$T/k10.out" 2>&1
+check_eq "a fraction outside 0..1: exit 2" "2" "$?"
+wine "$T/ee-key.exe" 3d/zz >"$T/k11.out" 2>&1
+check_eq "a hold that is not a number of milliseconds: exit 2" "2" "$?"
+wine "$T/ee-key.exe" e0 >"$T/k12.out" 2>&1
+check_eq "a bare extended prefix is not a scancode: exit 2" "2" "$?"
 summary
