@@ -277,6 +277,8 @@ export class Renderer {
     gl.uniform4fv(u('uLightDiffuse'), dif);
     gl.uniform4fv(u('uLightAmbient'), amb);
     gl.uniform1i(u('uFogMode'), cfg.fog.mode);
+    gl.uniform1i(u('uFogTable'), cfg.fog.table);
+    gl.uniform1i(u('uFogRange'), cfg.fog.range);
     gl.uniform1f(u('uFogStart'), cfg.fog.start);
     gl.uniform1f(u('uFogEnd'), cfg.fog.end);
     gl.uniform1f(u('uFogDensity'), cfg.fog.density);

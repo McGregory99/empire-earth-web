@@ -14,7 +14,7 @@ const bits = (f) => { const a = new Float32Array([f]); return new Uint32Array(a.
 const RS_DEFAULTS = {
   [RS.ZENABLE]: 1, [RS.FILLMODE]: 3, [RS.SHADEMODE]: 2, [RS.ZWRITEENABLE]: 1, [RS.ALPHATESTENABLE]: 0,
   [RS.SRCBLEND]: 2, [RS.DESTBLEND]: 1, [RS.CULLMODE]: 3, [RS.ZFUNC]: 4, [RS.ALPHAREF]: 0, [RS.ALPHAFUNC]: 8,
-  [RS.ALPHABLENDENABLE]: 0, [RS.FOGENABLE]: 0, [RS.SPECULARENABLE]: 0, [RS.FOGCOLOR]: 0, [RS.FOGTABLEMODE]: 0,
+  [RS.ALPHABLENDENABLE]: 0, [RS.FOGENABLE]: 0, [RS.SPECULARENABLE]: 0, [RS.FOGCOLOR]: 0, [RS.FOGTABLEMODE]: 0, [RS.RANGEFOGENABLE]: 0,
   [RS.FOGSTART]: bits(0), [RS.FOGEND]: bits(1), [RS.FOGDENSITY]: bits(1), [RS.COLORKEYENABLE]: 0,
   [RS.TEXTUREFACTOR]: 0xffffffff, [RS.LIGHTING]: 1, [RS.AMBIENT]: 0, [RS.FOGVERTEXMODE]: 0, [RS.COLORVERTEX]: 1,
   [RS.NORMALIZENORMALS]: 0, [RS.DIFFUSEMATERIALSOURCE]: 1, [RS.AMBIENTMATERIALSOURCE]: 0, [RS.EMISSIVEMATERIALSOURCE]: 0,
@@ -107,7 +107,10 @@ export class DeviceState {
         return l;
       });
     }
-    const fogMode = r(RS.FOGENABLE) === 1 ? r(RS.FOGVERTEXMODE) : 0;
+    // Table (pixel) fog wins over vertex fog when both are set; range based fog is a vertex fog feature in D3D7.
+    const fogOn = r(RS.FOGENABLE) === 1;
+    const fogTable = fogOn && r(RS.FOGTABLEMODE) !== 0;
+    const fogMode = !fogOn ? 0 : fogTable ? r(RS.FOGTABLEMODE) : r(RS.FOGVERTEXMODE);
     const wrapS = addressMode(s0[TSS.ADDRESSU] ?? s0[TSS.ADDRESS]);
     const wrapT = addressMode(s0[TSS.ADDRESSV] ?? s0[TSS.ADDRESS]);
     const cull = cullMode(r(RS.CULLMODE));
@@ -117,7 +120,7 @@ export class DeviceState {
       blend: { enable: r(RS.ALPHABLENDENABLE) === 1 && !(src === GL.ONE && dst === GL.ZERO), src, dst },
       alphaTest: { enable: r(RS.ALPHATESTENABLE) === 1, func: r(RS.ALPHAFUNC), ref: (r(RS.ALPHAREF) & 0xff) / 255 },
       fog: {
-        mode: fogMode, start: f32FromBits(r(RS.FOGSTART)), end: f32FromBits(r(RS.FOGEND)),
+        mode: fogMode, table: fogTable, range: fogMode !== 0 && !fogTable && r(RS.RANGEFOGENABLE) === 1, start: f32FromBits(r(RS.FOGSTART)), end: f32FromBits(r(RS.FOGEND)),
         density: f32FromBits(r(RS.FOGDENSITY)), color: unpackColor(r(RS.FOGCOLOR)),
       },
       colorKeyEnable: r(RS.COLORKEYENABLE) === 1,

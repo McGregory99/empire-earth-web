@@ -62,6 +62,18 @@ export function blendFactors(src, dst) {
   return [src === 11 ? GL.SRC_ALPHA_SATURATE : map[src], map[dst]];
 }
 
+/**
+ * D3D fog factor (1 = no fog, 0 = fully fogged) for a distance / depth `d`. mode: D3DFOG_NONE 0, EXP 1, EXP2 2, LINEAR 3.
+ * The shaders implement the same formulas; this is the oracle the tests and the scenes compute their expected pixels from.
+ */
+export function fogFactor(mode, d, start, end, density) {
+  let f = 1;
+  if (mode === 3) f = end === start ? (d <= start ? 1 : 0) : (end - d) / (end - start);
+  else if (mode === 1) f = Math.exp(-d * density);
+  else if (mode === 2) f = Math.exp(-((d * density) ** 2));
+  return Math.min(1, Math.max(0, f));
+}
+
 /** D3DCMPFUNC -> GL compare function. */
 export function compareFunc(v) {
   const map = [null, GL.NEVER, GL.LESS, GL.EQUAL, GL.LEQUAL, GL.GREATER, GL.NOTEQUAL, GL.GEQUAL, GL.ALWAYS];
@@ -151,13 +163,13 @@ const RS_SPEC = {
   [RS.FOGENABLE]: bool('FOGENABLE'),
   [RS.SPECULARENABLE]: ONLY(0, 'specular highlights (SPECULARENABLE) are not supported'),
   [RS.FOGCOLOR]: APPLIED(() => true),
-  [RS.FOGTABLEMODE]: ONLY(0, 'pixel (table) fog is not supported, only vertex fog via FOGVERTEXMODE'),
+  [RS.FOGTABLEMODE]: range('FOGTABLEMODE', 0, 3),
   [RS.FOGSTART]: APPLIED(() => true),
   [RS.FOGEND]: APPLIED(() => true),
   [RS.FOGDENSITY]: APPLIED(() => true),
   [RS.COLORKEYENABLE]: bool('COLORKEYENABLE'),
   [RS.ZBIAS]: ONLY(0, 'ZBIAS is not supported'),
-  [RS.RANGEFOGENABLE]: ONLY(0, 'range-based fog is not supported'),
+  [RS.RANGEFOGENABLE]: bool('RANGEFOGENABLE'),
   [RS.FLUSHBATCH]: IGNORED,
   [RS.STENCILENABLE]: ONLY(0, 'the stencil buffer is not supported'),
   [RS.TEXTUREFACTOR]: APPLIED(() => true),

@@ -3,7 +3,17 @@
 // Matrices arrive exactly as D3D stores them (row-major, row-vector convention) and are uploaded WITHOUT
 // transposing: GLSL then sees M^T, and `M^T * v` equals the D3D `v * M`. Clip depth is remapped from D3D
 // [0, w] to GL [-w, w]. Screen positions are shifted by half a pixel because D3D (and the D3D9-based stack the original
-// ran on) puts pixel centres on integer coordinates, so the game's -0.5 vertex offsets are exact texel-to-pixel maps. View-space depth |z| drives vertex fog (no range fog).
+// ran on) puts pixel centres on integer coordinates, so the game's -0.5 vertex offsets are exact texel-to-pixel maps. View-space depth |z| drives vertex fog (range fog: distance from the eye; table fog: depth-buffer value per pixel).
+
+// D3D fog factor (1 = no fog); same formulas as fogFactor() in d3d-tables.js. Shared by both stages.
+const FOG_FN = `float fogFactor(int mode, float d, float start, float end, float density) {
+  float f = 1.0;
+  if (mode == 3) f = end == start ? (d <= start ? 1.0 : 0.0) : (end - d) / (end - start);
+  else if (mode == 1) f = exp(-d * density);
+  else if (mode == 2) f = exp(-(d * density) * (d * density));
+  return clamp(f, 0.0, 1.0);
+}
+`;
 
 export const MAIN_VS = `#version 300 es
 precision highp float;
@@ -22,11 +32,13 @@ uniform int uNumLights;
 uniform vec3 uLightDir[4];       // world space, direction the light travels
 uniform vec4 uLightDiffuse[4], uLightAmbient[4];
 uniform int uFogMode;            // D3DFOG: 0 none, 1 exp, 2 exp2, 3 linear
+uniform bool uFogTable, uFogRange;   // table (pixel) fog is evaluated in the fragment shader; range fog measures the distance from the eye
 uniform float uFogStart, uFogEnd, uFogDensity;
 
 out vec4 vColor;
 out vec2 vUV;
 out float vFog;
+${FOG_FN}
 
 void main() {
   vec4 pv = uView * (uWorld * vec4(aPos, 1.0));
@@ -56,17 +68,13 @@ void main() {
   }
   vUV = aUV;
 
-  float d = abs(pv.z);
-  float f = 1.0;
-  if (uFogMode == 3) f = (uFogEnd - d) / (uFogEnd - uFogStart);
-  else if (uFogMode == 1) f = exp(-d * uFogDensity);
-  else if (uFogMode == 2) f = exp(-(d * uFogDensity) * (d * uFogDensity));
-  vFog = clamp(f, 0.0, 1.0);
+  vFog = uFogTable ? 1.0 : fogFactor(uFogMode, uFogRange ? length(pv.xyz) : abs(pv.z), uFogStart, uFogEnd, uFogDensity);
 }
 `;
 
 export const MAIN_FS = `#version 300 es
 precision highp float;
+precision highp int;
 in vec4 vColor;
 in vec2 vUV;
 in float vFog;
@@ -80,6 +88,10 @@ uniform bool uAlphaTest;
 uniform int uAlphaFunc;          // D3DCMP 1..8
 uniform float uAlphaRef;
 uniform vec4 uFogColor;
+uniform int uFogMode;
+uniform bool uFogTable;
+uniform float uFogStart, uFogEnd, uFogDensity;
+${FOG_FN}
 
 out vec4 outColor;
 
@@ -131,7 +143,8 @@ void main() {
     }
   }
   if (uAlphaTest && !alphaPass(int(a * 255.0 + 0.5), int(uAlphaRef * 255.0 + 0.5))) discard;
-  rgb = mix(uFogColor.rgb, rgb, vFog);
+  // table fog: per pixel on the depth-buffer value (viewport depth range applied)
+  rgb = mix(uFogColor.rgb, rgb, uFogTable ? fogFactor(uFogMode, gl_FragCoord.z, uFogStart, uFogEnd, uFogDensity) : vFog);
   outColor = vec4(rgb, a);
 }
 `;

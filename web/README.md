@@ -105,14 +105,16 @@ GDI text and the cursor); with the GDI overlay the mean difference to the refere
 
 Vertex format 0x152; indexed triangle and line lists; Z buffer (enable, write, func, clear value, viewport depth
 range); cull modes; alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
-vertex fog (view-space depth); fixed-function lighting with up to 4 directional lights, global ambient, material
+fog: vertex fog (`FOGVERTEXMODE`, view-space depth, or the distance from the eye with `RANGEFOGENABLE`) and table / pixel
+fog (`FOGTABLEMODE`, wins over vertex fog like in D3D7, evaluated per pixel on the depth-buffer value, so `FOGSTART`/`FOGEND`
+are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 directional lights, global ambient, material
 colour sources (`COLORVERTEX`); stage 0 colour/alpha ops SELECTARG1/2, MODULATE(2X/4X), ADD, ADDSIGNED(2X),
 SUBTRACT, BLENDDIFFUSE/TEXTURE/FACTORALPHA with DIFFUSE / CURRENT / TEXTURE / TFACTOR arguments; point/linear
 min, mag and mip filters, wrap / mirror / clamp, mip LOD bias; texture colour keys; 2D blits and fills.
 
 ## Explicitly unsupported (throws `UnsupportedError` when the command is applied or at the draw)
 
-Wireframe / point fill, flat shading, specular, pixel (table) fog and range fog, stencil, w-buffer, ZBIAS,
+Wireframe / point fill, flat shading, specular, stencil, w-buffer, ZBIAS,
 user clip planes, vertex blending, texture transforms, texcoord index other than 0, texture stage 1 enabled,
 texture argument modifiers, ADDSMOOTH / bump / dot3 ops, BORDER addressing, point / spot lights, DXT formats, any
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are
