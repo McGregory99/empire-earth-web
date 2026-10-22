@@ -31,6 +31,7 @@
 #include "rasterizer_abi.h"
 
 extern "C" double sin(double);
+extern "C" double sqrt(double);
 
 typedef unsigned long ulong;
 
@@ -42,13 +43,46 @@ ulong __attribute__((thiscall)) EEWebVisibleTileRows(const void* mesh) __asm__("
 void __attribute__((thiscall)) EEWebVectorCopy(void* self, const void* other) __asm__("??0GEVector@@QAE@ABV0@@Z");
 void __attribute__((thiscall)) EEWebVectorAssign(void* self, const void* other) __asm__("??4GEVector@@QAEAAV0@ABV0@@Z");
 void __attribute__((thiscall)) EEWebVectorNormalize(void* self) __asm__("?Normalize@GEVector@@QAEXXZ");
+void __attribute__((thiscall)) EEWebTransformationApplyVector(const void* self, const void* input, void* output) __asm__("?Apply@GETransformation@@QBEXABVGEVector@@AAV2@@Z");
 unsigned char __attribute__((thiscall)) EEWebPlaneBelow(const void* plane, const void* point) __asm__("?IsPointOnOrBelowPlane@GE3DPlane@@QBE_NABVGE3DPoint@@@Z");
 
 // out = {0, cos(pi/2 - a), cos(a)} with a = arctan(halfHeight * tan(fov / 2) / (halfWidth - 1)): the original's sequence, whose
 // intermediate values stay in the x87 registers (the engine's functions leave their results there in extended precision).
 // cdecl: viewport, the constants {0.5f, 1.0f, pi/2}, out, and the addresses of UMTan, UMArcTan and UMCos.
 void __attribute__((cdecl)) EEWebFrustumNormal(const void* viewport, const float* constants, float* out, void* const* functions);
+
+// out = {s * direction.x, s * direction.y, s * direction.z} with s = sqrt(2 * reach * reach): the sqrt result is used straight from the
+// x87 register it comes back in (cdecl: &reach, direction, out, the address of sqrt).
+void __attribute__((cdecl)) EEWebCoverReach(const float* reach, const float* direction, float* out, void* squareRoot);
 }
+
+__asm__(".text\n"
+        ".globl _EEWebCoverReach\n"
+        "_EEWebCoverReach:\n"
+        ".intel_syntax noprefix\n"
+        "push ebp\n"
+        "mov ebp, esp\n"
+        "mov eax, [ebp+8]\n"
+        "fld dword ptr [eax]\n"
+        "fmul st, st(0)\n"
+        "fadd st, st(0)\n"
+        "sub esp, 8\n"
+        "fstp qword ptr [esp]\n"
+        "call dword ptr [ebp+20]\n"
+        "add esp, 8\n"
+        "mov eax, [ebp+12]\n"
+        "mov ecx, [ebp+16]\n"
+        "fld st(0)\n"
+        "fmul dword ptr [eax]\n"
+        "fstp dword ptr [ecx]\n"
+        "fld st(0)\n"
+        "fmul dword ptr [eax+4]\n"
+        "fstp dword ptr [ecx+4]\n"
+        "fmul dword ptr [eax+8]\n"
+        "fstp dword ptr [ecx+8]\n"
+        "pop ebp\n"
+        "ret\n"
+        ".att_syntax prefix\n");
 
 __asm__(".text\n"
         ".globl _EEWebFrustumNormal\n"
@@ -417,4 +451,198 @@ long EEWebNullRasterizer::DrawTerrainMaterial(GEViewport*, std::vector<GETerrain
         }
     }
     return UnlockAndDraw(screen, 4, vertices, 0, 0);
+}
+
+namespace {
+
+// a + b and a * b, each rounded to a float once (the x87 register operations of the original).
+float Add(float a, float b)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfadds %2\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b) : "st");
+    return result;
+}
+
+float Mul(float a, float b)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfmuls %2\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b) : "st");
+    return result;
+}
+
+// a + (b + c) with the inner sum kept in extended precision.
+float AddSum(float a, float b, float c)
+{
+    float result;
+    __asm__ volatile("flds %2\n\tfadds %3\n\tfadds %1\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b), "m"(c) : "st");
+    return result;
+}
+
+// c + a * b with the product kept in extended precision.
+float AddProduct(float c, float a, float b)
+{
+    float result;
+    __asm__ volatile("flds %2\n\tfmuls %3\n\tfadds %1\n\tfstps %0" : "=m"(result) : "m"(c), "m"(a), "m"(b) : "st");
+    return result;
+}
+
+// a * b + c * d with both products kept in extended precision.
+float SumOfProducts(float a, float b, float c, float d)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfmuls %2\n\tflds %3\n\tfmuls %4\n\tfaddp\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b), "m"(c), "m"(d) : "st");
+    return result;
+}
+
+struct MapNode {
+    MapNode *left, *parent, *right;
+    void* key;
+    unsigned long value;
+    unsigned char color, isNil;
+};
+
+// The next node in order of an MSVC 6 std::map (the library's _Inc).
+MapNode* Next(MapNode* node)
+{
+    if (node->isNil) {
+        return node;
+    }
+    if (!node->right->isNil) {
+        node = node->right;
+        while (!node->left->isNil) {
+            node = node->left;
+        }
+        return node;
+    }
+    MapNode* up;
+    while (!(up = node->parent)->isNil && node == up->right) {
+        node = up;
+    }
+    return up;
+}
+
+} // namespace
+
+long EEWebNullRasterizer::Draw(GETerrainMesh& meshObject, ulong screen, bool orthographic)
+{
+    if (Note(EEWebCheckTerrainMesh(&meshObject)) != EEWEB_LAYOUT_OK) {
+        return EEWEB_LAYOUT_VIOLATION;
+    }
+    GETerrainMeshLayout* mesh = reinterpret_cast<GETerrainMeshLayout*>(&meshObject);
+    DX7ScreenRecordLayout* record = Record(screen);
+    GERScreenStateLayout* state = State(screen);
+    IDirect3DDevice7* device = Device(screen);
+    if (!record || !state || !device || !record->vertexBuffer) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    GETransformationLayout transformation;
+    EEWebTransformationConstruct(&transformation);
+    float matrix[16];
+    ConvertToD3DMatrix(transformation, matrix);
+    device->vtbl->SetTransform(device, 1, matrix);
+    transformation.m[5] = 0.0f;
+    transformation.m[6] = 1.0f;
+    transformation.m[9] = 1.0f;
+    transformation.m[10] = 0.0f;
+    ConvertToD3DMatrix(transformation, matrix);
+    long result = device->vtbl->SetTransform(device, 2, matrix);
+    ConvertToD3DMatrix(orthographic ? state->viewport.orthographicProjection : state->viewport.perspectiveProjection, matrix);
+    device->vtbl->SetTransform(device, 3, matrix);
+    if (EEWebVisibleTileRows(mesh) != 0) {
+        MapNode* head = static_cast<MapNode*>(mesh->materialMap.head);
+        if (head && head->left) {
+            ulong materialCount = mesh->materials.first ? static_cast<ulong>((static_cast<char*>(mesh->materials.last) - static_cast<char*>(mesh->materials.first)) /
+                                                                             static_cast<long>(sizeof(GETMMaterialLayout)))
+                                                        : 0;
+            GETMMaterialLayout* materials = static_cast<GETMMaterialLayout*>(mesh->materials.first);
+            ulong visited = 0;
+            for (MapNode* node = head->left; node != head && visited < 4096; node = Next(node), visited++) {
+                if (node->value >= materialCount) {
+                    continue;
+                }
+                GETMMaterialLayout* material = materials + node->value;
+                if (!material->polygons.last || !material->overlayPolygons.last) {
+                    continue;
+                }
+                state->scenePolyCount += static_cast<const ulong*>(material->polygons.last)[-1];
+                state->scenePolyCount += static_cast<const ulong*>(material->overlayPolygons.last)[-1];
+                SetTexture(static_cast<GETexture*>(node->key), screen);
+                device->vtbl->SetRenderState(device, 0x88, 0);
+                DrawTerrainMaterial(reinterpret_cast<GEViewport*>(state), *reinterpret_cast<std::vector<GETerrainMesh::GETMPolygon*, std::allocator<GETerrainMesh::GETMPolygon*>>*>(&material->polygons),
+                                    screen);
+                device->vtbl->SetRenderState(device, 0x88, 1);
+                result = DrawTerrainMaterial(reinterpret_cast<GEViewport*>(state),
+                                             *reinterpret_cast<std::vector<GETerrainMesh::GETMPolygon*, std::allocator<GETerrainMesh::GETMPolygon*>>*>(&material->overlayPolygons), screen);
+            }
+        }
+        record->sceneDrawn = 1;
+        return result;
+    }
+    // Nothing of the terrain is visible: a black cover of four triangles from the camera.
+    static const float kSide = 1000.0f, kAhead = 7.071066856384277f;
+    float forward[3] = {0.0f, 1.0f, 0.0f}, right[3] = {1.0f, 0.0f, 0.0f}, v1[3], v2[3];
+    EEWebTransformationApplyVector(&state->viewport.camera, forward, v1);
+    v1[2] = 0.0f;
+    EEWebVectorNormalize(v1);
+    EEWebTransformationApplyVector(&state->viewport.camera, right, v2);
+    v2[2] = 0.0f;
+    EEWebVectorNormalize(v2);
+    const float cx = state->viewport.camera.m[3], cy = state->viewport.camera.m[7];
+    float a[6][3];
+    const float negative = -kSide;
+    // the camera's xy plus or minus 1000 to the right (z: the bare product)
+    a[0][0] = Add(Mul(negative, v2[0]), cx);
+    a[0][1] = Add(Mul(v2[1], negative), cy);
+    a[0][2] = Mul(negative, v2[2]);
+    a[1][0] = Add(Mul(v2[0], kSide), cx);
+    a[1][1] = Add(Mul(v2[1], kSide), cy);
+    a[1][2] = Mul(kSide, v2[2]);
+    // a point ahead of the camera
+    float ahead[3] = {Mul(v1[0], kAhead), Mul(v1[1], kAhead), 0.0f};
+    float forwardPoint[3];
+    forwardPoint[0] = Add(ahead[0], cx);
+    forwardPoint[1] = Add(ahead[1], cy);
+    forwardPoint[2] = Mul(kAhead, v1[2]);
+    a[2][0] = Add(Mul(negative, v2[0]), forwardPoint[0]);
+    a[2][1] = Add(Mul(negative, v2[1]), forwardPoint[1]);
+    a[2][2] = SumOfProducts(negative, v2[2], kAhead, v1[2]);
+    a[3][0] = Add(Mul(kSide, v2[0]), forwardPoint[0]);
+    a[3][1] = Add(Mul(kSide, v2[1]), forwardPoint[1]);
+    a[3][2] = Add(Mul(kSide, v2[2]), forwardPoint[2]);
+    // a point at the rear plane's reach ahead of the camera
+    float far[3];
+    EEWebCoverReach(&state->viewport.rearClip, v1, far, reinterpret_cast<void*>(&sqrt));
+    float farY = Add(far[1], cy);
+    float farZ = far[2];
+    a[4][0] = AddSum(Mul(negative, v2[0]), far[0], cx);
+    a[4][1] = Add(Mul(negative, v2[1]), farY);
+    a[4][2] = AddProduct(farZ, negative, v2[2]);
+    a[5][0] = AddSum(Mul(v2[0], kSide), far[0], cx);
+    a[5][1] = Add(Mul(v2[1], kSide), farY);
+    a[5][2] = Add(Mul(kSide, v2[2]), farZ);
+    float b[6][3];
+    for (int i = 0; i < 6; i++) {
+        EEWebTransformationApplyPoint(&state->viewport.cameraInverse, a[i], b[i]);
+    }
+    state->scenePolyCount += 4;
+    SetTexture(0, screen);
+    device->vtbl->SetRenderState(device, 0x88, 1);
+    void* ring = 0;
+    LockVB(12, screen, ring);
+    if (!ring) {
+        UnlockVB(screen);
+        return 1;
+    }
+    static const int kOrder[12] = {2, 3, 0, 3, 1, 0, 4, 5, 2, 5, 3, 2};
+    float* to = reinterpret_cast<float*>(static_cast<char*>(ring) + record->vertexCursor * 0x24);
+    for (int i = 0; i < 12; i++, to += 9) {
+        to[0] = b[kOrder[i]][0];
+        to[1] = b[kOrder[i]][1];
+        to[2] = b[kOrder[i]][2];
+        to[3] = to[4] = to[5] = 0.0f;
+        *reinterpret_cast<ulong*>(to + 6) = 0xff000000UL;
+        to[7] = to[8] = 0.0f;
+    }
+    UnlockAndDraw(screen, 4, 12, 0, 0);
+    return 0;
 }

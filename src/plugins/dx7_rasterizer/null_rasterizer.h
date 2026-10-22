@@ -57,7 +57,7 @@ public:
     long Draw(GERhombus *, unsigned long) override;  // 17 (dx7_draw2d.cpp)
     long Draw(GEText *, GESurface *) override;  // 16 (dx7_text.cpp)
     long Draw(GEText *, GERectangle const &, GESurface *) override;  // 15 (dx7_text.cpp)
-    long Draw(GETerrainMesh &mesh, unsigned long, bool) override { return Verdict(EEWebCheckTerrainMesh(&mesh), EEWEB_NOT_SUPPORTED); }  // 14
+    long Draw(GETerrainMesh &, unsigned long, bool) override;  // 14 (dx7_terrain.cpp)
     long Draw(GEPolygonArray &, unsigned long, GEVertexArray &, unsigned long, GETexture *, unsigned long, bool) override;  // 13 (dx7_draw3d.cpp)
     long Draw3DLine(std::vector<std::pair<GE3DPoint, float>, std::allocator<std::pair<GE3DPoint, float>>> &, GETexture *, float, unsigned long, bool) override;  // 22 (dx7_draw3d.cpp)
     long DrawGridLines(GETerrainMesh &, std::vector<std::pair<U2DPoint<long>, U2DPoint<long>>, std::allocator<std::pair<U2DPoint<long>, U2DPoint<long>>>> &, GETexture *, float, unsigned long, bool) override { return EEWEB_NOT_SUPPORTED; }  // 23

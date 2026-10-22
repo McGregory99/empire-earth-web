@@ -19,3 +19,5 @@ EXPORTS
     memset
     ; the ripple of TransformToCamera
     sin
+    ; the cover of Draw(GETerrainMesh)
+    sqrt
