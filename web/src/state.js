@@ -2,7 +2,7 @@
 // state into a plain "draw config" the renderer translates into GL state and shader uniforms. Unit-tested in Node.
 
 import {
-  RS, TSS, TOP, TARG, GL, UnsupportedError, classifyRenderState, classifyTextureStageState,
+  RS, TSS, TOP, TARG, GL, UnsupportedError, classifyRenderState, classifyTextureStageState, stencilOp,
   blendFactors, compareFunc, cullMode, addressMode, minFilter, magFilter, f32FromBits, unpackColor,
 } from './d3d-tables.js';
 
@@ -16,7 +16,8 @@ const RS_DEFAULTS = {
   [RS.SRCBLEND]: 2, [RS.DESTBLEND]: 1, [RS.CULLMODE]: 3, [RS.ZFUNC]: 4, [RS.ALPHAREF]: 0, [RS.ALPHAFUNC]: 8,
   [RS.ALPHABLENDENABLE]: 0, [RS.FOGENABLE]: 0, [RS.SPECULARENABLE]: 0, [RS.FOGCOLOR]: 0, [RS.FOGTABLEMODE]: 0, [RS.RANGEFOGENABLE]: 0,
   [RS.FOGSTART]: bits(0), [RS.FOGEND]: bits(1), [RS.FOGDENSITY]: bits(1), [RS.COLORKEYENABLE]: 0,
-  [RS.TEXTUREFACTOR]: 0xffffffff, [RS.LIGHTING]: 1, [RS.AMBIENT]: 0, [RS.FOGVERTEXMODE]: 0, [RS.COLORVERTEX]: 1, [RS.LOCALVIEWER]: 1, [RS.SPECULARMATERIALSOURCE]: 2,
+  [RS.TEXTUREFACTOR]: 0xffffffff, [RS.LIGHTING]: 1, [RS.AMBIENT]: 0, [RS.FOGVERTEXMODE]: 0, [RS.STENCILENABLE]: 0, [RS.STENCILFAIL]: 1, [RS.STENCILZFAIL]: 1, [RS.STENCILPASS]: 1, [RS.STENCILFUNC]: 8, [RS.STENCILREF]: 0,
+  [RS.STENCILMASK]: 0xffffffff, [RS.STENCILWRITEMASK]: 0xffffffff, [RS.COLORVERTEX]: 1, [RS.LOCALVIEWER]: 1, [RS.SPECULARMATERIALSOURCE]: 2,
   [RS.NORMALIZENORMALS]: 0, [RS.DIFFUSEMATERIALSOURCE]: 1, [RS.AMBIENTMATERIALSOURCE]: 0, [RS.EMISSIVEMATERIALSOURCE]: 0,
 };
 
@@ -123,6 +124,10 @@ export class DeviceState {
     return {
       depth: { enable: r(RS.ZENABLE) === 1, write: r(RS.ZWRITEENABLE) === 1, func: compareFunc(r(RS.ZFUNC)) },
       cull,
+      stencil: {
+        enable: r(RS.STENCILENABLE) === 1, func: compareFunc(r(RS.STENCILFUNC)), ref: r(RS.STENCILREF) & 0xff, mask: r(RS.STENCILMASK) & 0xff,
+        writeMask: r(RS.STENCILWRITEMASK) & 0xff, fail: stencilOp(r(RS.STENCILFAIL)), zfail: stencilOp(r(RS.STENCILZFAIL)), pass: stencilOp(r(RS.STENCILPASS)),
+      },
       cullSide: ['none', 'none', 'cw', 'ccw'][r(RS.CULLMODE)],
       fill: ['solid', 'point', 'wireframe', 'solid'][r(RS.FILLMODE)],
       flat: r(RS.SHADEMODE) === 1,

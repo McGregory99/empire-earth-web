@@ -86,7 +86,7 @@ with `present`. Commands are plain objects built (and validated) by `cmd.*` in `
 | `createTexture(id,w,h,format,bytes,{pitch,colorKey})`, `updateTexture(id,bytes,rect?)`, `setColorKey(id,key)`, `destroyTexture(id)` | formats: `RGB555 RGB565 XRGB8888 ARGB1555 ARGB4444 ARGB8888` and the block-compressed `DXT1 DXT3 DXT5` (bytes = the whole run of 4x4 blocks, no pitch, replaced whole by `updateTexture`; decoded to RGBA8 on the CPU with the DirectX integer arithmetic, the renderer generates the mips; a colour key does not apply) (`formatFromPixelFormat` maps a DDPIXELFORMAT, a fourCC included) |
 | `uploadVertices(bytes, offset, fvf = 0x152)` | vertices of format `fvf` (`vertexLayout(fvf)`, `packVertices(fvf, list)` in `src/frame-model.js`) into the vertex buffer at byte `offset`, a multiple of that format's stride; `draw.startVertex` counts vertices whatever their format, so formats must not share vertex numbers (the loader allocates one run of numbers per record). The renderer converts every record to one internal 48-byte layout |
 | `draw({primitive, startVertex, vertexCount, indices})` | `triangleList` / `lineList`, `Uint16Array` indices relative to startVertex |
-| `clear(flags, color, z, rect?)`, `fillRect(rect, color)` | D3DCLEAR TARGET 1 / ZBUFFER 2 |
+| `clear(flags, color, z, rect?, stencil = 0)`, `fillRect(rect, color)` | D3DCLEAR TARGET 1 / ZBUFFER 2 / STENCIL 4 |
 | `blit2D(srcId, srcRect, dstRect, colorKey)` | Blt, nearest, optional colour key |
 | `gdiOverlay(srcId, threshold)` | GDI drew on the screen surface and the capture stored it as `srcId`: copy the snapshot pixels that differ from the current render by more than `threshold` (the text), keep the rest |
 | `resetDeviceState()` | back to D3D7 defaults, no textures bound (the trace switched device) |
@@ -103,7 +103,7 @@ GDI text and the cursor); with the GDI overlay the mean difference to the refere
 ## Supported (everything the golden startup-menu summary uses)
 
 Vertex formats XYZ + NORMAL/DIFFUSE/SPECULAR + 0..2 texture sets (the game's 0x152 and e.g. 0x252 with a second set); indexed triangle and line lists; Z buffer (enable, write, func, clear value, viewport depth
-range); cull modes; `FILLMODE` wireframe (the edges of the triangles that survive D3D's back-face culling, decided on the CPU from the projected vertices, shared edges once) and point (the vertices, 1 pixel); `SHADEMODE` flat (the colour of the first vertex of each triangle or line: the indices are rotated so that it is GL's provoking vertex, and PHONG shades like Gouraud as in D3D7); alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
+range); 8-bit stencil buffer (`STENCILENABLE`/`FUNC`/`REF`/`MASK`/`WRITEMASK`/`FAIL`/`ZFAIL`/`PASS`, `Clear` with the stencil flag and value; a context always has one, as a D3D device with a stencil z-buffer); cull modes; `FILLMODE` wireframe (the edges of the triangles that survive D3D's back-face culling, decided on the CPU from the projected vertices, shared edges once) and point (the vertices, 1 pixel); `SHADEMODE` flat (the colour of the first vertex of each triangle or line: the indices are rotated so that it is GL's provoking vertex, and PHONG shades like Gouraud as in D3D7); alpha blend (all D3DBLEND factors); alpha test (all compare functions); linear, exp and exp2
 fog: vertex fog (`FOGVERTEXMODE`, view-space depth, or the distance from the eye with `RANGEFOGENABLE`) and table / pixel
 fog (`FOGTABLEMODE`, wins over vertex fog like in D3D7, evaluated per pixel on the depth-buffer value, so `FOGSTART`/`FOGEND`
 are in 0..1 depth units; the W-fog variant of devices that offer it is not emulated); fixed-function lighting with up to 4 lights (directional, point with range and `1 / (a0 + a1 d + a2 d^2)` attenuation, spot with the theta / phi cone and falloff; `src/lighting.js` has the formulas as JavaScript), global ambient, material
@@ -115,7 +115,7 @@ min, mag and mip filters, wrap / mirror / clamp, mip LOD bias; texture colour ke
 
 ## Explicitly unsupported (throws `UnsupportedError` when the command is applied or at the draw)
 
-Stencil, w-buffer, ZBIAS,
+W-buffer, ZBIAS,
 user clip planes, vertex blending, texture transforms, texcoord index above 1 or with coordinate generation flags,
 texture argument modifiers (COMPLEMENT, ALPHAREPLICATE), ADDSMOOTH / bump / dot3 ops, BORDER addressing, DXT2 / DXT4 (premultiplied alpha), any
 render or texture-stage state not listed in `src/d3d-tables.js`. Approximations to know about: mip levels are

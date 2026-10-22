@@ -405,7 +405,7 @@ class Loader {
   dev7_Clear(c) {
     this.activate(c.obj.id);
     const rects = Array.isArray(c.args.rects) && c.args.count > 0 ? c.args.rects : [null];
-    for (const r of rects) this.emit(cmd.clear(c.args.flags, c.args.color, c.args.z, r ? rectOf(r) : null));
+    for (const r of rects) this.emit(cmd.clear(c.args.flags, c.args.color, c.args.z, r ? rectOf(r) : null, c.args.stencil ?? 0));
   }
 
   drawCommon(c, indexed, fromVb) {

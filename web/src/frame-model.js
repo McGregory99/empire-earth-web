@@ -159,6 +159,7 @@ const CHECKS = {
   },
   clear(c) {
     if (!isUint32(c.flags) || !isUint32(c.color)) fail('clear: flags and color must be uint32');
+    if (c.stencil !== undefined && !isUint32(c.stencil)) fail('clear: stencil must be a uint32');
     if (c.rect) checkRect(c.rect, 'clear.rect');
   },
   fillRect(c) {
@@ -227,8 +228,8 @@ export const cmd = {
   uploadVertices: (bytes, offset = 0, fvf = FVF) => make({ op: 'uploadVertices', bytes, offset, fvf }),
   /** DrawIndexedPrimitive: indices are relative to startVertex and must be < vertexCount. */
   draw: ({ primitive, startVertex, vertexCount, indices }) => make({ op: 'draw', primitive, startVertex, vertexCount, indices }),
-  /** flags: CLEAR bits; color: D3DCOLOR; z: depth; rect: optional {x,y,w,h} (top-left origin). */
-  clear: (flags, color, z, rect = null) => make({ op: 'clear', flags, color, z, rect }),
+  /** flags: CLEAR bits; color: D3DCOLOR; z: depth; rect: optional {x,y,w,h} (top-left origin); stencil: the value of CLEAR.STENCIL (8 bits used). */
+  clear: (flags, color, z, rect = null, stencil = 0) => make({ op: 'clear', flags, color, z, rect, stencil }),
   /** Blt colour fill of the render target. */
   fillRect: (rect, color) => make({ op: 'fillRect', rect, color }),
   /** Blt from a surface to the render target (nearest neighbour). colorKey drops matching source texels. */

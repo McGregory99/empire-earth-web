@@ -22,7 +22,7 @@ export class Renderer {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.applyLodBias = opts.applyLodBias ?? false;
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: false, preserveDrawingBuffer: true });
+    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: true, preserveDrawingBuffer: true });
     if (!gl) throw new Error('WebGL2 is not available in this browser');
     this.gl = gl;
     this.main = this._program(MAIN_VS, MAIN_FS);
@@ -82,7 +82,10 @@ export class Renderer {
     gl.depthMask(true);
     gl.clearColor(0, 0, 0, 1);
     gl.clearDepth(1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.stencilMask(0xff);
+    gl.clearStencil(0);
+    gl.disable(gl.STENCIL_TEST);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
   }
 
   executeFrame(frame) {
@@ -302,6 +305,13 @@ export class Renderer {
     if (cfg.cull.enable) { gl.enable(gl.CULL_FACE); gl.cullFace(cfg.cull.face); } else gl.disable(gl.CULL_FACE);
     if (cfg.depth.enable) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(cfg.depth.func); } else gl.disable(gl.DEPTH_TEST);
     gl.depthMask(cfg.depth.write);
+    const sten = cfg.stencil;
+    if (sten.enable) {
+      gl.enable(gl.STENCIL_TEST);
+      gl.stencilFunc(sten.func, sten.ref, sten.mask);
+      gl.stencilOp(sten.fail, sten.zfail, sten.pass);
+      gl.stencilMask(sten.writeMask);
+    } else gl.disable(gl.STENCIL_TEST);
     if (cfg.blend.enable) { gl.enable(gl.BLEND); gl.blendFunc(cfg.blend.src, cfg.blend.dst); } else gl.disable(gl.BLEND);
 
     const u = (n) => this._u(prog, n);
@@ -396,7 +406,6 @@ export class Renderer {
 
   _clear(c) {
     const gl = this.gl;
-    if (c.flags & CLEAR.STENCIL) throw new UnsupportedError('clearing the stencil buffer is not supported');
     gl.viewport(0, 0, this.width, this.height);
     this._scissor(c.rect);
     let bits = 0;
@@ -407,6 +416,7 @@ export class Renderer {
       bits |= gl.COLOR_BUFFER_BIT;
     }
     if (c.flags & CLEAR.ZBUFFER) { gl.depthMask(true); gl.clearDepth(c.z); bits |= gl.DEPTH_BUFFER_BIT; }
+    if (c.flags & CLEAR.STENCIL) { gl.stencilMask(0xff); gl.clearStencil((c.stencil ?? 0) & 0xff); bits |= gl.STENCIL_BUFFER_BIT; }
     if (bits) gl.clear(bits);
     gl.disable(gl.SCISSOR_TEST);
   }
@@ -435,6 +445,7 @@ export class Renderer {
     gl.viewport(0, 0, this.width, this.height);
     gl.disable(gl.SCISSOR_TEST);
     gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.STENCIL_TEST);
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.BLEND);
     gl.colorMask(true, true, true, true);
@@ -474,7 +485,7 @@ export class Renderer {
     gl.useProgram(prog.p);
     gl.bindVertexArray(this.emptyVao);
     gl.viewport(0, 0, w, h);
-    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
     gl.colorMask(true, true, true, true);
     gl.bindSampler(0, this.nearest);
     gl.uniform1i(this._u(prog, 'uTex'), 0);

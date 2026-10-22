@@ -77,7 +77,7 @@ test('classifyRenderState: unsupported states and values fail loudly', () => {
   assert.throws(() => classifyRenderState(RS.SHADEMODE, 0), /SHADEMODE/);
   assert.throws(() => classifyRenderState(RS.SPECULARENABLE, 2), /SPECULARENABLE/);
   assert.throws(() => classifyRenderState(RS.FOGTABLEMODE, 4), /FOGTABLEMODE/);
-  assert.throws(() => classifyRenderState(RS.STENCILENABLE, 1), /stencil/i);
+  assert.throws(() => classifyRenderState(RS.STENCILENABLE, 2), /STENCILENABLE/);
   assert.throws(() => classifyRenderState(RS.ZENABLE, 2), /w-buffer|usew/i);
   assert.throws(() => classifyRenderState(9999, 0), /unknown render state 9999/);
 });
