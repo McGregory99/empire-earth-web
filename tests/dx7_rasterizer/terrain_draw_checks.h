@@ -242,20 +242,38 @@ static void td_terrain(unsigned count, const unsigned *inside, const unsigned *o
 }
 
 /* The viewport the screen draws with, set up by the engine: a camera that turns and moves, a field of view, the clip distances. */
+static void td_viewport_angles(int screen, float x, float y, float z, float rear, double yaw, double pitch, double roll);
+
 static void td_viewport(int screen, float x, float y, float z, float rear)
+{
+    td_viewport_angles(screen, x, y, z, rear, 0.5235987755982988, 0.3490658503988659, 0.0);
+}
+
+/* The camera turned `yaw` about the vertical axis, tilted `pitch` about the right axis and rolled `roll` about the forward axis. */
+static void td_viewport_angles(int screen, float x, float y, float z, float rear, double yaw, double pitch, double roll)
 {
     void *viewport = &life_state(screen)->viewport;
     GETransformationLayout camera;
     memset(&camera, 0, sizeof camera);
-    /* turned 30 degrees about the vertical axis and tilted 20 degrees: the camera's directions have a vertical part */
-    camera.m[0] = 0.8660254f;
-    camera.m[1] = -0.5f * 0.9396926f;
-    camera.m[2] = 0.5f * 0.3420201f;
-    camera.m[4] = 0.5f;
-    camera.m[5] = 0.8660254f * 0.9396926f;
-    camera.m[6] = -0.8660254f * 0.3420201f;
-    camera.m[9] = 0.3420201f;
-    camera.m[10] = 0.9396926f;
+    /* M = Rz(yaw) * Rx(pitch) * Ry(roll) */
+    {
+        double cy = cos(yaw), sy = sin(yaw), cp = cos(pitch), sp = sin(pitch), cr = cos(roll), sr = sin(roll);
+        double rz[3][3] = {{cy, -sy, 0}, {sy, cy, 0}, {0, 0, 1}};
+        double rx[3][3] = {{1, 0, 0}, {0, cp, -sp}, {0, sp, cp}};
+        double ry[3][3] = {{cr, 0, sr}, {0, 1, 0}, {-sr, 0, cr}};
+        double t[3][3], m[3][3];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                t[i][j] = rz[i][0] * rx[0][j] + rz[i][1] * rx[1][j] + rz[i][2] * rx[2][j];
+            }
+        }
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                m[i][j] = t[i][0] * ry[0][j] + t[i][1] * ry[1][j] + t[i][2] * ry[2][j];
+                camera.m[4 * i + j] = (float)m[i][j];
+            }
+        }
+    }
     camera.m[15] = 1.0f;
     camera.m[3] = x;
     camera.m[7] = y;
@@ -354,6 +372,26 @@ static void td_terrain_draws(void)
     td_terrain(3, kInside, kOverlap, 0);
     TD_DRAW("terrain draw: Draw(GETerrainMesh) without visible rows when the vertex buffer unlock fails", 0, 420, 0, g_life.dd->vb_script[FV_UNLOCK].code = (long)D2_OTHER;
             g_life.dd->vb_script[FV_UNLOCK].times = 1);
+
+    /* the cover's points over many cameras: the float arithmetic is x87 code that keeps some values in extended precision */
+    LS("terrain draw: the cover of Draw(GETerrainMesh) over 300 cameras", LIFE_NODIFF, {
+        uint32_t hash = 2166136261u;
+        uint32_t seed = 4242;
+        for (int k = 0; k < 300; k++) {
+            float x = td_value(&seed, -120.0f, 120.0f), y = td_value(&seed, -120.0f, 120.0f), z = td_value(&seed, -20.0f, 20.0f);
+            float rear = td_value(&seed, 5.0f, 900.0f);
+            td_viewport_angles(0, x, y, z, rear, td_value(&seed, 0.0f, 6.28f), td_value(&seed, -1.2f, 1.2f), td_value(&seed, -0.8f, 0.8f));
+            td_terrain(1, kInside, kOverlap, 0);
+            d2_prepare(0, 0);
+            ((TerrainDrawFn)LIFE_SLOT(Draw_2))(g_life.obj, g_tdm.mesh, 0, (unsigned char)(k & 1));
+            const uint32_t *ring = (const uint32_t *)g_d2.vb[0];
+            for (unsigned w = 0; w < 12 * 9; w++) {
+                hash = (hash ^ ring[w]) * 16777619u;
+            }
+        }
+        life_extra("hash=%08x", (unsigned)hash);
+    });
+    td_viewport(0, 10.0f, 20.0f, 5.0f, 300.0f);
 }
 
 /* ---- DrawWater(GETerrainMesh &, screen, orthographic), slot 27 ---- */
