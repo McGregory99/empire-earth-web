@@ -249,7 +249,7 @@ failed (cap) still holds only whole records.
 **Content addressing.** A record is stored once: if a record with the same kind, object, params, payload length and payload hash
 exists, the new reference points at the old record (so a texture that is rewritten with the same pixels, or a quad drawn from
 the same vertices, costs nothing; a surface whose content goes A, B, A refers to A's record again). The key is the 64-bit hash,
-a collision is not checked (at about 10^5 records the chance is about 10^-9).
+the origin of a surface record is not part of the key (the same pixels read by a `ReleaseDC`, as a `Blt` source and as a texture are one record, which keeps the origin of the first read; every trace line still carries its `blob=` reference). A collision is not checked (at about 10^5 records the chance is about 10^-9).
 
 **Kind 1, vertices** (a draw's vertex range). Payload: `vertex_count * stride` bytes, the vertices exactly as the call reads them.
 params: `p0` FVF, `p1` stride in bytes, `p2` start_vertex (0 for an application array), `p3` vertex_count, `p4` source (0

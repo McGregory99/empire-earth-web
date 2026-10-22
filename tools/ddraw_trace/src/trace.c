@@ -525,8 +525,8 @@ static int dinsert_locked(uint64_t key, unsigned off, unsigned len) {
     return 1;
 }
 
-/* Record layout: README, "Data file".  The key covers kind, object, payload length, the 16 params and the payload hash, so
- * the same bytes under other parameters (another vertex range, another surface) are a different record. */
+/* Record layout: README, "Data file".  The key covers kind, object, payload length, the 16 params (a surface's origin, p8, left out)
+ * and the payload hash, so the same bytes under other parameters (another vertex range, another surface) are a different record. */
 int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], const void *base, size_t pitch, size_t rows,
              size_t rowbytes, unsigned *off, unsigned *len) {
     uint64_t ph = FNV1A64_INIT, key;
@@ -544,6 +544,8 @@ int data_put(unsigned kind, unsigned object, const unsigned p[BLOB_PARAMS], cons
     head[1] = object;
     head[2] = (unsigned)plen;
     memcpy(head + 3, p, BLOB_PARAMS * sizeof *p);
+    if (kind == BLOB_SURFACE)
+        head[3 + 8] = 0; /* the origin (why the surface was read) is not part of what it holds: the same pixels are one record */
     key = fnv1a64_update(ph, head, sizeof head);
     total = REC_HDR + ((plen + 7) & ~(size_t)7);
 
