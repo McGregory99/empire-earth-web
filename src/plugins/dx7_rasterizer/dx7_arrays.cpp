@@ -181,13 +181,21 @@ private:
 
 } // namespace
 
+// Differs from the original on purpose: a count whose byte size does not fit in 32 bits is refused (the original asks operator new for the
+// wrapped size and then writes past the small block it gets).
 GEPolygonArray* EEWebNullRasterizer::CreatePolygonArray(ulong count)
 {
+    if (count > 0xffffffffUL / 6) {
+        return 0;
+    }
     return new DX7PolygonArray(count);
 }
 
 GEVertexArray* EEWebNullRasterizer::CreateVertexArray(ulong kind, ulong count)
 {
+    if ((kind == 0 && count > 0xffffffffUL / 32 - 1) || (kind == 1 && count > 0xffffffffUL / 36 - 1)) {
+        return 0;
+    }
     if (kind == 0) {
         return new DX7StandardVertexArray(count);
     }
