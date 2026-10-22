@@ -119,7 +119,7 @@ public:
     bool GetIsScreenValid(DX7Screen *) override;  // 78
 protected:
     long CreateVertexBuffers(unsigned long) override;  // 79
-    long DrawTerrainMaterial(GEViewport *, std::vector<GETerrainMesh::GETMPolygon *, std::allocator<GETerrainMesh::GETMPolygon *>> &, unsigned long) override { return EEWEB_NOT_SUPPORTED; }  // 80
+    long DrawTerrainMaterial(GEViewport *, std::vector<GETerrainMesh::GETMPolygon *, std::allocator<GETerrainMesh::GETMPolygon *>> &, unsigned long) override;  // 80 (dx7_terrain.cpp)
     long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override;  // 81
 
 private:

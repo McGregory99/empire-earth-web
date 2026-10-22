@@ -25,6 +25,8 @@
 // not exist are skipped.
 #include "null_rasterizer.h"
 
+#include "dx7_math.h"
+
 #include "engine_imports.h"
 #include "rasterizer_abi.h"
 
@@ -347,4 +349,72 @@ void EEWebNullRasterizer::TransformToCamera(GETerrainMesh& meshObject, GEViewpor
     }
     SortMaterials(mesh->materials);
     SortMaterials(mesh->waterMaterials);
+}
+
+namespace {
+
+// a * b rounded to a float.
+float Scaled(float a, float b)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfmuls %2\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b) : "st");
+    return result;
+}
+
+// (a * b) * c with the intermediate product in extended precision, rounded to a float once.
+float TripleProduct(float a, float b, float c)
+{
+    float result;
+    __asm__ volatile("flds %1\n\tfmuls %2\n\tfmuls %3\n\tfstps %0" : "=m"(result) : "m"(a), "m"(b), "m"(c) : "st");
+    return result;
+}
+
+} // namespace
+
+long EEWebNullRasterizer::DrawTerrainMaterial(GEViewport*, std::vector<GETerrainMesh::GETMPolygon*, std::allocator<GETerrainMesh::GETMPolygon*>>& polygons, ulong screen)
+{
+    static const float k255 = 255.0f;
+    DX7ScreenRecordLayout* record = Record(screen);
+    if (!record || !Device(screen) || !record->vertexBuffer) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    const StdVectorLayout* list = reinterpret_cast<const StdVectorLayout*>(&polygons);
+    GETMPolygonLayout* const* entries = static_cast<GETMPolygonLayout* const*>(list->first);
+    if (!entries || list->last <= list->first) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    ulong count = static_cast<const ulong*>(list->last)[-1];
+    ulong vertices = count * 3;
+    if (vertices == 0) {
+        return 0;
+    }
+    if (count > 0x98a / 3) {
+        return EEWEB_NOT_SUPPORTED;
+    }
+    void* ring = 0;
+    LockVB(vertices, screen, ring);
+    if (!ring) {
+        UnlockVB(screen);
+        return 1;
+    }
+    char* to = static_cast<char*>(ring) + record->vertexCursor * 0x24;
+    for (ulong i = 0; i < count && entries[i]; i++, to += 3 * 0x24) {
+        const GETMPolygonLayout* polygon = entries[i];
+        for (int corner = 0; corner < 3; corner++) {
+            const GETMRenderVertexLayout* vertex = static_cast<const GETMRenderVertexLayout*>(polygon->vertices[corner]);
+            float* out = reinterpret_cast<float*>(to + corner * 0x24);
+            out[0] = vertex->position.x;
+            out[1] = vertex->position.y;
+            out[2] = vertex->position.z;
+            out[3] = out[4] = out[5] = 0.0f;
+            ulong alpha = static_cast<ulong>(dx7math::RoundToNearest(Scaled(polygon->alpha[corner], k255)));
+            ulong red = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.r, vertex->intensity, k255)));
+            ulong green = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.g, vertex->intensity, k255)));
+            ulong blue = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.b, vertex->intensity, k255)));
+            *reinterpret_cast<ulong*>(out + 6) = ((((alpha << 8) | red) << 8 | green) << 8) | blue;
+            out[7] = polygon->uv[corner].x;
+            out[8] = polygon->uv[corner].y;
+        }
+    }
+    return UnlockAndDraw(screen, 4, vertices, 0, 0);
 }
