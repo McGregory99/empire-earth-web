@@ -990,6 +990,48 @@ static void td_light_draws(void)
     td_lights_taken(0);
 }
 
+/* The colours Light wrote into the terrain's and the water's render vertices, as one hash. */
+static uint32_t td_light_hash(void)
+{
+    uint32_t hash = 2166136261u;
+    for (int v = 0; v < 101 * 101; v++) {
+        const uint32_t *w = (const uint32_t *)&g_tdm.mesh->renderVertices[v].color;
+        const uint32_t *x = (const uint32_t *)&g_tdm.mesh->waterRenderVertices[v].color;
+        for (int i = 0; i < 3; i++) {
+            hash = (hash ^ w[i]) * 16777619u;
+            hash = (hash ^ x[i]) * 16777619u;
+        }
+    }
+    return hash;
+}
+
+/* Our build only: a light the device does not hand back (GetLight fails) is left out; the original reads whatever its buffer held. */
+static void td_light_ours_only(void)
+{
+    GERasterizerLayout *base = (GERasterizerLayout *)g_life.obj;
+    base->computedAmbientColor.r = 0.2f;
+    base->computedAmbientColor.g = 0.3f;
+    base->computedAmbientColor.b = 0.4f;
+    td_lights_taken(0);
+    td_light_mesh(3, 2, 4, 3, 1);
+    ((TerrainLightFn)LIFE_SLOT(Light))(g_life.obj, g_tdm.mesh, 0);
+    const uint32_t without = td_light_hash();
+    td_lights_taken(1);
+    td_light_script(0, 3, 1.0f, 0.5f, 0.25f, 0.3f, -0.4f, -0.8f);
+    td_light_mesh(3, 2, 4, 3, 1);
+    ((TerrainLightFn)LIFE_SLOT(Light))(g_life.obj, g_tdm.mesh, 0);
+    const uint32_t with = td_light_hash();
+    g_life.dd->get_light_result = (long)0x88760064L;
+    td_light_mesh(3, 2, 4, 3, 1);
+    ((TerrainLightFn)LIFE_SLOT(Light))(g_life.obj, g_tdm.mesh, 0);
+    const uint32_t failed = td_light_hash();
+    g_life.dd->get_light_result = 0;
+    CHECK(without != with && failed == without,
+          "%s: terrain draw: a light whose GetLight fails does not light the terrain (no light %08x, light %08x, failed light %08x)", g_life.e->label,
+          (unsigned)without, (unsigned)with, (unsigned)failed);
+    td_lights_taken(0);
+}
+
 static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenApi *api, void *obj)
 {
     (void)h;
@@ -1010,5 +1052,8 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_highlight_draws();
     td_lines_draws();
     td_light_draws();
+    if (e->ours) {
+        td_light_ours_only();
+    }
     life_end();
 }
