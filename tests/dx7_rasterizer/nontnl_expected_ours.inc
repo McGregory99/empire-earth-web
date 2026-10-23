@@ -14,3 +14,7 @@
  "v1.vb.Release;d1.dev.Release;d3d.Release;dd.Release;s4.Release;s6.Release;s5.Release; | ret=0 ne=8876017c"},
 {"target: ActivateRenderingSurface when CreateDevice is refused",
  "dd.CreateSurface(+0x0=0x7c,+0x4=0x1007,+0x8=0x64,+0xc=0x64,+0x48=0x20,+0x4c=0x40,+0x54=0x20,+0x58=0xff0000,+0x5c=0xff00,+0x60=0xff,+0x68=0x10006040) -> s5;dd.QueryInterface(IDirect3D7);d3d.CreateDevice(HAL,s5);d3d.Release;s5.Release;dd.CreateSurface(+0x0=0x7c,+0x4=0x1007,+0x8=0x64,+0xc=0x64,+0x48=0x20,+0x4c=0x40,+0x54=0x10,+0x58=0xf800,+0x5c=0x7e0,+0x60=0x1f,+0x68=0x10006040) -> s6;dd.QueryInterface(IDirect3D7);d3d.CreateDevice(HAL,s6);d3d.Release;s6.Release; | ret=1 ne=887600a2 | depth=none"},
+{"Deactivate after: activated twice, the second fails",
+ "v1.vb.Release;d1.dev.Release;d3d.Release;dd.Release;s7.Release;s9.Release;s8.Release; | ret=0 ne=8876017c"},
+{"Deactivate after: no texture manager",
+ "dd.Release; | ret=0 ne=8876017c"},

@@ -155,8 +155,8 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
 {
     GERScreenStateLayout* state = State(screen);
     DX7ScreenRecordLayout* record = Record(screen);
-    if (!state || !record || !state->screen) {
-        return EEWEB_NOT_SUPPORTED;
+    if (!state || !record || !state->screen || !textureManager) {
+        return EEWEB_NOT_SUPPORTED; // the original links the screen to the texture manager at the end and dereferences a null one
     }
     GEScreen* owner = reinterpret_cast<GEScreen*>(state->screen);
     const EEWebVideoMode mode = reinterpret_cast<const EEWebVideoMode&>(owner->GetCurrentMode());

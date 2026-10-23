@@ -15,3 +15,7 @@
 /* Our build only: the objects of the first activation were given back by the second one, so Deactivate releases only the second's. */
 {"Deactivate after: activated twice",
  "v1.vb.Release;d1.dev.Release;d3d.Release;dd.Release;s4.Release;s6.Release;s5.Release; | ret=0 ne=8876017c"},
+{"Deactivate after: activated twice, the second fails",
+ "v1.vb.Release;d1.dev.Release;d3d.Release;dd.Release;s7.Release;s9.Release;s8.Release; | ret=0 ne=8876017c"},
+{"Deactivate after: no texture manager",
+ "dd.Release; | ret=0 ne=8876017c"},
