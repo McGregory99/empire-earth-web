@@ -220,6 +220,19 @@ SCENES.push(
       ...draw(quad(0, 0, 0.3, { specular: ARGB(0, 200, 100, 0) }), undefined, undefined, 0x1d2)],
     probes: [[...at(0, 0), scaled([200 / 255, 100 / 255, 0], COS ** 4), 'material source COLOR2: (200, 100, 0) * 0.5625, not the white material specular']],
   },
+  {
+    name: 'a material colour source whose vertex component is absent falls back to the material (FVF 0x152 has no specular)',
+    commands: () => [...specStates([[RS.COLORVERTEX, 1]]), ...specLight(), material(4), ...draw(quad(0, 0, 0.3))],
+    probes: [[...at(0, 0), scaled(MAT_SPEC, COS ** 4), 'default SPECULARMATERIALSOURCE is COLOR2 but the vertex has none: the material specular (1, 0.5, 0.25) * 0.5625']],
+  },
+  {
+    name: 'diffuse, ambient and emissive sources COLOR1 fall back to the material when the format has no diffuse (FVF 0x112)',
+    commands: () => [...plain([[RS.LIGHTING, 1], [RS.COLORVERTEX, 1], [RS.AMBIENT, ARGB(255, 255, 255, 255)], [RS.AMBIENTMATERIALSOURCE, 1], [RS.EMISSIVEMATERIALSOURCE, 1]]),
+      cmd.setMaterial({ diffuse: [0, 0, 0.5, 1], ambient: [0, 0.4, 0, 1], specular: [0, 0, 0, 1], emissive: [0.2, 0, 0, 0], power: 1 }),
+      cmd.setLight(0, { type: 'directional', diffuse: [1, 1, 1, 1], ambient: [0, 0, 0, 1], specular: [0, 0, 0, 1], direction: [0, 0, 1] }), cmd.lightEnable(0, true),
+      ...draw(quad(0, 0, 0.3).map(({ pos, normal = [0, 0, -1], uv }) => ({ pos, normal, uv })), undefined, undefined, 0x112)],
+    probes: [[...at(0, 0), [51, 102, 128], 'emissive (0.2, 0, 0) + ambient (0, 0.4, 0) * 1 + diffuse (0, 0, 0.5) * N.L 1: every COLOR1 source is the material']],
+  },
 );
 
 // ---- point and spot lights -------------------------------------------------------------------------------------------
