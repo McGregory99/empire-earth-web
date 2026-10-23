@@ -990,6 +990,61 @@ static void td_light_draws(void)
     td_lights_taken(0);
 }
 
+/* A list of `count` polygons (the first `nulls` of the pointers after the first are zero) as DrawTerrainMaterial reads it: the pointers, a gap and the
+ * count in the last slot. */
+static GETMPolygonLayout *g_td_big[1100];
+static StdVectorLayout g_td_big_vector;
+
+static StdVectorLayout *td_big_list(unsigned count, unsigned null_at)
+{
+    memset(g_td_big, 0, sizeof g_td_big);
+    for (unsigned i = 0; i < count && i < 1090; i++) {
+        g_td_big[i] = i == null_at ? NULL : &g_td.polygons[i % TD_POLYGONS];
+    }
+    g_td_big[1099] = (GETMPolygonLayout *)(uintptr_t)count;
+    memset(&g_td_big_vector, 0, sizeof g_td_big_vector);
+    g_td_big_vector.first = g_td_big;
+    g_td_big_vector.last = g_td_big + 1100;
+    g_td_big_vector.end = g_td_big_vector.last;
+    return &g_td_big_vector;
+}
+
+/* Our build only.  What the original does not survive or does not do:
+ *  - a null polygon in the list: the draw covers the polygons before it (the original dereferences the null);
+ *  - a list of more polygons than the ring holds (814): the draw is done in batches (the original writes past the ring);
+ *  - a ring that cannot be locked: nothing is drawn and the draw answers 1. */
+static void td_material_ours_only(void)
+{
+    typedef long(THISCALL * Fn)(void *self, void *viewport, void *polygons, unsigned long screen);
+    Fn draw = (Fn)slot(g_life.vtable, EEWEB_SLOT_DX7RasterizerAbi_DrawTerrainMaterial);
+    td_pool(11);
+
+    d2_prepare(0, 50);
+    long ret = draw(g_life.obj, &life_state(0)->viewport, td_big_list(3, 1), 0);
+    unsigned long cursor = life_record(0)->vertexCursor;
+    CHECK(ret == 0 && cursor == 53, "%s: terrain draw: a null polygon ends the list: only the polygons before it are drawn (ret %ld, cursor %lu)", g_life.e->label, ret,
+          cursor);
+
+    d2_prepare(0, 100);
+    log_clear(g_life.dd);
+    ret = draw(g_life.obj, &life_state(0)->viewport, td_big_list(900, 5000), 0);
+    cursor = life_record(0)->vertexCursor;
+    const char *first = strstr(g_life.dd->log, "DPVB");
+    const char *second = first ? strstr(first + 4, "DPVB") : NULL;
+    CHECK(ret == 0 && cursor == 3 * (900 - 814) && first && second && !(second ? strstr(second + 4, "DPVB") : NULL),
+          "%s: terrain draw: 900 polygons are drawn in two batches, the ring started again for the second (ret %ld, cursor %lu)", g_life.e->label, ret, cursor);
+
+    d2_prepare(0, 70);
+    g_life.dd->vb_script[FV_LOCK].code = (long)D2_OTHER;
+    g_life.dd->vb_script[FV_LOCK].times = 1;
+    log_clear(g_life.dd);
+    ret = draw(g_life.obj, &life_state(0)->viewport, td_big_list(3, 5000), 0);
+    cursor = life_record(0)->vertexCursor;
+    g_life.dd->vb_script[FV_LOCK].times = 0;
+    CHECK(ret == 1 && cursor == 70 && strstr(g_life.dd->log, "DPVB") == NULL,
+          "%s: terrain draw: a ring that cannot be locked draws nothing and answers 1 (ret %ld, cursor %lu)", g_life.e->label, ret, cursor);
+}
+
 /* The colours Light wrote into the terrain's and the water's render vertices, as one hash. */
 static uint32_t td_light_hash(void)
 {
@@ -1054,6 +1109,7 @@ static void check_terrain_draws(const struct Expect *e, HMODULE h, const ScreenA
     td_light_draws();
     if (e->ours) {
         td_light_ours_only();
+        td_material_ours_only();
     }
     life_end();
 }
