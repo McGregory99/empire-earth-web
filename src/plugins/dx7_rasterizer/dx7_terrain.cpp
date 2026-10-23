@@ -991,8 +991,10 @@ void EEWebNullRasterizer::Light(GETerrainMesh& meshObject, ulong screen)
         if (!LightTaken(id)) {
             continue;
         }
-        float light[26];
-        device->vtbl->GetLight(device, id, light);
+        float light[26] = {};
+        if (device->vtbl->GetLight(device, id, light) != 0) {
+            continue; // the original goes on with whatever the buffer held
+        }
         if (reinterpret_cast<const ulong*>(light)[0] != 3) {
             continue;
         }
