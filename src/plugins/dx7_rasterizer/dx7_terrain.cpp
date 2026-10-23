@@ -418,40 +418,54 @@ long EEWebNullRasterizer::DrawTerrainMaterial(GEViewport*, std::vector<GETerrain
     if (!entries || list->last <= list->first) {
         return EEWEB_NOT_SUPPORTED;
     }
-    ulong count = static_cast<const ulong*>(list->last)[-1];
-    ulong vertices = count * 3;
-    if (vertices == 0) {
-        return 0;
-    }
-    if (count > 0x98a / 3) {
-        return EEWEB_NOT_SUPPORTED;
-    }
-    void* ring = 0;
-    LockVB(vertices, screen, ring);
-    if (!ring) {
-        UnlockVB(screen);
-        return 1;
-    }
-    char* to = static_cast<char*>(ring) + record->vertexCursor * 0x24;
-    for (ulong i = 0; i < count && entries[i]; i++, to += 3 * 0x24) {
-        const GETMPolygonLayout* polygon = entries[i];
-        for (int corner = 0; corner < 3; corner++) {
-            const GETMRenderVertexLayout* vertex = static_cast<const GETMRenderVertexLayout*>(polygon->vertices[corner]);
-            float* out = reinterpret_cast<float*>(to + corner * 0x24);
-            out[0] = vertex->position.x;
-            out[1] = vertex->position.y;
-            out[2] = vertex->position.z;
-            out[3] = out[4] = out[5] = 0.0f;
-            ulong alpha = static_cast<ulong>(dx7math::RoundToNearest(Scaled(polygon->alpha[corner], k255)));
-            ulong red = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.r, vertex->intensity, k255)));
-            ulong green = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.g, vertex->intensity, k255)));
-            ulong blue = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.b, vertex->intensity, k255)));
-            *reinterpret_cast<ulong*>(out + 6) = ((((alpha << 8) | red) << 8 | green) << 8) | blue;
-            out[7] = polygon->uv[corner].x;
-            out[8] = polygon->uv[corner].y;
+    const ulong count = static_cast<const ulong*>(list->last)[-1];
+    // The ring holds 0x98a vertices: a list of more polygons than fit is drawn in batches that fill it (the original writes past its end), and
+    // a null polygon ends the list (the original dereferences it): what was filled before it is drawn.
+    const ulong kBatchPolygons = 0x98a / 3;
+    long status = 0;
+    bool ended = false;
+    for (ulong start = 0; start < count && !ended; start += kBatchPolygons) {
+        const ulong batch = count - start < kBatchPolygons ? count - start : kBatchPolygons;
+        void* ring = 0;
+        LockVB(batch * 3, screen, ring);
+        if (!ring) {
+            UnlockVB(screen);
+            if (status == 0) {
+                status = 1;
+            }
+            break;
+        }
+        char* to = static_cast<char*>(ring) + record->vertexCursor * 0x24;
+        ulong filled = 0;
+        for (; filled < batch && entries[start + filled]; filled++, to += 3 * 0x24) {
+            const GETMPolygonLayout* polygon = entries[start + filled];
+            for (int corner = 0; corner < 3; corner++) {
+                const GETMRenderVertexLayout* vertex = static_cast<const GETMRenderVertexLayout*>(polygon->vertices[corner]);
+                float* out = reinterpret_cast<float*>(to + corner * 0x24);
+                out[0] = vertex->position.x;
+                out[1] = vertex->position.y;
+                out[2] = vertex->position.z;
+                out[3] = out[4] = out[5] = 0.0f;
+                ulong alpha = static_cast<ulong>(dx7math::RoundToNearest(Scaled(polygon->alpha[corner], k255)));
+                ulong red = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.r, vertex->intensity, k255)));
+                ulong green = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.g, vertex->intensity, k255)));
+                ulong blue = static_cast<ulong>(dx7math::RoundToNearest(TripleProduct(vertex->color.b, vertex->intensity, k255)));
+                *reinterpret_cast<ulong*>(out + 6) = ((((alpha << 8) | red) << 8 | green) << 8) | blue;
+                out[7] = polygon->uv[corner].x;
+                out[8] = polygon->uv[corner].y;
+            }
+        }
+        ended = filled < batch;
+        if (filled == 0) {
+            UnlockVB(screen);
+            break;
+        }
+        const long drawn = UnlockAndDraw(screen, 4, filled * 3, 0, 0);
+        if (drawn != 0 && status == 0) {
+            status = drawn;
         }
     }
-    return UnlockAndDraw(screen, 4, vertices, 0, 0);
+    return status;
 }
 
 namespace {
