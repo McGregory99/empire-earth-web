@@ -86,3 +86,6 @@ EXPORTS
     ?UMGetFloatingPointRoundingMode@@YAKXZ
     ?sprintf@@YAJAAVUString@@PBDZZ
     ?ESVerify@@YAXPBDK0@Z
+    ??4UString@@QAEAAV0@PBD@Z
+    ?ToUpper@UString@@QAEXXZ
+    ?Find@UString@@QBEKPBDK@Z

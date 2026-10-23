@@ -97,7 +97,7 @@ struct IDirectDraw7Vtbl {
     void* getSurfaceFromDC;                                                                                     // 24
     HRESULT_(__attribute__((stdcall)) * RestoreAllSurfaces)(IDirectDraw7*);                                     // 25
     HRESULT_(__attribute__((stdcall)) * TestCooperativeLevel)(IDirectDraw7*);                                   // 26
-    void* getDeviceIdentifier;                                                                                  // 27
+    HRESULT_(__attribute__((stdcall)) * GetDeviceIdentifier)(IDirectDraw7*, void* identifier, DWORD_ flags);   // 27 (DDDEVICEIDENTIFIER2, 0x430 bytes)
     void* startModeTest;                                                                                        // 28
     void* evaluateMode;                                                                                         // 29
 };

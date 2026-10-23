@@ -108,7 +108,7 @@ public:
     long UpdateLight(unsigned long, GELight &, unsigned long) override;  // 68
 protected:
     long ActivateRasterizer() override;  // 70
-    long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override;  // 71
+    long ActivateTheScreen(unsigned long, GESurface *, GESurface *, GETextureManager *, GEWindow *) override;  // 71 (dx7_scene.cpp; the T&L class replaces it)
     long CreateTextureHandle(GETexture *) override { return 0; }  // 72: the original returns 0 and does nothing (the engine calls it when a texture gets a surface)
     long DemoteTexture(GETexture *) override { return 0; }  // 73: same code
     void DestroyTextureHandle(GETexture *) override {}  // 74
@@ -116,11 +116,20 @@ protected:
     long PromoteTexture(GETexture *) override { return 0; }  // 76: same code
     void SetRenderTarget(GESurface *, unsigned long) override;  // 77
 public:
-    bool GetIsScreenValid(DX7Screen *) override;  // 78
+    bool GetIsScreenValid(DX7Screen *) override;  // 78 (null_rasterizer.cpp; the T&L class replaces it)
 protected:
-    long CreateVertexBuffers(unsigned long) override;  // 79
+    long CreateVertexBuffers(unsigned long) override;  // 79 (dx7_scene.cpp; the T&L class replaces it)
     long DrawTerrainMaterial(GEViewport *, std::vector<GETerrainMesh::GETMPolygon *, std::allocator<GETerrainMesh::GETMPolygon *>> &, unsigned long) override;  // 80 (dx7_terrain.cpp)
     long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override;  // 81
+
+protected:
+    // What the activation and the validity test have in common, parametrised by what the T&L class does differently (dx7_scene.cpp,
+    // null_rasterizer.cpp): the Direct3D device to ask for, whether to read the adapter's identity, the vertex buffer's caps, and the
+    // device test.
+    long ActivateDevice(unsigned long screen, GESurface* back, const GUID_& deviceIid, bool identifyAdapter);
+    long CreateRingBuffer(unsigned long screen, unsigned long caps);
+    void IdentifyAdapter(unsigned long screen, IDirectDraw7* directDraw, DX7ScreenRecordLayout* record);
+    bool HasDevice(DX7Screen* screen, EnumDevicesCallback callback);
 
 private:
     friend class EEWebTnLRasterizer;  // the T&L class (rasterizer_variant.h) uses the helpers below

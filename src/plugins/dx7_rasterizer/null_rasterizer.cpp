@@ -154,8 +154,6 @@ void EEWebNullRasterizer::NoteSelfCheck(bool passed)
     }
 }
 
-long __stdcall FindTnLDevice(char*, char*, void* deviceDesc7, void* found);
-
 // ---- activation: one screen per DirectDraw device that can render -------------------------------------------
 
 // DirectDrawEnumerateEx callback (the original's FUN_10008f04): create the device, make a screen of it when it
@@ -226,20 +224,29 @@ long EEWebNullRasterizer::AddValidScreen(GEScreen* screen)
     return GERasterizer::AddValidScreen(screen); // the engine's record of the screen (GERScreenState)
 }
 
-// A screen is valid for the hardware T&L rasterizer when its Direct3D 7 offers a hardware-rasterizing device
-// with hardware transform and lighting (D3DDEVCAPS_HWRASTERIZATION | D3DDEVCAPS_HWTRANSFORMANDLIGHT).
-long __stdcall FindTnLDevice(char*, char*, void* deviceDesc7, void* found)
+// A screen is valid when its Direct3D 7 offers a device the callback accepts: for the rasterizer without T&L a hardware-rasterizing device
+// (D3DDEVCAPS_HWRASTERIZATION), for the T&L one also hardware transform and lighting (tnl_rasterizer.cpp).  The callback answers 0 to stop
+// the enumeration at the first device it likes.
+namespace {
+
+long __stdcall FindHardwareDevice(char*, char*, void* deviceDesc7, void* found)
 {
     const unsigned long devCaps = *static_cast<unsigned long*>(deviceDesc7);
-    const unsigned long wanted = D3DDEVCAPS_HWRASTERIZATION | D3DDEVCAPS_HWTRANSFORMANDLIGHT;
-    if ((devCaps & wanted) == wanted) {
+    if ((devCaps & D3DDEVCAPS_HWRASTERIZATION) == D3DDEVCAPS_HWRASTERIZATION) {
         *static_cast<bool*>(found) = true;
-        return 0; // DDENUMRET_CANCEL: found one
+        return 0;
     }
     return 1;
 }
 
+} // namespace
+
 bool EEWebNullRasterizer::GetIsScreenValid(DX7Screen* screen)
+{
+    return HasDevice(screen, &FindHardwareDevice);
+}
+
+bool EEWebNullRasterizer::HasDevice(DX7Screen* screen, EnumDevicesCallback callback)
 {
     if (screen == 0) {
         return false;
@@ -252,7 +259,7 @@ bool EEWebNullRasterizer::GetIsScreenValid(DX7Screen* screen)
         return false;
     }
     bool found = false;
-    error = direct3d->vtbl->EnumDevices(direct3d, &FindTnLDevice, &found);
+    error = direct3d->vtbl->EnumDevices(direct3d, callback, &found);
     if (error != 0) {
         ESRecordNativeError(static_cast<unsigned long>(error));
         found = false;

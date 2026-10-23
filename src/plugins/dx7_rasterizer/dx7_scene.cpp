@@ -31,10 +31,17 @@ __declspec(dllimport) void __stdcall Sleep(unsigned long milliseconds);
 
 typedef unsigned long ulong;
 
+extern "C" {
+void __attribute__((thiscall)) EEWebUStringConstruct(void* self) __asm__("??0UString@@QAE@XZ");
+void* __attribute__((thiscall)) EEWebUStringAssign(void* self, const char* text) __asm__("??4UString@@QAEAAV0@PBD@Z");
+void __attribute__((thiscall)) EEWebUStringToUpper(void* self) __asm__("?ToUpper@UString@@QAEXXZ");
+ulong __attribute__((thiscall)) EEWebUStringFind(const void* self, const char* text, ulong start) __asm__("?Find@UString@@QBEKPBDK@Z");
+}
+
 namespace {
 
 const GUID_ kIidDirect3D7 = {0xf5049e77, 0x4861, 0x11d2, {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}};
-const GUID_ kIidTnLHal = {0xf5049e78, 0x4861, 0x11d2, {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}};
+const GUID_ kIidHal = {0x84e63de0, 0x46aa, 0x11cf, {0x81, 0x6f, 0x00, 0x00, 0xc0, 0x20, 0x15, 0x6e}};
 
 const long kLost = static_cast<long>(DDERR_SURFACELOST_);
 const long kStillDrawing = static_cast<long>(DDERR_WASSTILLDRAWING_);
@@ -288,9 +295,10 @@ long EEWebNullRasterizer::ActivateScreen(ulong screen, GETextureManager* texture
     return result;
 }
 
-// The hardware T&L class's activation: Direct3D 7 from the screen's DirectDraw object, a T&L HAL device on the render target
-// (`back`), the viewport over the whole target, the device's fixed render states, the vertex buffer, and the record's caches.
-long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface* back, GETextureManager*, GEWindow*)
+// The activation of a screen: Direct3D 7 from the screen's DirectDraw object, a device of the kind asked for on the render target
+// (`back`), the viewport over the whole target, the device's fixed render states, the vertex buffer (a virtual call: the T&L class
+// makes its own), the record's caches, and, for the class without T&L, the two flags decided from the display adapter's identity.
+long EEWebNullRasterizer::ActivateDevice(ulong screen, GESurface* back, const GUID_& deviceIid, bool identifyAdapter)
 {
     DX7ScreenRecordLayout* record = Record(screen);
     DX7Screen* owner = ScreenOf(screen);
@@ -303,7 +311,7 @@ long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface*
     IDirect3DDevice7* device = 0;
     long error = directDraw->vtbl->QueryInterface(directDraw, &kIidDirect3D7, reinterpret_cast<void**>(&direct3d));
     if (error == 0) {
-        error = direct3d->vtbl->CreateDevice(direct3d, &kIidTnLHal, target->GetDirectDrawSurface(), &device);
+        error = direct3d->vtbl->CreateDevice(direct3d, &deviceIid, target->GetDirectDrawSurface(), &device);
     }
     if (error != 0) {
         ESRecordNativeError(static_cast<ulong>(error));
@@ -331,7 +339,11 @@ long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface*
     if (failed != 0) {
         return failed;
     }
-    record->canModulateTextureAlpha = 1;
+    if (identifyAdapter) {
+        IdentifyAdapter(screen, directDraw, record);
+    } else {
+        record->canModulateTextureAlpha = 1;
+    }
     record->textureStateDirty = 1;
     record->zEnableCache = 1;
     record->zWriteCache = 1;
@@ -347,20 +359,59 @@ long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface*
     return 0;
 }
 
-// The ring vertex buffer of the T&L class: write-only, FVF 0x152, 0x98a vertices.
-long EEWebNullRasterizer::CreateVertexBuffers(ulong screen)
+// The class without T&L reads the adapter's identity (the description, the video memory, the vendor and device ids) and decides two flags
+// of the screen's record from it: the adapters it knows cannot modulate the texture alpha well (an ATI Rage Pro with at most 8 MB), or have no
+// dirty rectangle support (vendor 0x1002 device 0x5046, vendor 0x121a device 9).  The result of GetDeviceIdentifier and of the memory query is
+// not looked at: a failure leaves a zeroed identity and no memory, which is what the original works with (it leaves the memory undefined).
+void EEWebNullRasterizer::IdentifyAdapter(ulong screen, IDirectDraw7* directDraw, DX7ScreenRecordLayout* record)
+{
+    alignas(4) char text[16];
+    EEWebUStringConstruct(text);
+    unsigned long identifier[0x430 / 4];
+    __builtin_memset(identifier, 0, sizeof identifier);
+    directDraw->vtbl->GetDeviceIdentifier(directDraw, identifier, 0);
+    ulong memory = 0;
+    GetTotalVideoMemory(screen, memory);
+    EEWebUStringAssign(text, reinterpret_cast<const char*>(identifier) + 0x200);
+    EEWebUStringToUpper(text);
+    const ulong length = reinterpret_cast<const UStringLayout*>(text)->length;
+    bool canModulate = true;
+    if (EEWebUStringFind(text, "RAGE", 0) != length && EEWebUStringFind(text, "PRO", 0) != length && memory <= 0x800000) {
+        canModulate = false;
+    }
+    record->canModulateTextureAlpha = canModulate;
+    const ulong vendor = identifier[0x408 / 4];
+    const ulong device = identifier[0x40c / 4];
+    record->dirtyRectangleSupport = !((vendor == 0x1002 && device == 0x5046) || (vendor == 0x121a && device == 9));
+    reinterpret_cast<UString*>(text)->~UString();
+}
+
+// The activation without T&L: the HAL device.
+long EEWebNullRasterizer::ActivateTheScreen(ulong screen, GESurface*, GESurface* back, GETextureManager*, GEWindow*)
+{
+    return ActivateDevice(screen, back, kIidHal, true);
+}
+
+// The ring vertex buffer: FVF 0x152, 0x98a vertices, with the caps the class asks for (D3DVBCAPS_WRITEONLY, and for the class without T&L
+// D3DVBCAPS_SYSTEMMEMORY too).
+long EEWebNullRasterizer::CreateRingBuffer(ulong screen, ulong caps)
 {
     DX7ScreenRecordLayout* record = Record(screen);
     if (!record || !record->direct3d) {
         return 1;
     }
     IDirect3D7* direct3d = static_cast<IDirect3D7*>(record->direct3d);
-    const ulong description[4] = {0x10, 0x10000, 0x152, 0x98a}; // D3DVERTEXBUFFERDESC: size, caps (write only), FVF, vertex count
+    const ulong description[4] = {0x10, caps, 0x152, 0x98a}; // D3DVERTEXBUFFERDESC: size, caps, FVF, vertex count
     const long error = direct3d->vtbl->CreateVertexBuffer(direct3d, description, reinterpret_cast<IDirect3DVertexBuffer7**>(&record->vertexBuffer), 0);
     if (error != 0) {
         ESRecordNativeError(static_cast<ulong>(error));
     }
     return error != 0 ? 1 : 0;
+}
+
+long EEWebNullRasterizer::CreateVertexBuffers(ulong screen)
+{
+    return CreateRingBuffer(screen, 0x10800);
 }
 
 // ---- the render target, the scene and its clears -----------------------------------------------------------------

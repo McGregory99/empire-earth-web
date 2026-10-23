@@ -13,19 +13,39 @@ EEWebTnLRasterizer::~EEWebTnLRasterizer()
 {
 }
 
+namespace {
+
+const GUID_ kIidTnLHal = {0xf5049e78, 0x4861, 0x11d2, {0xa4, 0x07, 0x00, 0xa0, 0xc9, 0x06, 0x29, 0xa8}};
+
+// A screen is valid for the T&L class when its Direct3D 7 offers a hardware-rasterizing device with hardware transform and lighting.
+long __stdcall FindTnLDevice(char*, char*, void* deviceDesc7, void* found)
+{
+    const unsigned long devCaps = *static_cast<unsigned long*>(deviceDesc7);
+    const unsigned long wanted = D3DDEVCAPS_HWRASTERIZATION | D3DDEVCAPS_HWTRANSFORMANDLIGHT;
+    if ((devCaps & wanted) == wanted) {
+        *static_cast<bool*>(found) = true;
+        return 0;
+    }
+    return 1;
+}
+
+} // namespace
+
 bool EEWebTnLRasterizer::GetIsScreenValid(DX7Screen* screen)
 {
-    return EEWebNullRasterizer::GetIsScreenValid(screen);
+    return HasDevice(screen, &FindTnLDevice);
 }
 
-long EEWebTnLRasterizer::ActivateTheScreen(unsigned long screen, GESurface* primary, GESurface* back, GETextureManager* manager, GEWindow* window)
+// The T&L activation asks for the T&L HAL device and keeps its flags at "can modulate": no adapter is looked at.
+long EEWebTnLRasterizer::ActivateTheScreen(unsigned long screen, GESurface*, GESurface* back, GETextureManager*, GEWindow*)
 {
-    return EEWebNullRasterizer::ActivateTheScreen(screen, primary, back, manager, window);
+    return ActivateDevice(screen, back, kIidTnLHal, false);
 }
 
+// ... and its ring buffer is write-only, in the card's memory.
 long EEWebTnLRasterizer::CreateVertexBuffers(unsigned long screen)
 {
-    return EEWebNullRasterizer::CreateVertexBuffers(screen);
+    return CreateRingBuffer(screen, 0x10000);
 }
 
 #endif
