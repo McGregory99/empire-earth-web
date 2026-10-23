@@ -631,6 +631,30 @@ static void life_activation_failures(const struct Expect *e, const ScreenApi *ap
         CHECK(first == 0 && second == 0, "%s: lifecycle: a screen can be activated again (got %ld, %ld)", e->label, first, second);
         life_end();
     }
+    /* ... and an activation of a screen that is already active that fails: the first one's objects were given back, the second one's
+     * are given back by the failure, and a third activation works. */
+    if (e->ours && life_begin(e, api, obj, 1, 0, "activated twice, the second fails")) {
+        g_life.check_leaks = 1;
+        long first = life_activate(0, 1, 1, 10);
+        g_life.dd->create_device_result = (long)0x887600a2;
+        long second = life_activate(0, 1, 1, 10);
+        g_life.dd->create_device_result = 0;
+        long third = life_activate(0, 1, 1, 10);
+        CHECK(first == 0 && second == 1 && third == 0 && life_state(0)->activated == 1,
+              "%s: lifecycle: a failed reactivation leaves the screen usable for another one (got %ld, %ld, %ld)", e->label, first, second, third);
+        life_end();
+    }
+    /* A screen activated without a texture manager is refused before anything is created (the original dereferences it). */
+    if (e->ours && life_begin(e, api, obj, 1, 0, "no texture manager")) {
+        g_life.check_leaks = 1;
+        typedef long(THISCALL * Activate)(void *self, unsigned long screen, void *tm, void *window, unsigned long backBuffers, unsigned char zbuffer,
+                                          unsigned long zformat);
+        long ret = ((Activate)LIFE_SLOT(ActivateScreen))(g_life.obj, 0, NULL, g_life.win[0], 1, 1, 10);
+        CHECK(ret == EEWEB_NOT_SUPPORTED && g_life.dd->surface_count == 0,
+              "%s: lifecycle: ActivateScreen without a texture manager is refused and creates no surface (got %ld, %d surfaces)", e->label, ret,
+              g_life.dd->surface_count);
+        life_end();
+    }
 }
 
 /* ---- the scene calls, on the two windowed screens activated above ------------------------------------------------- */
