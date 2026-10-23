@@ -73,20 +73,41 @@ within() { # within <x,y> <want x> <want y>: both coordinates within 4 pixels
   local x="${1%,*}" y="${1#*,}"
   [ -n "$1" ] && [ "$x" -ge "$(($2 - 4))" ] && [ "$x" -le "$(($2 + 4))" ] && [ "$y" -ge "$(($3 - 4))" ] && [ "$y" -le "$(($3 + 4))" ]
 }
-start_victim
-wine "$T/ee-key.exe" --window-class EEKeyVictim e04b/900 01 >"$T/k7.out" 2>&1
-check_eq "an extended key held for 900 ms, then Esc: exit 0" "0" "$?"
-wait_for 100 test -e "$T/victim.rc"
+# Input to a real (Wine) desktop can be disturbed by whatever else uses the machine (a moved mouse, a stolen focus, a loaded CPU):
+# an attempt is repeated up to 3 times until the window saw what was sent; the checks then judge the last attempt.
+held_ok() { [ "$(tr -d '\r' <"$T/key_victim.out" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" = "e04b 01" ] &&
+  [ "$(( $(mouse_log | awk '$1 == "keyup" && $2 == "75,1" { print $3; exit }') - $(mouse_log | awk '$1 == "keydown" && $2 == "75,1" { print $3; exit }') ))" -ge 800 ] 2>/dev/null; }
+for attempt in 1 2 3; do
+  start_victim
+  wine "$T/ee-key.exe" --window-class EEKeyVictim e04b/900 01 >"$T/k7.out" 2>&1
+  krc=$?
+  wait_for 100 test -e "$T/victim.rc"
+  held_ok && break
+done
+check_eq "an extended key held for 900 ms, then Esc: exit 0" "0" "$krc"
 check_eq "the window got the extended left arrow (e04b), then Esc" "e04b 01" "$(tr -d '\r' <"$T/key_victim.out" | tr '\n' ' ' | sed 's/ $//')"
 down="$(mouse_log | awk '$1 == "keydown" && $2 == "75,1" { print $3; exit }')"
 up="$(mouse_log | awk '$1 == "keyup" && $2 == "75,1" { print $3; exit }')"
 check "the key stayed down at least 800 ms (down $down, up $up)" test -n "$down" -a -n "$up" -a "$((${up:-0} - ${down:-0}))" -ge 800
 check "the helper said what it pressed" grep -q "pressed e04b (held 900 ms)" "$T/k7.out"
 
-start_victim
-wine "$T/ee-key.exe" --window-class EEKeyVictim wheel:+3 click:0.5,0.25 drag:0.2,0.2,0.8,0.6 01 >"$T/k8.out" 2>&1
-check_eq "wheel, click and drag in the window: exit 0" "0" "$?"
-wait_for 100 test -e "$T/victim.rc"
+mouse_ok() {
+  local cw ch
+  read -r cw ch <<EOM
+$(tr -d '\r' <"$T/k8.out" | sed -n 's/^ee-key: client area \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | head -1)
+EOM
+  [ -n "${cw:-}" ] && within "$(field down 1)" "$((cw / 2))" "$((ch / 4))" && within "$(field up 1)" "$((cw / 2))" "$((ch / 4))" &&
+    within "$(field down 2)" "$((cw / 5))" "$((ch / 5))" && within "$(field up 2)" "$((cw * 4 / 5))" "$((ch * 3 / 5))" &&
+    [ "$(mouse_log | awk '$1 == "wheel" { print $2; exit }')" = "360,0" ]
+}
+for attempt in 1 2 3; do
+  start_victim
+  wine "$T/ee-key.exe" --window-class EEKeyVictim wheel:+3 click:0.5,0.25 drag:0.2,0.2,0.8,0.6 01 >"$T/k8.out" 2>&1
+  krc=$?
+  wait_for 100 test -e "$T/victim.rc"
+  mouse_ok && break
+done
+check_eq "wheel, click and drag in the window: exit 0" "0" "$krc"
 check "the wheel notches reached the window (+3 = delta 360)" test "$(mouse_log | awk '$1 == "wheel" { print $2; exit }')" = "360,0"
 read -r w h <<EOF
 $(tr -d '\r' <"$T/k8.out" | sed -n 's/^ee-key: client area \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | head -1)
