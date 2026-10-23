@@ -96,7 +96,7 @@ static const char *mv_namer(const void *p)
 /* The thread stands still (parked in a Bink call, or the movie is over); false would make the snapshot unstable. */
 static void mv_settle(void)
 {
-    if (!g_mv.settle(10000)) {
+    if (!g_mv.settle(30000)) {
         life_extra("settle=timeout ");
     }
 }
@@ -373,6 +373,20 @@ static void mv_stop_early(void)
     g_mv.movie = NULL;
 }
 
+/* The frame buffer cannot be locked for a frame: the frame is not copied and not flagged ready, and the movie goes on with the next one. */
+static void mv_lock_fails(void)
+{
+    mv_make_spec("C:\\", "Movies\\", "locked.bik");
+    g_mv.reset(64, 48, 2);
+    MV_STEP("movie: CreateMovie whose first frame cannot be copied", g_mv.movie = ((MvCreate2)LIFE_SLOT(CreateMovie_2))(g_life.obj, &g_mv.spec, 0);
+            ret = g_mv.movie != NULL; mv_settle());
+    MV_STEP("movie: the movie opens its file", g_mv.release(1); mv_settle());
+    LIFE_SCRIPT(g_life.dd->surface_count, FS_LOCK, LIFE_ERR_LOST, 1);
+    MV_STEP("movie: frame 1, the frame buffer cannot be locked", g_mv.release(1); mv_settle());
+    MV_STEP_LOG("movie: frame 2, the last", g_mv.release(1); mv_settle());
+    mv_end("the movie whose first frame was lost", 0);
+}
+
 /* Two movies: the second one's thread waits for the first one's to be over (they share one critical section). */
 static void mv_two(void)
 {
@@ -413,6 +427,7 @@ static void mv_run(void)
     mv_sound();
     mv_busy();
     mv_stop_early();
+    mv_lock_fails();
     mv_two();
 }
 

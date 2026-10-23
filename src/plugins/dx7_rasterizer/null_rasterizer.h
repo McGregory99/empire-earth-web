@@ -45,8 +45,8 @@ public:
     bool CanDoCurrentState(GETexture *, unsigned long) override;  // 5
     long Clear(GEColor const &, GERectangle const &, unsigned long) override;  // 6
     long ClearZBuffer(float, GERectangle const &, unsigned long) override;  // 7
-    GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override { return 0; }  // 9
-    GEMovie * CreateMovie(FSFileSpec const &, unsigned long, GERectangle const &, bool) override { return 0; }  // 8
+    GEMovie * CreateMovie(FSFileSpec const &, unsigned long) override;  // 9 (dx7_movie.cpp)
+    GEMovie * CreateMovie(FSFileSpec const &, unsigned long, GERectangle const &, bool) override;  // 8 (dx7_movie.cpp)
     GEPolygonArray * CreatePolygonArray(unsigned long) override;  // 10 (dx7_arrays.cpp)
     GEVertexArray * CreateVertexArray(unsigned long, unsigned long) override;  // 11 (dx7_arrays.cpp)
     long Deactivate() override;  // 12

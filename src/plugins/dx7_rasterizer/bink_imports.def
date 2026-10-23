@@ -1,0 +1,15 @@
+; Import definition for Bink's binkw32.dll (the game directory has it): the nine functions the movie player calls.  The library exports
+; its stdcall functions in the decorated form with the leading underscore, so the import names are `_BinkOpen@8` and the like (the
+; linker symbols, with the extra underscore of dlltool's convention, are `__BinkOpen@8`: see dx7_movie.cpp).  Import library: dlltool
+; without `-k`, which would strip the @n.
+LIBRARY binkw32.dll
+EXPORTS
+    _BinkClose@4
+    _BinkCopyToBuffer@28
+    _BinkDDSurfaceType@4
+    _BinkDoFrame@4
+    _BinkNextFrame@4
+    _BinkOpen@8
+    _BinkOpenDirectSound@4
+    _BinkSetSoundSystem@8
+    _BinkWait@4

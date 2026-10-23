@@ -219,6 +219,10 @@ $(RAST_BUILD)/kernel32.lib: $(RAST_SRC)/kernel32_imports.def | $(RAST_BUILD)
 $(RAST_BUILD)/ddraw.lib: $(RAST_SRC)/ddraw_imports.def | $(RAST_BUILD)
 	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D ddraw.dll
 
+# Bink's library exports its stdcall functions with the underscore and the @n: no `-k`, the names stay as the def file has them.
+$(RAST_BUILD)/binkw32.lib: $(RAST_SRC)/bink_imports.def | $(RAST_BUILD)
+	$(LLVM_DLLTOOL) -m i386 -d $< -l $@ -D binkw32.dll
+
 $(RAST_BUILD)/user32.lib: $(RAST_SRC)/user32_imports.def | $(RAST_BUILD)
 	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D user32.dll
 
@@ -228,11 +232,11 @@ $(RAST_BUILD)/gdi32.lib: $(RAST_SRC)/gdi32_imports.def | $(RAST_BUILD)
 $(RAST_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) $(ABI_HEADERS) | $(RAST_BUILD)
 	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -c -o $@ $<
 
-$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib
+$(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
 	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
 	    /subsystem:windows,5.0 /opt:ref /filealign:512 /brepro $(RAST_OBJECTS) \
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib \
-	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib
+	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
 
 $(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h tests/dx7_rasterizer/format_checks.h tests/dx7_rasterizer/state_checks.h tests/dx7_rasterizer/state_expected.inc tests/dx7_rasterizer/lifecycle_checks.h tests/dx7_rasterizer/lifecycle_expected.inc tests/dx7_rasterizer/lifecycle_expected_ours.inc tests/dx7_rasterizer/texture_checks.h tests/dx7_rasterizer/texture_expected.inc tests/dx7_rasterizer/texture_expected_ours.inc tests/dx7_rasterizer/ring_checks.h tests/dx7_rasterizer/ring_expected.inc tests/dx7_rasterizer/ring_expected_ours.inc tests/dx7_rasterizer/array_checks.h tests/dx7_rasterizer/array_expected.inc tests/dx7_rasterizer/array_expected_ours.inc tests/dx7_rasterizer/draw2d_checks.h tests/dx7_rasterizer/draw2d_expected.inc tests/dx7_rasterizer/draw2d_expected_ours.inc tests/dx7_rasterizer/poly_checks.h tests/dx7_rasterizer/poly_expected.inc tests/dx7_rasterizer/poly_expected_ours.inc tests/dx7_rasterizer/line3d_checks.h tests/dx7_rasterizer/line3d_expected.inc tests/dx7_rasterizer/line3d_expected_ours.inc tests/dx7_rasterizer/text_checks.h tests/dx7_rasterizer/text_expected.inc tests/dx7_rasterizer/text_expected_ours.inc tests/dx7_rasterizer/terrain_checks.h tests/dx7_rasterizer/terrain_expected.inc tests/dx7_rasterizer/terrain_expected_ours.inc tests/dx7_rasterizer/model_checks.h tests/dx7_rasterizer/model_expected.inc tests/dx7_rasterizer/model_expected_ours.inc tests/dx7_rasterizer/terrain_draw_checks.h tests/dx7_rasterizer/terrain_draw_expected.inc tests/dx7_rasterizer/terrain_draw_expected_ours.inc tests/dx7_rasterizer/target_checks.h tests/dx7_rasterizer/target_expected.inc tests/dx7_rasterizer/target_expected_ours.inc tests/dx7_rasterizer/movie_checks.h tests/dx7_rasterizer/movie_expected.inc tests/dx7_rasterizer/movie_expected_ours.inc src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
 	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine -lgdi32

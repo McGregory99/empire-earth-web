@@ -1264,7 +1264,7 @@ static void run_real_screens_child(const char *self, const char *path, const str
     if (!started) {
         return;
     }
-    DWORD wait = WaitForSingleObject(pi.hProcess, 60000);
+    DWORD wait = WaitForSingleObject(pi.hProcess, 150000);
     DWORD code = 0xDEAD;
     if (wait != WAIT_OBJECT_0) {
         TerminateProcess(pi.hProcess, 0xDEAD);

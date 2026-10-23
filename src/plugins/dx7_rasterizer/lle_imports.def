@@ -69,3 +69,20 @@ EXPORTS
     ?sTransformStack@GERasterizer@@1V?$vector@UTransformStack@GERasterizer@@V?$allocator@UTransformStack@GERasterizer@@@std@@@std@@A DATA
     ?Apply@GETransformation@@QBEXABVGEVector@@AAV2@@Z
     ?Normalize@GEColor@@QAEXXZ
+    ??0UString@@QAE@XZ
+    ?CreateCriticalSection@TSScheduler@@SAJAAPAVTSCriticalSection@@@Z
+    ?DestroyCriticalSection@TSScheduler@@SAXPAVTSCriticalSection@@@Z
+    ?DestroyThread@TSScheduler@@SAJPAVTSThread@@@Z
+    ?DestroyEvent@TSScheduler@@SAXPAVTSEvent@@@Z
+    ?CreateEventA@TSScheduler@@SAJAAPAVTSEvent@@_N@Z
+    ?CreateThread@TSScheduler@@SAJAAPAVTSThread@@P6AKPAX@Z1K_N@Z
+    ?Wait@TSEvent@@QAEJK@Z
+    ?Set@TSEvent@@QAEJXZ
+    ?Clear@TSEvent@@QAEJXZ
+    ?SetPriority@TSThread@@QAEJJ@Z
+    ?UMSetFloatingPointPrecision@@YAXK@Z
+    ?UMGetFloatingPointPrecision@@YAKXZ
+    ?UMSetFloatingPointRoundingMode@@YAXK@Z
+    ?UMGetFloatingPointRoundingMode@@YAKXZ
+    ?sprintf@@YAJAAVUString@@PBDZZ
+    ?ESVerify@@YAXPBDK0@Z
