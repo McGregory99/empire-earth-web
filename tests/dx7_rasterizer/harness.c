@@ -10,8 +10,11 @@
  *   PIMIsValid        -> bool              (AL only: the engine does `test al, al`)
  *   RPIMGetRasterizer -> GERasterizer *    (only called when PIMIsValid is true)
  *
- * Usage:  rasterizer_harness.exe original|ours <dll>
+ * Usage:  rasterizer_harness.exe original|ours <dll> [nontnl]
  *         rasterizer_harness.exe probe-isvalid <dll>      (internal: child process)
+ *
+ * The matrix: the original DX7HRTnLDisplay.dll and ours (EEWebRasterizer.dll) run without the last argument; the original
+ * DX7HRDisplay.dll and our EEWebRasterizerNonTnL.dll (the same sources built without hardware T&L, P2.7) run with `nontnl`.
  *
  * "original" runs the checks that hold for Stainless Steel's DX7HRTnLDisplay.dll
  * (the oracle for types and conventions, and for the shape of the rasterizer
@@ -88,7 +91,15 @@ static const struct Expect kOriginal = {"original", 0, {252, 253, 254, 255}, -1,
                                         ".?AVDX7TnLRasterizer@@",
                                         {".?AVDX7TnLRasterizer@@", ".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL}};
 static const struct Expect kOurs = {"ours", 1, {1, 2, 3, 4}, 1, "EEWeb Null Rasterizer",
-                                    EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_ABI, EEWEB_RTTI_GE, NULL}};
+                                    EEWEB_RTTI_TNL, {EEWEB_RTTI_TNL, EEWEB_RTTI_NULL, EEWEB_RTTI_ABI, EEWEB_RTTI_GE}};
+/* Without hardware T&L: the original's DX7HRDisplay.dll (its rasterizer is the base class DX7Rasterizer) and our build of the same sources. */
+static const struct Expect kOriginalNonTnL = {"original (no T&L)", 0, {244, 245, 246, 247}, -1, "Direct3D", ".?AVDX7Rasterizer@@",
+                                              {".?AVDX7Rasterizer@@", ".?AVGERasterizer@@", NULL, NULL}};
+static const struct Expect kOursNonTnL = {"ours (no T&L)", 1, {1, 2, 3, 4}, 1, "EEWeb Null Rasterizer (no T&L)",
+                                          EEWEB_RTTI_NULL, {EEWEB_RTTI_NULL, EEWEB_RTTI_ABI, EEWEB_RTTI_GE, NULL}};
+
+/* Which half of the matrix this process runs: set from the command line before anything else. */
+static int g_nontnl;
 
 /* GetProcAddress as a data pointer (avoids function-pointer cast warnings). */
 static void *proc_address(HMODULE h, const char *name_or_ordinal)
@@ -603,18 +614,22 @@ static void record_original_isvalid(const char *self, const char *path)
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
-    if (argc == 4 && strcmp(argv[1], "probe-screens") == 0) {
-        return probe_screens(strcmp(argv[3], "ours") == 0 ? &kOurs : &kOriginal, argv[2]);
+    if ((argc == 4 || argc == 5) && strcmp(argv[1], "probe-screens") == 0) {
+        const int ours = strcmp(argv[3], "ours") == 0;
+        g_nontnl = argc == 5 && strcmp(argv[4], "nontnl") == 0;
+        return probe_screens(g_nontnl ? (ours ? &kOursNonTnL : &kOriginalNonTnL) : (ours ? &kOurs : &kOriginal), argv[2]);
     }
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s original|ours|probe-isvalid <dll>\n       %s probe-screens <dll> original|ours\n", argv[0], argv[0]);
+    if (argc != 3 && argc != 4) {
+        fprintf(stderr, "usage: %s original|ours <dll> [nontnl]\n       %s probe-isvalid <dll>\n       %s probe-screens <dll> original|ours [nontnl]\n",
+                argv[0], argv[0], argv[0]);
         return 64;
     }
+    g_nontnl = argc == 4 && strcmp(argv[3], "nontnl") == 0;
     if (strcmp(argv[1], "probe-isvalid") == 0) {
         return probe_isvalid(argv[2]);
     }
-    const struct Expect *e = strcmp(argv[1], "original") == 0 ? &kOriginal
-                           : strcmp(argv[1], "ours") == 0     ? &kOurs
+    const struct Expect *e = strcmp(argv[1], "original") == 0 ? (g_nontnl ? &kOriginalNonTnL : &kOriginal)
+                           : strcmp(argv[1], "ours") == 0     ? (g_nontnl ? &kOursNonTnL : &kOurs)
                                                               : NULL;
     if (!e) {
         fprintf(stderr, "unknown variant '%s'\n", argv[1]);
@@ -622,7 +637,7 @@ int main(int argc, char **argv)
     }
     HMODULE first = run_plugin_checks(e, argv[2]);
     run_real_screens_child(argv[0], argv[2], e);
-    if (e == &kOriginal) {
+    if (!e->ours) {
         record_original_isvalid(argv[0], argv[2]);
     }
     reload_cycles(e, first, argv[2]);

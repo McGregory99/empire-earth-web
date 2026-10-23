@@ -61,6 +61,7 @@ enum {
 
 /* RTTI names (MSVC type descriptor names) of our class and of the two it derives from; the original's
  * DX7TnLRasterizer derives from DX7Rasterizer and GERasterizer in the same way. */
+#define EEWEB_RTTI_TNL ".?AVEEWebTnLRasterizer@@"  /* the T&L build's class, derived from the next one */
 #define EEWEB_RTTI_NULL ".?AVEEWebNullRasterizer@@"
 #define EEWEB_RTTI_ABI ".?AVDX7RasterizerAbi@@"
 #define EEWEB_RTTI_GE ".?AVGERasterizer@@"

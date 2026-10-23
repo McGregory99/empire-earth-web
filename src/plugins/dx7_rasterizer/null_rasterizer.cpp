@@ -2,6 +2,7 @@
 
 #include "engine_imports.h"
 #include "rasterizer_abi.h"
+#include "rasterizer_variant.h"
 
 unsigned long ESRecordNativeError(unsigned long error); // ?ESRecordNativeError@@YAKK@Z
 
@@ -17,7 +18,7 @@ long g_destroyed; // destructor runs of any EEWebNullRasterizer in this DLL (rea
 
 DX7RasterizerAbi* MakeNullRasterizer()
 {
-    return new EEWebNullRasterizer;
+    return new EEWebVariantRasterizer;
 }
 
 // Called through a volatile pointer so the optimizer sees an unknown dynamic type.
@@ -41,7 +42,7 @@ EEWebNullRasterizer::EEWebNullRasterizer()
     // The original builds the engine's base class with the rasterizer's name, then its own fields.  The engine's
     // constructor sets the vptr of GERasterizer: put ours back.
     void* const vptr = *reinterpret_cast<void* volatile*>(this);
-    UString name("EEWeb Null Rasterizer");
+    UString name(kEEWebRasterizerName);
     EEWebGERasterizerConstruct(this, name);
     *reinterpret_cast<void* volatile*>(this) = vptr;
     m_engineBaseAlive = 1;

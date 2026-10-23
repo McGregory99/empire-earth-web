@@ -12,7 +12,7 @@
 // engine tests through AL.
 
 #include "engine_ustring.h"
-#include "null_rasterizer.h"
+#include "rasterizer_variant.h"
 
 typedef unsigned long ulong;
 
@@ -29,11 +29,11 @@ UString& Name()
 
 // The one rasterizer object, built in DllMain for the same reason.  The original returns a
 // static object too: the engine never deletes what RPIMGetRasterizer hands out.
-alignas(4) char g_rasterizerStorage[sizeof(EEWebNullRasterizer)];
+alignas(4) char g_rasterizerStorage[sizeof(EEWebVariantRasterizer)];
 
-EEWebNullRasterizer& Rasterizer()
+EEWebVariantRasterizer& Rasterizer()
 {
-    return *reinterpret_cast<EEWebNullRasterizer*>(g_rasterizerStorage);
+    return *reinterpret_cast<EEWebVariantRasterizer*>(g_rasterizerStorage);
 }
 
 } // namespace
@@ -55,7 +55,7 @@ ulong PIMGetType(void)
 // Each call also runs the class self-check so the build keeps proving its C++ ABI.
 bool PIMIsValid(void)
 {
-    EEWebNullRasterizer& rasterizer = Rasterizer();
+    EEWebVariantRasterizer& rasterizer = Rasterizer();
     RunClassSelfCheck(rasterizer);
     bool valid = false;
     if (rasterizer.Activate() == 0 && rasterizer.GetScreenCount() != 0) {
@@ -79,10 +79,11 @@ void* RPIMGetRasterizer(void)
 int __stdcall DllMain(void*, ulong reason, void* reserved)
 {
     if (reason == 1) { // DLL_PROCESS_ATTACH
-        new (g_nameStorage) UString("EEWeb Null Rasterizer");
-        new (g_rasterizerStorage) EEWebNullRasterizer;
+        new (g_nameStorage) UString(kEEWebRasterizerName);
+        new (g_rasterizerStorage) EEWebVariantRasterizer;
     } else if (reason == 0 && reserved == 0) { // DLL_PROCESS_DETACH, FreeLibrary
-        reinterpret_cast<EEWebNullRasterizer*>(g_rasterizerStorage)->EEWebNullRasterizer::~EEWebNullRasterizer();
+        // The base part only: the harness may have destroyed the object through its vtable already, and only the base destructor knows that.
+    static_cast<EEWebNullRasterizer&>(Rasterizer()).EEWebNullRasterizer::~EEWebNullRasterizer();
         Name().UString::~UString();
     }
     return 1;

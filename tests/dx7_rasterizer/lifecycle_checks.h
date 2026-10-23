@@ -221,6 +221,24 @@ static const struct {
 #include "movie_expected_ours.inc"
     {NULL, NULL}};
 
+/* The steps where the rasterizer without hardware T&L (DX7HRDisplay.dll and our EEWebRasterizerNonTnL.dll) differs from the one with it: both
+ * variants of that half of the matrix use these literals instead of the ones above (recorded from the original DX7HRDisplay.dll); the steps
+ * of nontnl_checks.h exist only there. */
+static const struct {
+    const char *name;
+    const char *expect;
+} kLifeExpectedNonTnL[] = {
+#include "nontnl_expected.inc"
+    {NULL, NULL}};
+
+/* ... and where our build without T&L intentionally differs from the original without T&L (the counterpart of lifecycle_expected_ours.inc). */
+static const struct {
+    const char *name;
+    const char *expect;
+} kLifeExpectedOursNonTnL[] = {
+#include "nontnl_expected_ours.inc"
+    {NULL, NULL}};
+
 static void life_compare(const char *name, const char *actual)
 {
     if (g_life.recording) {
@@ -233,9 +251,19 @@ static void life_compare(const char *name, const char *actual)
             expect = kLifeExpected[i].expect;
         }
     }
-    for (unsigned i = 0; g_life.e->ours && kLifeExpectedOurs[i].name; i++) {
+    for (unsigned i = 0; g_nontnl && kLifeExpectedNonTnL[i].name; i++) {
+        if (strcmp(kLifeExpectedNonTnL[i].name, name) == 0) {
+            expect = kLifeExpectedNonTnL[i].expect;
+        }
+    }
+    for (unsigned i = 0; g_life.e->ours && !g_nontnl && kLifeExpectedOurs[i].name; i++) {
         if (strcmp(kLifeExpectedOurs[i].name, name) == 0) {
             expect = kLifeExpectedOurs[i].expect;
+        }
+    }
+    for (unsigned i = 0; g_life.e->ours && g_nontnl && kLifeExpectedOursNonTnL[i].name; i++) {
+        if (strcmp(kLifeExpectedOursNonTnL[i].name, name) == 0) {
+            expect = kLifeExpectedOursNonTnL[i].expect;
         }
     }
     int same = expect != NULL && strcmp(actual, expect) == 0;

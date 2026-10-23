@@ -80,6 +80,11 @@ struct FakeDD {
         int times;
     } vb_script[2];                      /* scripted results of the vertex buffer's Lock (0) and Unlock (1): `code` is returned `times` times */
     int vb_null_lock_times;              /* the next n Lock calls succeed without storing a pointer */
+    /* the display adapter's identity and memory, which the activation without T&L reads (nontnl_checks.h, P2.7) */
+    unsigned long ident_vendor, ident_device;  /* GetDeviceIdentifier: dwVendorId, dwDeviceId */
+    char ident_description[64];                /* ... and szDescription */
+    long ident_result;                         /* what GetDeviceIdentifier returns (non-zero: it leaves the buffer alone) */
+    unsigned long vid_total;                   /* what GetAvailableVidMem reports as the total (0: 128 MB) */
     void *text_dc;                       /* what a surface's GetDC hands out when set (text_checks.h, P2.6.7e): a real memory device context */
 };
 
@@ -413,8 +418,23 @@ static long FAKE_DD_STDCALL fake_surf_set_color_key(FakeSurface *s, DWORD flags,
 static long FAKE_DD_STDCALL fake_get_avail_vid_mem(FakeDD *dd, DWORD *caps, DWORD *total, DWORD *avail)
 {
     fake_log(dd, "dd.GetAvailableVidMem(caps=0x%lx)", (unsigned long)caps[0]);
-    *total = 134217728;
+    *total = dd->vid_total ? dd->vid_total : 134217728;
     *avail = 100663296;
+    return 0;
+}
+
+/* IDirectDraw7::GetDeviceIdentifier(DDDEVICEIDENTIFIER2 *, flags): szDriver at 0, szDescription at 0x200, the vendor and device ids at 0x408 and 0x40c. */
+static long FAKE_DD_STDCALL fake_get_device_identifier(FakeDD *dd, DWORD *identifier, DWORD flags)
+{
+    fake_log(dd, "dd.GetDeviceIdentifier(flags=0x%lx)", (unsigned long)flags);
+    if (dd->ident_result != 0) {
+        return dd->ident_result;
+    }
+    memset(identifier, 0, 0x430);
+    snprintf((char *)identifier, 512, "fake.dll");
+    snprintf((char *)identifier + 0x200, 512, "%s", dd->ident_description[0] ? dd->ident_description : "Fake Display Adapter");
+    identifier[0x408 / 4] = dd->ident_vendor ? dd->ident_vendor : 0x10de;
+    identifier[0x40c / 4] = dd->ident_device ? dd->ident_device : 0x0028;
     return 0;
 }
 
@@ -793,6 +813,7 @@ static void fake_dd_init(FakeDD *dd)
     vtbl[23] = (const void *)fake_get_avail_vid_mem;
     vtbl[25] = (const void *)fake_restore_all;
     vtbl[26] = (const void *)fake_test_coop;
+    vtbl[27] = (const void *)fake_get_device_identifier;
     for (int i = 0; i < 8; i++) {
         d3d_vtbl[i] = (const void *)fake_unexpected;
         vb_vtbl[i] = (const void *)fake_unexpected;
@@ -1108,7 +1129,9 @@ static void check_screen_object(const struct Expect *e, HMODULE h, const ScreenA
     CHECK(strcmp(dd.log, "dd.QueryInterface(IDirect3D7)\nd3d.EnumDevices\nd3d.Release\n") == 0,
           "%s: ... by asking IDirect3D7 to enumerate its devices, and releasing it (got \"%s\")", e->label, dd.log);
     dd.hw_tnl = 0;
-    CHECK(is_valid_screen(obj, screen) == 0, "%s: GetIsScreenValid() is false when no device has hardware T&L", e->label);
+    /* The rasterizer without T&L takes any hardware rasterizing device (D3DDEVCAPS_HWRASTERIZATION), the T&L one needs hardware T&L too. */
+    CHECK(is_valid_screen(obj, screen) == (g_nontnl ? 1 : 0), "%s: GetIsScreenValid() is %s when no device has hardware T&L", e->label,
+          g_nontnl ? "still true (a hardware rasterizing device is enough)" : "false");
     dd.hw_tnl = 1;
 
     long add_status = ((AddScreen)slot(rvtable, EEWEB_SLOT_GERasterizer_AddValidScreen))(obj, screen);
@@ -1208,6 +1231,7 @@ static int load_screen_api(const struct Expect *e, HMODULE h, ScreenApi *api)
 #include "terrain_draw_checks.h" /* the terrain draws (P2.6.7i) */
 #include "target_checks.h"    /* ActivateRenderingSurface (P2.6.7j) */
 #include "movie_checks.h"     /* CreateMovie and DX7Movie over a scripted Bink (P2.6.7k) */
+#include "nontnl_checks.h"    /* the activation of the rasterizer without hardware T&L (P2.7) */
 
 /*
  * Child process of the screen checks (`probe-screens <dll> original|ours`), for the fake DirectDraw and for
@@ -1245,6 +1269,7 @@ static int probe_screens(const struct Expect *e, const char *path)
         check_terrain_draws(e, h, &api, get_rasterizer());
         check_target(e, h, &api, get_rasterizer());
         check_movie(e, h, &api, get_rasterizer());
+        check_nontnl(e, h, &api, get_rasterizer());
     }
     printf("%s: screens: %d checks, %d failed\n", e->label, g_checks, g_failures);
     return g_failures;
@@ -1253,7 +1278,7 @@ static int probe_screens(const struct Expect *e, const char *path)
 static void run_real_screens_child(const char *self, const char *path, const struct Expect *e)
 {
     char cmd[2 * MAX_PATH + 64];
-    snprintf(cmd, sizeof cmd, "\"%s\" probe-screens \"%s\" %s", self, path, e->ours ? "ours" : "original");
+    snprintf(cmd, sizeof cmd, "\"%s\" probe-screens \"%s\" %s%s", self, path, e->ours ? "ours" : "original", g_nontnl ? " nontnl" : "");
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof si);

@@ -173,6 +173,12 @@ RAST_SOURCES   := $(wildcard $(RAST_SRC)/*.cpp)
 RAST_HEADERS   := $(wildcard $(RAST_SRC)/*.h)
 RAST_OBJECTS   := $(patsubst $(RAST_SRC)/%.cpp,$(RAST_BUILD)/%.obj,$(RAST_SOURCES))
 RAST_ORIGINAL  := $(RE_DIR)/bin/DX7HRTnLDisplay.dll
+# The same sources built a second time without hardware T&L (-DEEWEB_TNL=0, rasterizer_variant.h): the counterpart of DX7HRDisplay.dll.
+RAST_NT_BUILD    := $(BUILD)/rasterizer-nontnl
+RAST_NT_DLL_NAME := EEWebRasterizerNonTnL.dll
+RAST_NT_DLL      := $(RAST_NT_BUILD)/$(RAST_NT_DLL_NAME)
+RAST_NT_OBJECTS  := $(patsubst $(RAST_SRC)/%.cpp,$(RAST_NT_BUILD)/%.obj,$(RAST_SOURCES))
+RAST_NT_ORIGINAL := $(RE_DIR)/bin/DX7HRDisplay.dll
 RAST_HARNESS   := $(BUILD)/rasterizer_harness.exe
 RAST_FAKEBINK  := $(BUILD)/rasterizer/binkw32.dll
 RAST_TESTBED   := $(TESTBED)/rasterizer
@@ -201,7 +207,7 @@ RAST_CXXFLAGS := --target=i686-pc-windows-msvc -std=c++14 -O2 -Wall -Wextra -ffr
     -fno-exceptions -frtti -fno-sized-deallocation -fno-threadsafe-statics -fcheck-new \
     -fno-stack-protector -march=i686 -mno-sse -ffp-contract=off
 
-rasterizer: $(RAST_DLL)
+rasterizer: $(RAST_DLL) $(RAST_NT_DLL)
 
 $(RAST_BUILD):
 	mkdir -p "$@"
@@ -230,7 +236,13 @@ $(RAST_BUILD)/gdi32.lib: $(RAST_SRC)/gdi32_imports.def | $(RAST_BUILD)
 	$(LLVM_DLLTOOL) -m i386 -k -d $< -l $@ -D gdi32.dll
 
 $(RAST_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) $(ABI_HEADERS) | $(RAST_BUILD)
-	$(CLANGXX) $(RAST_CXXFLAGS) -I src/engine_abi -c -o $@ $<
+	$(CLANGXX) $(RAST_CXXFLAGS) -DEEWEB_TNL=1 -I src/engine_abi -c -o $@ $<
+
+$(RAST_NT_BUILD):
+	mkdir -p "$@"
+
+$(RAST_NT_BUILD)/%.obj: $(RAST_SRC)/%.cpp $(RAST_HEADERS) $(ABI_HEADERS) | $(RAST_NT_BUILD)
+	$(CLANGXX) $(RAST_CXXFLAGS) -DEEWEB_TNL=0 -I src/engine_abi -c -o $@ $<
 
 $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
 	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
@@ -238,7 +250,13 @@ $(RAST_DLL): $(RAST_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcr
 	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib \
 	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
 
-$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h tests/dx7_rasterizer/format_checks.h tests/dx7_rasterizer/state_checks.h tests/dx7_rasterizer/state_expected.inc tests/dx7_rasterizer/lifecycle_checks.h tests/dx7_rasterizer/lifecycle_expected.inc tests/dx7_rasterizer/lifecycle_expected_ours.inc tests/dx7_rasterizer/texture_checks.h tests/dx7_rasterizer/texture_expected.inc tests/dx7_rasterizer/texture_expected_ours.inc tests/dx7_rasterizer/ring_checks.h tests/dx7_rasterizer/ring_expected.inc tests/dx7_rasterizer/ring_expected_ours.inc tests/dx7_rasterizer/array_checks.h tests/dx7_rasterizer/array_expected.inc tests/dx7_rasterizer/array_expected_ours.inc tests/dx7_rasterizer/draw2d_checks.h tests/dx7_rasterizer/draw2d_expected.inc tests/dx7_rasterizer/draw2d_expected_ours.inc tests/dx7_rasterizer/poly_checks.h tests/dx7_rasterizer/poly_expected.inc tests/dx7_rasterizer/poly_expected_ours.inc tests/dx7_rasterizer/line3d_checks.h tests/dx7_rasterizer/line3d_expected.inc tests/dx7_rasterizer/line3d_expected_ours.inc tests/dx7_rasterizer/text_checks.h tests/dx7_rasterizer/text_expected.inc tests/dx7_rasterizer/text_expected_ours.inc tests/dx7_rasterizer/terrain_checks.h tests/dx7_rasterizer/terrain_expected.inc tests/dx7_rasterizer/terrain_expected_ours.inc tests/dx7_rasterizer/model_checks.h tests/dx7_rasterizer/model_expected.inc tests/dx7_rasterizer/model_expected_ours.inc tests/dx7_rasterizer/terrain_draw_checks.h tests/dx7_rasterizer/terrain_draw_expected.inc tests/dx7_rasterizer/terrain_draw_expected_ours.inc tests/dx7_rasterizer/target_checks.h tests/dx7_rasterizer/target_expected.inc tests/dx7_rasterizer/target_expected_ours.inc tests/dx7_rasterizer/movie_checks.h tests/dx7_rasterizer/movie_expected.inc tests/dx7_rasterizer/movie_expected_ours.inc src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
+$(RAST_NT_DLL): $(RAST_NT_OBJECTS) $(RAST_SRC)/eewebrasterizer.def $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
+	$(LLD_LINK) /dll /nodefaultlib /entry:DllMain /def:$(RAST_SRC)/eewebrasterizer.def /out:$@ \
+	    /subsystem:windows,5.0 /opt:ref /filealign:512 /brepro $(RAST_NT_OBJECTS) \
+	    $(RAST_BUILD)/msvcrt.lib $(RAST_BUILD)/lowlevel.lib $(RAST_BUILD)/kernel32.lib $(RAST_BUILD)/ddraw.lib \
+	    $(RAST_BUILD)/user32.lib $(RAST_BUILD)/gdi32.lib $(RAST_BUILD)/binkw32.lib
+
+$(RAST_HARNESS): tests/dx7_rasterizer/harness.c tests/dx7_rasterizer/canary_checks.h tests/dx7_rasterizer/screen_checks.h tests/dx7_rasterizer/surface_checks.h tests/dx7_rasterizer/format_checks.h tests/dx7_rasterizer/state_checks.h tests/dx7_rasterizer/state_expected.inc tests/dx7_rasterizer/lifecycle_checks.h tests/dx7_rasterizer/lifecycle_expected.inc tests/dx7_rasterizer/lifecycle_expected_ours.inc tests/dx7_rasterizer/texture_checks.h tests/dx7_rasterizer/texture_expected.inc tests/dx7_rasterizer/texture_expected_ours.inc tests/dx7_rasterizer/ring_checks.h tests/dx7_rasterizer/ring_expected.inc tests/dx7_rasterizer/ring_expected_ours.inc tests/dx7_rasterizer/array_checks.h tests/dx7_rasterizer/array_expected.inc tests/dx7_rasterizer/array_expected_ours.inc tests/dx7_rasterizer/draw2d_checks.h tests/dx7_rasterizer/draw2d_expected.inc tests/dx7_rasterizer/draw2d_expected_ours.inc tests/dx7_rasterizer/poly_checks.h tests/dx7_rasterizer/poly_expected.inc tests/dx7_rasterizer/poly_expected_ours.inc tests/dx7_rasterizer/line3d_checks.h tests/dx7_rasterizer/line3d_expected.inc tests/dx7_rasterizer/line3d_expected_ours.inc tests/dx7_rasterizer/text_checks.h tests/dx7_rasterizer/text_expected.inc tests/dx7_rasterizer/text_expected_ours.inc tests/dx7_rasterizer/terrain_checks.h tests/dx7_rasterizer/terrain_expected.inc tests/dx7_rasterizer/terrain_expected_ours.inc tests/dx7_rasterizer/model_checks.h tests/dx7_rasterizer/model_expected.inc tests/dx7_rasterizer/model_expected_ours.inc tests/dx7_rasterizer/terrain_draw_checks.h tests/dx7_rasterizer/terrain_draw_expected.inc tests/dx7_rasterizer/terrain_draw_expected_ours.inc tests/dx7_rasterizer/target_checks.h tests/dx7_rasterizer/target_expected.inc tests/dx7_rasterizer/target_expected_ours.inc tests/dx7_rasterizer/movie_checks.h tests/dx7_rasterizer/movie_expected.inc tests/dx7_rasterizer/movie_expected_ours.inc tests/dx7_rasterizer/nontnl_checks.h tests/dx7_rasterizer/nontnl_expected.inc tests/dx7_rasterizer/nontnl_expected_ours.inc src/engine_abi/ge_layouts.h src/engine_abi/low_level_engine.h $(RAST_SRC)/rasterizer_abi.h $(ABI_HEADERS) $(ENGINE_LIB)
 	$(CC) $(CFLAGS) -I $(RAST_SRC) -o $@ $< -L $(BUILD) -lengine -lgdi32
 
 # The scripted Bink library both test beds get in place of the real binkw32.dll (tests/dx7_rasterizer/fakebink.c).
@@ -246,7 +264,7 @@ $(RAST_FAKEBINK): tests/dx7_rasterizer/fakebink.c tests/dx7_rasterizer/binkw32.d
 	$(CC) -O2 -std=c99 -Wall -Wextra -D_WIN32_WINNT=0x0501 $(CRT) -shared -o $@ tests/dx7_rasterizer/fakebink.c tests/dx7_rasterizer/binkw32.def
 
 # Exports, ordinals and imports of our DLL against the contract (tests/dx7_rasterizer/).
-check-abi-rasterizer: $(RAST_DLL)
+check-abi-rasterizer: $(RAST_DLL) $(RAST_NT_DLL)
 	python3 -I tools/re/pe_export_ordinals.py "$(RAST_DLL)" > $(RAST_BUILD)/exports-ours.txt
 	diff -u tests/dx7_rasterizer/expected_exports.txt $(RAST_BUILD)/exports-ours.txt && echo "PASS: exports and ordinals are as defined"
 	python3 -I tests/dx7_rasterizer/check_imports.py "$(RAST_DLL)" --require $(RAST_REQUIRED_IMPORTS)
@@ -257,35 +275,43 @@ check-abi-rasterizer: $(RAST_DLL)
 RAST_REQUIRED_IMPORTS := '__RTDynamicCast' '??2@YAPAXI@Z' '??3@YAXPAX@Z'
 
 # Test beds: the engine DLLs sit next to the plugin (altered search path), like in the game dir.
-testbed-rasterizer: $(RAST_DLL) $(RAST_HARNESS) $(RAST_FAKEBINK)
-	mkdir -p "$(RAST_TESTBED)/original" "$(RAST_TESTBED)/ours"
-	cp "$(ENGINE_DLL)" "$(RAST_TESTBED)/original/Low-Level Engine.dll"
-	cp "$(RUNTIME_DLL)" "$(RAST_TESTBED)/original/sxlrt233.dll"
-	cp "$(RAST_FAKEBINK)" "$(RAST_TESTBED)/original/binkw32.dll"
-	cp "$(RAST_ORIGINAL)" "$(RAST_TESTBED)/original/DX7HRTnLDisplay.dll"
-	cp $(RAST_HARNESS) "$(RAST_TESTBED)/original/rasterizer_harness.exe"
-	cp "$(ENGINE_DLL)" "$(RAST_TESTBED)/ours/Low-Level Engine.dll"
-	cp "$(RUNTIME_DLL)" "$(RAST_TESTBED)/ours/sxlrt233.dll"
-	cp "$(RAST_FAKEBINK)" "$(RAST_TESTBED)/ours/binkw32.dll"
-	cp "$(RAST_DLL)" "$(RAST_TESTBED)/ours/$(RAST_DLL_NAME)"
-	cp $(RAST_HARNESS) "$(RAST_TESTBED)/ours/rasterizer_harness.exe"
+# install_rast_testbed <directory> <plugin file> <name to install it under>
+define install_rast_testbed
+	mkdir -p "$(RAST_TESTBED)/$(1)"
+	cp "$(ENGINE_DLL)" "$(RAST_TESTBED)/$(1)/Low-Level Engine.dll"
+	cp "$(RUNTIME_DLL)" "$(RAST_TESTBED)/$(1)/sxlrt233.dll"
+	cp "$(RAST_FAKEBINK)" "$(RAST_TESTBED)/$(1)/binkw32.dll"
+	cp "$(2)" "$(RAST_TESTBED)/$(1)/$(3)"
+	cp $(RAST_HARNESS) "$(RAST_TESTBED)/$(1)/rasterizer_harness.exe"
+endef
 
-# run_rast_harness <variant> <dll file name>: the transcript goes to the terminal and a file.
+# The matrix: the original and ours, each with and without hardware T&L.
+testbed-rasterizer: $(RAST_DLL) $(RAST_NT_DLL) $(RAST_HARNESS) $(RAST_FAKEBINK)
+	$(call install_rast_testbed,original,$(RAST_ORIGINAL),DX7HRTnLDisplay.dll)
+	$(call install_rast_testbed,original-nontnl,$(RAST_NT_ORIGINAL),DX7HRDisplay.dll)
+	$(call install_rast_testbed,ours,$(RAST_DLL),$(RAST_DLL_NAME))
+	$(call install_rast_testbed,ours-nontnl,$(RAST_NT_DLL),$(RAST_NT_DLL_NAME))
+
+# run_rast_harness <test bed> <original|ours> <dll file name> [nontnl]: the transcript goes to the terminal and a file.
 define run_rast_harness
-	cd "$(RAST_TESTBED)/$(1)" && perl -e 'alarm shift; exec @ARGV' $(HARNESS_TIMEOUT) "$(WINE)" rasterizer_harness.exe $(1) "$(2)" \
+	cd "$(RAST_TESTBED)/$(1)" && perl -e 'alarm shift; exec @ARGV' $(HARNESS_TIMEOUT) "$(WINE)" rasterizer_harness.exe $(2) "$(3)" $(4) \
 	    2>/dev/null | tee "$(CURDIR)/$(BUILD)/rasterizer-$(1).txt"; \
 	    status=$${PIPESTATUS[0]}; test $$status -eq 0 || { echo "FAIL: $(1) harness exited with status $$status"; exit 1; }
 endef
 
 test-rasterizer: SHELL := /bin/bash
 test-rasterizer: check-abi-shapes check-layouts check-abi-rasterizer testbed-rasterizer
-	$(call run_rast_harness,original,DX7HRTnLDisplay.dll)
-	$(call run_rast_harness,ours,$(RAST_DLL_NAME))
+	$(call run_rast_harness,original,original,DX7HRTnLDisplay.dll)
+	$(call run_rast_harness,ours,ours,$(RAST_DLL_NAME))
+	$(call run_rast_harness,original-nontnl,original,DX7HRDisplay.dll,nontnl)
+	$(call run_rast_harness,ours-nontnl,ours,$(RAST_NT_DLL_NAME),nontnl)
 	@# The real DirectDraw devices are not known in advance: both variants print what they see as "obs" lines
 	@# (name, modes, flags, desktop rectangle of every screen) and the lines must be identical.
 	diff -u <(grep '^obs ' $(BUILD)/rasterizer-original.txt) <(grep '^obs ' $(BUILD)/rasterizer-ours.txt) \
 	    && echo "PASS: the original and ours see the same real DirectDraw screens ($$(grep -c '^obs ' $(BUILD)/rasterizer-ours.txt) observations)"
-	@echo "PASS: the original rasterizer plugin and ours both satisfy the plugin contract"
+	diff -u <(grep '^obs ' $(BUILD)/rasterizer-original-nontnl.txt) <(grep '^obs ' $(BUILD)/rasterizer-ours-nontnl.txt) \
+	    && echo "PASS: ... and without hardware T&L ($$(grep -c '^obs ' $(BUILD)/rasterizer-ours-nontnl.txt) observations)"
+	@echo "PASS: the original rasterizer plugins (with and without T&L) and ours both satisfy the plugin contract"
 
 gen-abi-headers:
 	$(ABI_GEN)
@@ -338,7 +364,7 @@ check-abi-shapes: $(ABI_HEADERS)
 	    --dump $(ABI_BUILD)/surface-layouts.txt \
 	    --implements EEWebNullRasterizer=DX7RasterizerAbi --implements DX7Screen=GEScreen --implements DX7Surface=GESurface
 
-game-check-rasterizer: $(RAST_DLL)
+game-check-rasterizer: $(RAST_DLL) $(RAST_NT_DLL)
 	bash $(RAST_GAME_CHECK) "$(RAST_DLL)" "$(RAST_DLL_NAME)"
 
 # Library and drivers against a fake world: fake ps, wine, launcher and game, a game directory with spaces.

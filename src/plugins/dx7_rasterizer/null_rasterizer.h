@@ -27,7 +27,7 @@
 
 class EEWebNullRasterizer : public DX7RasterizerAbi {
 public:
-    EEWebNullRasterizer();
+    EEWebNullRasterizer();  // names itself kEEWebRasterizerName (rasterizer_variant.h), what the engine's configuration selects it by
     ~EEWebNullRasterizer();  // slot 69: the deleting destructor of the vtable, taking a flags argument
 
     // Not virtual, like GERasterizer::Activate() and GetScreenCount() in the engine, which PIMIsValid uses.
@@ -123,6 +123,7 @@ protected:
     long GetVideoMemory(unsigned long, unsigned long &, unsigned long &) override;  // 81
 
 private:
+    friend class EEWebTnLRasterizer;  // the T&L class (rasterizer_variant.h) uses the helpers below
     // The layout canaries' bookkeeping: Note counts a refusal (and returns the canary's status); Verdict
     // turns a refusal into the status EEWEB_LAYOUT_VIOLATION and otherwise returns `result`.
     bool BindTexture(GETexture *texture, unsigned long screen);  // SetTexture's body (dx7_texture.cpp); false when nothing could be done
