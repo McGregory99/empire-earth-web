@@ -464,6 +464,7 @@ static void check_movie(const struct Expect *e, HMODULE h, const ScreenApi *api,
     g_mv.set_namer(mv_namer);
     life_activate(0, 1, 1, 10);
     life_activate(1, 1, 1, 10);
+    es_record_native_error(0x887600a2UL); /* the literals carry the engine's last error: start from the one the original has here, whatever ran before */
     void *saved_rasterizer = *active_rasterizer;
     void *saved_mixer = *active_mixer;
     *active_rasterizer = obj;

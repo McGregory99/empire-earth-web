@@ -109,6 +109,9 @@ long EEWebNullRasterizer::UnlockAndDraw(ulong screen, ulong primitive, ulong ver
             Sleep(0);
         }
     } while (error == kBusy && ++attempts < kMaxBusyRetries);
+    if (error == kBusy) {
+        ESRecordNativeError(static_cast<unsigned long>(error)); // gave up (the original waits for ever): leave a trace in the engine's log
+    }
     record->vertexCursor += vertices;
     return unlocked;
 }

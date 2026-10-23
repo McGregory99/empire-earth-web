@@ -309,7 +309,8 @@ static void d2_ours_busy_bound(void)
     GEBitmapLayout *bitmap = d2_bitmap(d2_texture(0, 1.0f, 0.0f, 0.0f), d2_texture(1, 1.0f, 0.0f, 0.0f), 1.0f);
     d2_prepare(0, 8);
     d2_script(FD_DRAW_INDEXED, D2_BUSY, 30000);
-    es_record_native_error(0);
+    const unsigned long saved_error = engine_native_error();
+    es_record_native_error(0x11111111UL); /* a marker the draw must replace */
     long ret = ((D2Bitmap)LIFE_SLOT(Draw_9))(g_life.obj, bitmap, 0);
     int left = g_life.dd->dev_script[FD_DRAW_INDEXED].times;
     g_life.dd->dev_script[FD_DRAW_INDEXED].times = 0;
@@ -319,6 +320,7 @@ static void d2_ours_busy_bound(void)
     /* ... and says so: the engine's error log holds the busy answer (a draw that went through after a few busy answers leaves it alone) */
     CHECK(engine_native_error() == (unsigned long)D2_BUSY, "%s: draw2d: giving up on a busy device is recorded as a native error (got 0x%lx)", g_life.e->label,
           engine_native_error());
+    es_record_native_error(saved_error); /* the literals of the steps that follow carry the engine's last error */
 }
 
 
