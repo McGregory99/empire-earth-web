@@ -1034,6 +1034,14 @@ static void td_material_ours_only(void)
     CHECK(ret == 0 && cursor == 3 * (900 - 814) && first && second && !(second ? strstr(second + 4, "DPVB") : NULL),
           "%s: terrain draw: 900 polygons are drawn in two batches, the ring started again for the second (ret %ld, cursor %lu)", g_life.e->label, ret, cursor);
 
+    d2_prepare(0, 200);
+    log_clear(g_life.dd);
+    ret = draw(g_life.obj, &life_state(0)->viewport, td_big_list(900, 5), 0);
+    cursor = life_record(0)->vertexCursor;
+    first = strstr(g_life.dd->log, "DPVB");
+    CHECK(ret == 0 && cursor == 15 && first && !strstr(first + 4, "DPVB"),
+          "%s: terrain draw: a null polygon in the first batch of a long list ends the whole list (ret %ld, cursor %lu)", g_life.e->label, ret, cursor);
+
     d2_prepare(0, 70);
     g_life.dd->vb_script[FV_LOCK].code = (long)D2_OTHER;
     g_life.dd->vb_script[FV_LOCK].times = 1;
