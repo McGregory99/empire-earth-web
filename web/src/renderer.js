@@ -75,6 +75,7 @@ export class Renderer {
     this.textures.clear();
     this.state = new DeviceState({ applyLodBias: this.applyLodBias });
     this.vbData = new Uint8Array(CANON * 1024);
+    this.vbHas = []; // per vertex: bit 0 the format had a diffuse colour, bit 1 a specular one
     this.vbCapacityUploaded = 0;
     this.dirty = null;
     gl.disable(gl.SCISSOR_TEST);
@@ -227,6 +228,7 @@ export class Renderer {
       const s = i * lay.stride, d = (first + i) * CANON;
       for (let k = 0; k < 12; k += 4) dst.setUint32(d + k, src.getUint32(s + k, true), true);
       for (let k = 0; k < 12; k += 4) dst.setUint32(d + 12 + k, lay.normal >= 0 ? src.getUint32(s + lay.normal + k, true) : 0, true);
+      this.vbHas[first + i] = (lay.diffuse >= 0 ? 1 : 0) | (lay.specular >= 0 ? 2 : 0);
       dst.setUint32(d + 24, lay.diffuse >= 0 ? src.getUint32(s + lay.diffuse, true) : CANON_WHITE, true);
       dst.setUint32(d + 28, lay.specular >= 0 ? src.getUint32(s + lay.specular, true) : 0, true);
       for (let t = 0; t < 2; t++) {
@@ -321,6 +323,9 @@ export class Renderer {
     gl.uniformMatrix4fv(u('uView'), false, m.transform(2));
     gl.uniformMatrix4fv(u('uProj'), false, m.transform(3));
     const L = cfg.lighting;
+    // D3D7 uses the material colour when the selected vertex component is not in the format (formats are not mixed within a draw)
+    const has = this.vbHas[c.startVertex + c.indices[0]] ?? 3;
+    const src = (v) => (v === 1 && !(has & 1)) || (v === 2 && !(has & 2)) ? 0 : v;
     gl.uniform1i(u('uLighting'), L.enable);
     gl.uniform1i(u('uNormalize'), cfg.normalizeNormals);
     gl.uniform1i(u('uFlat'), cfg.flat);
@@ -328,10 +333,10 @@ export class Renderer {
     gl.uniform4fv(u('uMatDiffuse'), L.material.diffuse);
     gl.uniform4fv(u('uMatAmbient'), L.material.ambient);
     gl.uniform4fv(u('uMatEmissive'), L.material.emissive);
-    gl.uniform1i(u('uDiffuseSrc'), L.diffuseSource);
-    gl.uniform1i(u('uAmbientSrc'), L.ambientSource);
-    gl.uniform1i(u('uEmissiveSrc'), L.emissiveSource);
-    gl.uniform1i(u('uSpecularSrc'), L.specularSource);
+    gl.uniform1i(u('uDiffuseSrc'), src(L.diffuseSource));
+    gl.uniform1i(u('uAmbientSrc'), src(L.ambientSource));
+    gl.uniform1i(u('uEmissiveSrc'), src(L.emissiveSource));
+    gl.uniform1i(u('uSpecularSrc'), src(L.specularSource));
     gl.uniform1i(u('uSpecular'), L.specularEnable);
     gl.uniform1i(u('uLocalViewer'), L.localViewer);
     gl.uniform4fv(u('uMatSpecular'), L.material.specular);
